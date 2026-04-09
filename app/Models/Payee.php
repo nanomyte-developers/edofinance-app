@@ -1,0 +1,21 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Payee extends Model
+{
+    //
+
+    protected $table = 'payees';
+
+    protected $fillable = [
+
+        'name',
+        'status',
+
+    ];
+
+    
+}

@@ -1,0 +1,108 @@
+/* PrimeVue imports */
+/* @import 'primevue/resources/primevue.min.css';
+@import 'primeicons/primeicons.css';
+@import 'primeflex/primeflex.css'; */
+
+/* Sakai custom styles */
+.surface-ground {
+    background-color: var(--surface-ground);
+}
+
+.min-h-screen {
+    min-height: 100vh;
+}
+
+.layout-sidebar {
+    background: var(--surface-overlay);
+    backdrop-filter: blur(10px);
+}
+
+.dark-mode {
+    background-color: var(--surface-ground);
+}
+
+html {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+}
+
+/* Layout styles */
+.layout-topbar {
+    position: fixed;
+    height: 4rem;
+    z-index: 997;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0 2rem;
+    background-color: var(--surface-card);
+    transition: left 0.2s;
+    display: flex;
+    align-items: center;
+    box-shadow:
+        0px 3px 5px rgba(0, 0, 0, 0.02),
+        0px 0px 2px rgba(0, 0, 0, 0.05),
+        0px 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.topbar-start {
+    display: flex;
+    align-items: center;
+    flex-grow: 1;
+}
+
+.topbar-menubutton {
+    display: none;
+    color: var(--text-color);
+    margin-right: 1rem;
+}
+
+.topbar-end {
+    display: flex;
+    align-items: center;
+}
+
+.topbar-menu {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.topbar-button {
+    position: relative;
+    color: var(--text-color);
+    border-radius: 50%;
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.3s;
+}
+
+.topbar-button:hover {
+    background-color: var(--surface-hover);
+}
+
+.topbar-badge {
+    position: absolute;
+    top: 0.2rem;
+    right: 0.2rem;
+    background-color: var(--red-500);
+    color: white;
+    border-radius: 50%;
+    width: 1rem;
+    height: 1rem;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
