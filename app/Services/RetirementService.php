@@ -284,7 +284,8 @@ class RetirementService
      */
     private function generateRetirementNumber(Voucher $voucher): string
     {
-        $year = now()->format('Y');
+        // $year = now()->format('Y');
+        $year = date('Y', strtotime($voucher->voucher_date));
         $prefix = 'RET';
 
         // Count retirements for this voucher

@@ -83,8 +83,8 @@ class UpdateJournalRequest extends FormRequest
             'mda_id' => 'required|exists:mdas,id',
             'journal_type' => 'required|string',
             // 'economic_code_id' => 'required|exists:economy_codes,id',
-            'administrative_code_id' => 'required|exists:administrative_codes,id',
-            'administrative_sector_code_id' => 'required|exists:administrative_sector_codes,id',
+            'administrative_code_id' => 'required|exists:administrative_sector_codes,id',
+            'administrative_sector_code_id' => 'required|exists:administrative_sector_codes,administrative_code_id',
             'reference_number' => 'nullable|string|max:100',
             'batch_number' => 'nullable|string|max:100',
             'financial_year' => 'required|integer|min:2000|max:' . (date('Y') + 1),
@@ -253,9 +253,9 @@ class UpdateJournalRequest extends FormRequest
             $newStatus = strtolower($this->status);
 
             // If trying to change from approved to something else
-            if ($oldStatus === 'approved' && $newStatus !== 'approved') {
-                $validator->errors()->add('status', 'Cannot change status from approved. Please create a reversal journal instead.');
-            }
+            // if ($oldStatus === 'approved' && $newStatus !== 'approved') {
+            //     $validator->errors()->add('status', 'Cannot change status from approved. Please create a reversal journal instead.');
+            // }
 
             // Validate recurring journal has frequency if is_recurring is true
             if ($this->is_recurring && ! $this->recurring_frequency) {

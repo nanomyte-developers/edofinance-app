@@ -15,6 +15,8 @@ use App\Models\Voucher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use App\Models\JournalEntry;
+use App\Models\Journal;
 
 class CashbookController extends Controller
 {
@@ -332,444 +334,539 @@ class CashbookController extends Controller
     public function generateEntries(Cashbook $cashbook)
     {
         // try {
-            DB::transaction(function () use ($cashbook) {
-                // Clear existing entries for this cashbook
-                $cashbook->entries()->delete();
+        DB::transaction(function () use ($cashbook) {
+            // Clear existing entries for this cashbook
+            $cashbook->entries()->delete();
 
-                $bankId = $cashbook->bank_activities_id;
-                $accountNumber = $cashbook->bankAccount->account_number;
-                $currentBankActivityId = $cashbook->bank_activities_id;
+            $bankId = $cashbook->bank_activities_id;
+            $accountNumber = $cashbook->bankAccount->account_number;
+            $currentBankActivityId = $cashbook->bank_activities_id;
 
-                // Format month for date comparison
-                $formattedMonth = strlen($cashbook->month_id) == 1 ? "0{$cashbook->month_id}" : $cashbook->month_id;
+            // Format month for date comparison
+            $formattedMonth = strlen($cashbook->month_id) == 1 ? "0{$cashbook->month_id}" : $cashbook->month_id;
 
-                // Get date range for the month
-                $startDate = "{$cashbook->year}-{$formattedMonth}-01";
-                $endDate = date('Y-m-t', strtotime($startDate));
+            // Get date range for the month
+            $startDate = "{$cashbook->year}-{$formattedMonth}-01";
+            $endDate = date('Y-m-t', strtotime($startDate));
 
-                // 1. Fetch and create entries for receipts
-                $receipts = Receipt::where('account_number', $accountNumber)
-                    ->whereBetween('receipt_date', [$startDate, $endDate])
-                    ->where('status', 'Submitted')
-                    ->get();
+            // 1. Fetch and create entries for receipts
+            $receipts = Receipt::where('account_number', $accountNumber)
+                ->whereBetween('receipt_date', [$startDate, $endDate])
+                ->where('status', 'Submitted')
+                ->get();
 
-                foreach ($receipts as $receipt) {
-                    // Get economic code info from receipt
-                    $economicCode = EconomyCode::where('code', $receipt->eco_code)->first();
-                    $economicCodeItem = EconomyCodeItem::where('code', $receipt->eco_code_item)->first();
+            foreach ($receipts as $receipt) {
+                // Get economic code info from receipt
+                $economicCode = EconomyCode::where('code', $receipt->eco_code)->first();
+                $economicCodeItem = EconomyCodeItem::where('code', $receipt->eco_code_item)->first();
 
-                    // Create description from receipt data
-                    $description = $receipt->activity ?? "Receipt #{$receipt->receipt_number}";
-                    if ($receipt->classification) {
-                        $description = "{$receipt->classification}: ".$description;
-                    }
-
-
-                    // dd($economicCode);
-
-                    CashbookEntry::create([
-                        // Core relationships
-                        'cashbook_id' => $cashbook->id,
-                        'bank_activities_id' => $bankId,
-                        'user_id' => auth()->id(),
-
-                        // Transaction information
-                        'transaction_date' => $receipt->receipt_date,
-                        'description' => $description,
-                        'amount' => $receipt->amount,
-                        'type' => 'receipt',
-
-                        // Reference tracking
-                        'reference_number' => $receipt->receipt_number,
-                        'cheque_number' => null,
-
-                        // Party information
-                        'payer_name' => $receipt->account_name ?? 'N/A',
-                        'payee_name' => null,
-
-                        // Source document tracking
-                        'source_type' => 'receipt',
-                        'source_id' => $receipt->id,
-
-                        // Classification
-                        'category' => $receipt->classification ?? 'Revenue',
-                        'sub_category' => $receipt->eco_code_item ?? $receipt->eco_code,
-
-                        // Payment details
-                        'payment_mode' => 'transfer',
-                        'bank_name' => $receipt->bank_name,
-
-                        // Status
-                        'status' => 'posted',
-                        'is_reconciled' => false,
-                        
-                        // Metadata for additional data
-                        'metadata' => [
-                            'mda_name' => $receipt->mda_name,
-                            'eco_code' => $receipt->eco_code,
-                            'eco_code_item' => $receipt->eco_code_item,
-                            'activity' => $receipt->activity,
-                            'account_number' => $receipt->account_number,
-                            'account_name' => $receipt->account_name,
-                            'receipt_type' => $receipt->classification,
-                            // Economic code information
-                            'economic_code_id' => $receipt->economic_code_id,
-                            'economic_code_name' => $economicCode ? $economicCode->name : null,
-                            'economic_code_code' => $economicCode ? $economicCode->code : null,
-                            'economy_code_item_id' => $receipt->economy_code_item_id,
-                            'economic_code_item_name' => $economicCodeItem ? $economicCodeItem->name : null,
-                            'economic_code_item_code' => $economicCodeItem ? $economicCodeItem->code : null,
-                            'classification' => $receipt->classification,
-                            'sub_classification' => $receipt->sub_classification,
-                            // Bank info
-                            'payer_bank_name' => $receipt->bank_name,
-                            'payer_account_number' => $receipt->account_number,
-                        ],
-
-                        // Remarks
-                        'remarks' => $receipt->activity,
-                    ]);
+                // Create description from receipt data
+                $description = $receipt->activity ?? "Receipt #{$receipt->receipt_number}";
+                if ($receipt->classification) {
+                    $description = "{$receipt->classification}: " . $description;
                 }
 
-                // 2. Fetch and create entries for vouchers (payments)
-                // 2. Fetch and create entries for vouchers (payments)
-                $vouchers = Voucher::where('bank_activity_id', $bankId)
-                    ->where('status', Voucher::STATUS_SUBMITTED)
-                    ->whereBetween('voucher_date', [$startDate, $endDate])
-                    ->with(['items']) // Only load voucher items
-                    ->get();
 
-                foreach ($vouchers as $voucher) {
-                    // Initialize variables
-                    $isBankChargesVoucher = false;
-                    $economicCodeItemId = null;
-                    $economicCodeItemName = null;
-                    $economicCodeItemCode = null;
-                    $economicCodeId = null;
-                    $economicCodeName = null;
-                    $economicCodeCode = null;
+                // dd($economicCode);
 
-                    // Check the first voucher item for economic code information
-                    if ($voucher->items->isNotEmpty()) {
-                        $firstItem = $voucher->items->first();
+                CashbookEntry::create([
+                    // Core relationships
+                    'cashbook_id' => $cashbook->id,
+                    'bank_activities_id' => $bankId,
+                    'user_id' => auth()->id(),
 
-                        // Get economic code item details from economy_code_item_id
-                        if ($firstItem->economy_code_item_id) {
-                            $economicCodeItemId = $firstItem->economy_code_item_id;
+                    // Transaction information
+                    'transaction_date' => $receipt->receipt_date,
+                    'description' => $description,
+                    'amount' => $receipt->amount,
+                    'type' => 'receipt',
 
-                            // Get economic code item details
-                            $economicCodeItem = EconomyCodeItem::find($economicCodeItemId);
-                            if ($economicCodeItem) {
-                                $economicCodeItemName = $economicCodeItem->name;
-                                $economicCodeItemCode = $economicCodeItem->code;
+                    // Reference tracking
+                    'reference_number' => $receipt->receipt_number,
+                    'cheque_number' => null,
 
-                                // Get the parent economic code
-                                $economicCode = $economicCodeItem->economyCode;
-                                if ($economicCode) {
-                                    $economicCodeId = $economicCode->id;
-                                    $economicCodeName = $economicCode->name;
-                                    $economicCodeCode = $economicCode->code;
+                    // Party information
+                    'payer_name' => $receipt->account_name ?? 'N/A',
+                    'payee_name' => null,
 
-                                    // Check if this is bank charges (ID 74 for economic_code, ID 364 for economic_code_item)
-                                    $isBankChargesVoucher = ($economicCodeId == 74 && $economicCodeItemId == 364);
-                                }
+                    // Source document tracking
+                    'source_type' => 'receipt',
+                    'source_id' => $receipt->id,
+
+                    // Classification
+                    'category' => $receipt->classification ?? 'Revenue',
+                    'sub_category' => $receipt->eco_code_item ?? $receipt->eco_code,
+
+                    // Payment details
+                    'payment_mode' => 'transfer',
+                    'bank_name' => $receipt->bank_name,
+
+                    // Status
+                    'status' => 'posted',
+                    'is_reconciled' => false,
+
+                    // Metadata for additional data
+                    'metadata' => [
+                        'mda_name' => $receipt->mda_name,
+                        'eco_code' => $receipt->eco_code,
+                        'eco_code_item' => $receipt->eco_code_item,
+                        'activity' => $receipt->activity,
+                        'account_number' => $receipt->account_number,
+                        'account_name' => $receipt->account_name,
+                        'receipt_type' => $receipt->classification,
+                        // Economic code information
+                        'economic_code_id' => $receipt->economic_code_id,
+                        'economic_code_name' => $economicCode ? $economicCode->name : null,
+                        'economic_code_code' => $economicCode ? $economicCode->code : null,
+                        'economy_code_item_id' => $receipt->economy_code_item_id,
+                        'economic_code_item_name' => $economicCodeItem ? $economicCodeItem->name : null,
+                        'economic_code_item_code' => $economicCodeItem ? $economicCodeItem->code : null,
+                        'classification' => $receipt->classification,
+                        'sub_classification' => $receipt->sub_classification,
+                        // Bank info
+                        'payer_bank_name' => $receipt->bank_name,
+                        'payer_account_number' => $receipt->account_number,
+                    ],
+
+                    // Remarks
+                    'remarks' => $receipt->activity,
+                ]);
+            }
+
+            // 2. Fetch and create entries for vouchers (payments)
+            // 2. Fetch and create entries for vouchers (payments)
+            $vouchers = Voucher::where('bank_activity_id', $bankId)
+                ->where(function ($query) {
+                    $query->where('status', Voucher::STATUS_SUBMITTED)->orWhere('status', Voucher::ACTION_APPROVED);
+                })
+                // ->where('status', Voucher::STATUS_SUBMITTED)
+                // ->orWhere('status', Voucher::ACTION_APPROVED)
+                ->whereBetween('voucher_date', [$startDate, $endDate])
+                ->with(['items']) // Only load voucher items
+                ->get();
+
+            foreach ($vouchers as $voucher) {
+                // Initialize variables
+                $isBankChargesVoucher = false;
+                $economicCodeItemId = null;
+                $economicCodeItemName = null;
+                $economicCodeItemCode = null;
+                $economicCodeId = null;
+                $economicCodeName = null;
+                $economicCodeCode = null;
+
+                // Check the first voucher item for economic code information
+                if ($voucher->items->isNotEmpty()) {
+                    $firstItem = $voucher->items->first();
+
+                    // Get economic code item details from economy_code_item_id
+                    if ($firstItem->economy_code_item_id) {
+                        $economicCodeItemId = $firstItem->economy_code_item_id;
+
+                        // Get economic code item details
+                        $economicCodeItem = EconomyCodeItem::find($economicCodeItemId);
+                        if ($economicCodeItem) {
+                            $economicCodeItemName = $economicCodeItem->name;
+                            $economicCodeItemCode = $economicCodeItem->code;
+
+                            // Get the parent economic code
+                            $economicCode = $economicCodeItem->economyCode;
+                            if ($economicCode) {
+                                $economicCodeId = $economicCode->id;
+                                $economicCodeName = $economicCode->name;
+                                $economicCodeCode = $economicCode->code;
+
+                                // Check if this is bank charges (ID 74 for economic_code, ID 364 for economic_code_item)
+                                $isBankChargesVoucher = ($economicCodeId == 74 && $economicCodeItemId == 364);
                             }
                         }
                     }
-
-                    // Create description
-                    $description = $voucher->narration ?? "Voucher #{$voucher->voucher_number}";
-                    if ($isBankChargesVoucher) {
-                        $description = 'Bank Charges: '.$description;
-                    }
-
-                    CashbookEntry::create([
-                        // Core relationships
-                        'cashbook_id' => $cashbook->id,
-                        'bank_activities_id' => $bankId,
-                        'user_id' => auth()->id(),
-
-                        // Transaction information
-                        'transaction_date' => $voucher->voucher_date,
-                        'description' => $description,
-                        'amount' => $voucher->total_amount,
-                        'type' => 'payment',
-
-                        // Reference tracking
-                        'reference_number' => $voucher->voucher_number,
-                        'cheque_number' => $voucher->cheque_number ?? null,
-
-                        // Party information
-                        'payer_name' => null,
-                        'payee_name' => $voucher->payee_name ?? 'N/A',
-
-                        // Source document tracking
-                        'source_type' => 'voucher',
-                        'source_id' => $voucher->id,
-
-                        // Classification
-                        'category' => $isBankChargesVoucher ? 'Bank Charges' : 'Expense',
-                        'sub_category' => $voucher->voucher_type,
-
-                        // Payment details
-                        'payment_mode' => $voucher->payment_mode ?? 'cheque',
-                        'bank_name' => $voucher->bankActivity->bank_name ?? null,
-
-                        // Status
-                        'status' => 'posted',
-                        'is_reconciled' => false,
-
-                        // Metadata for additional data
-                        'metadata' => [
-                            'voucher_type' => $voucher->voucher_type,
-                            'mda_id' => $voucher->mda_id,
-                            'year_id' => $voucher->year_id,
-                            'schedule_id' => $voucher->schedule_id,
-                            'current_stage' => $voucher->current_stage,
-                            'requires_retirement' => $voucher->requires_retirement,
-                            'retired_at' => $voucher->retired_at,
-                            'retirement_voucher_id' => $voucher->retirement_voucher_id,
-                            // Economic code information
-                            'economic_code_id' => $economicCodeId,
-                            'economic_code_name' => $economicCodeName,
-                            'economic_code_code' => $economicCodeCode,
-                            'economic_code_item_id' => $economicCodeItemId,
-                            'economic_code_item_name' => $economicCodeItemName,
-                            'economic_code_item_code' => $economicCodeItemCode,
-                            // Bank charges flag
-                            'is_bank_charges' => $isBankChargesVoucher,
-                            'classification' => $voucher->classification ?? ($isBankChargesVoucher ? 'Bank Charges' : 'Expense'),
-                            'sub_classification' => $voucher->sub_classification ?? $voucher->voucher_type,
-                            // Bank info
-                            'bank_account_number' => $voucher->bankActivity ? $voucher->bankActivity->account_number : null,
-                            'bank_name' => $voucher->bankActivity ? $voucher->bankActivity->bank_name : null,
-                        ],
-
-                        // Remarks
-                        'remarks' => $voucher->narration,
-                    ]);
                 }
 
-                // 3. Fetch and create entries for remittances
-                // Remittances where this bank is the destination (credit side - money coming in)
-                $incomingRemittances = Remittance::where('destination_bank_id', $currentBankActivityId)
-                    ->whereBetween('transfer_date', [$startDate, $endDate])
-                    ->where('status', 'Submitted')
-                    ->with(['sourceBank', 'destinationBank'])
-                    ->get();
-
-                foreach ($incomingRemittances as $remittance) {
-                    // Get economic code info from remittance
-                    $economicCode = null;
-                    $economicCodeItem = null;
-
-                    // Try to find economic code item by destination account number
-                    if ($remittance->destinationBank && $remittance->destinationBank->account_number) {
-                        $accountNumber = $remittance->destinationBank->account_number;
-
-                        // Look for economic code item where name contains the account number
-                        $economicCodeItem = EconomyCodeItem::where('name', 'LIKE', "%{$accountNumber}%")->first();
-
-                        if (isset($economicCodeItem)) {
-                            // dd('A1');
-                            // Get the parent economic code
-                            $economicCode = $economicCodeItem->economyCode;
-                            $economicCode->status = 'inactive';
-                            $economicCode->update();
-                        }
-                    }
-
-                    // Create description for incoming remittance
-                    $description = $remittance->narration ?? "Remittance #{$remittance->receipt_number} (Incoming)";
-
-                    CashbookEntry::create([
-                        // Core relationships
-                        'cashbook_id' => $cashbook->id,
-                        'bank_activities_id' => $currentBankActivityId,
-                        'user_id' => auth()->id(),
-
-                        // Transaction information
-                        'transaction_date' => $remittance->transfer_date,
-                        'description' => $description,
-                        'amount' => $remittance->amount,
-                        'type' => 'receipt',
-
-                        // Reference tracking
-                        'reference_number' => $remittance->receipt_number,
-                        'cheque_number' => null,
-
-                        // Party information
-                        'payer_name' => $remittance->sourceBank->bank_name ?? 'Source Bank',
-                        'payee_name' => null,
-
-                        // Source document tracking
-                        'source_type' => 'remittance',
-                        'source_id' => $remittance->id,
-
-                        // Classification
-                        'category' => $remittance->classification ?? 'Transfer',
-                        'sub_category' => $remittance->sub_classification ?? 'Interbank Transfer',
-
-                        // Payment details
-                        'payment_mode' => 'transfer',
-                        'bank_name' => $remittance->sourceBank->bank_name ?? null,
-
-                        // Status
-                        'status' => 'posted',
-                        'is_reconciled' => false,
-
-                        // Metadata for additional data
-                        'metadata' => [
-                            'remittance_type' => 'incoming',
-                            'source_bank_id' => $remittance->source_bank_id,
-                            'destination_bank_id' => $remittance->destination_bank_id,
-                            'receipt_number' => $remittance->receipt_number,
-                            'transfer_date' => $remittance->transfer_date,
-                            // Economic code information
-                            'economic_code_id' => $economicCode ? $economicCode->id : null,
-                            'economic_code_name' => $economicCode ? $economicCode->name : null,
-                            'economic_code_code' => $economicCode ? $economicCode->code : null,
-                            'economy_code_item_id' => $economicCodeItem ? $economicCodeItem->id : null,
-                            'economic_code_item_name' => $economicCodeItem ? $economicCodeItem->name : null,
-                            'economic_code_item_code' => $economicCodeItem ? $economicCodeItem->code : null,
-                            'classification' => $remittance->classification,
-                            'sub_classification' => $remittance->sub_classification,
-                            // Source bank info
-                            'source_bank_account_number' => $remittance->sourceBank ? $remittance->sourceBank->account_number : null,
-                            'source_bank_name' => $remittance->sourceBank ? $remittance->sourceBank->bank_name : null,
-                            // Destination bank info
-                            'destination_bank_account_number' => $remittance->destinationBank ? $remittance->destinationBank->account_number : null,
-                            'destination_bank_name' => $remittance->destinationBank ? $remittance->destinationBank->bank_name : null,
-                            // Account number used for lookup
-                            'lookup_account_number' => $accountNumber ?? null,
-                        ],
-
-                        // Remarks
-                        'remarks' => $remittance->narration ?? 'Interbank remittance received',
-                    ]);
+                // Create description
+                $description = $voucher->narration ?? "Voucher #{$voucher->voucher_number}";
+                if ($isBankChargesVoucher) {
+                    $description = 'Bank Charges: ' . $description;
                 }
 
-                // Remittances where this bank is the source (debit side - money going out)
-                $outgoingRemittances = Remittance::where('source_bank_id', $currentBankActivityId)
-                    ->whereBetween('transfer_date', [$startDate, $endDate])
-                    ->where('status', 'Submitted')
-                    ->with(['sourceBank', 'destinationBank'])
-                    ->get();
+                CashbookEntry::create([
+                    // Core relationships
+                    'cashbook_id' => $cashbook->id,
+                    'bank_activities_id' => $bankId,
+                    'user_id' => auth()->id(),
 
-                foreach ($outgoingRemittances as $remittance) {
-                    // Get economic code info from remittance
-                    $economicCode = null;
-                    $economicCodeItem = null;
+                    // Transaction information
+                    'transaction_date' => $voucher->voucher_date,
+                    'description' => $description,
+                    'amount' => $voucher->total_amount,
+                    'type' => 'payment',
 
-                    // Try to find economic code item by source account number
-                    if ($remittance->sourceBank && $remittance->sourceBank->account_number) {
-                        $accountNumber = $remittance->sourceBank->account_number;
+                    // Reference tracking
+                    'reference_number' => $voucher->voucher_number,
+                    'cheque_number' => $voucher->cheque_number ?? null,
 
-                        // Look for economic code item where name contains the account number
-                        $economicCodeItem = EconomyCodeItem::where('name', 'LIKE', "%{$accountNumber}%")->first();
+                    // Party information
+                    'payer_name' => null,
+                    'payee_name' => $voucher->payee_name ?? 'N/A',
 
-                        if (isset($economicCodeItem)) {
-                            // dd('A2');
-                            // Get the parent economic code
-                            $economicCode = $economicCodeItem->economyCode;
-                            $economicCode->status = 'inactive';
-                            $economicCode->update();
-                        }
+                    // Source document tracking
+                    'source_type' => 'voucher',
+                    'source_id' => $voucher->id,
+
+                    // Classification
+                    'category' => $isBankChargesVoucher ? 'Bank Charges' : 'Expense',
+                    'sub_category' => $voucher->voucher_type,
+
+                    // Payment details
+                    'payment_mode' => $voucher->payment_mode ?? 'cheque',
+                    'bank_name' => $voucher->bankActivity->bank_name ?? null,
+
+                    // Status
+                    'status' => 'posted',
+                    'is_reconciled' => false,
+
+                    // Metadata for additional data
+                    'metadata' => [
+                        'voucher_type' => $voucher->voucher_type,
+                        'mda_id' => $voucher->mda_id,
+                        'year_id' => $voucher->year_id,
+                        'schedule_id' => $voucher->schedule_id,
+                        'current_stage' => $voucher->current_stage,
+                        'requires_retirement' => $voucher->requires_retirement,
+                        'retired_at' => $voucher->retired_at,
+                        'retirement_voucher_id' => $voucher->retirement_voucher_id,
+                        // Economic code information
+                        'economic_code_id' => $economicCodeId,
+                        'economic_code_name' => $economicCodeName,
+                        'economic_code_code' => $economicCodeCode,
+                        'economic_code_item_id' => $economicCodeItemId,
+                        'economic_code_item_name' => $economicCodeItemName,
+                        'economic_code_item_code' => $economicCodeItemCode,
+                        // Bank charges flag
+                        'is_bank_charges' => $isBankChargesVoucher,
+                        'classification' => $voucher->classification ?? ($isBankChargesVoucher ? 'Bank Charges' : 'Expense'),
+                        'sub_classification' => $voucher->sub_classification ?? $voucher->voucher_type,
+                        // Bank info
+                        'bank_account_number' => $voucher->bankActivity ? $voucher->bankActivity->account_number : null,
+                        'bank_name' => $voucher->bankActivity ? $voucher->bankActivity->bank_name : null,
+                    ],
+
+                    // Remarks
+                    'remarks' => $voucher->narration,
+                ]);
+            }
+
+            // 3. Fetch and create entries for remittances
+            // Remittances where this bank is the destination (credit side - money coming in)
+            $incomingRemittances = Remittance::where('destination_bank_id', $currentBankActivityId)
+                ->whereBetween('transfer_date', [$startDate, $endDate])
+                ->where('status', 'Submitted')
+                ->with(['sourceBank', 'destinationBank'])
+                ->get();
+
+            foreach ($incomingRemittances as $remittance) {
+                // Get economic code info from remittance
+                $economicCode = null;
+                $economicCodeItem = null;
+
+                // Try to find economic code item by destination account number
+                if ($remittance->destinationBank && $remittance->destinationBank->account_number) {
+                    $accountNumber = $remittance->destinationBank->account_number;
+
+                    // Look for economic code item where name contains the account number
+                    $economicCodeItem = EconomyCodeItem::where('name', 'LIKE', "%{$accountNumber}%")->first();
+
+                    if (isset($economicCodeItem)) {
+                        // dd('A1');
+                        // Get the parent economic code
+                        $economicCode = $economicCodeItem->economyCode;
+                        $economicCode->status = 'inactive';
+                        $economicCode->update();
                     }
-
-                    // Create description for outgoing remittance
-                    $description = $remittance->narration ?? "Remittance #{$remittance->receipt_number} (Outgoing)";
-
-                    CashbookEntry::create([
-                        // Core relationships
-                        'cashbook_id' => $cashbook->id,
-                        'bank_activities_id' => $currentBankActivityId,
-                        'user_id' => auth()->id(),
-
-                        // Transaction information
-                        'transaction_date' => $remittance->transfer_date,
-                        'description' => $description,
-                        'amount' => $remittance->amount,
-                        'type' => 'payment',
-
-                        // Reference tracking
-                        'reference_number' => $remittance->receipt_number,
-                        'cheque_number' => null,
-
-                        // Party information
-                        'payer_name' => null,
-                        'payee_name' => $remittance->destinationBank->bank_name ?? 'Destination Bank',
-
-                        // Source document tracking
-                        'source_type' => 'remittance',
-                        'source_id' => $remittance->id,
-
-                        // Classification
-                        'category' => $remittance->classification ?? 'Transfer',
-                        'sub_category' => $remittance->sub_classification ?? 'Interbank Transfer',
-
-                        // Payment details
-                        'payment_mode' => 'transfer',
-                        'bank_name' => $remittance->destinationBank->bank_name ?? null,
-
-                        // Status
-                        'status' => 'posted',
-                        'is_reconciled' => false,
-
-                        // Metadata for additional data
-                        'metadata' => [
-                            'remittance_type' => 'outgoing',
-                            'source_bank_id' => $remittance->source_bank_id,
-                            'destination_bank_id' => $remittance->destination_bank_id,
-                            'receipt_number' => $remittance->receipt_number,
-                            'transfer_date' => $remittance->transfer_date,
-                            // Economic code information
-                            'economic_code_id' => $economicCode ? $economicCode->id : null,
-                            'economic_code_name' => $economicCode ? $economicCode->name : null,
-                            'economic_code_code' => $economicCode ? $economicCode->code : null,
-                            'economy_code_item_id' => $economicCodeItem ? $economicCodeItem->id : null,
-                            'economic_code_item_name' => $economicCodeItem ? $economicCodeItem->name : null,
-                            'economic_code_item_code' => $economicCodeItem ? $economicCodeItem->code : null,
-                            'classification' => $remittance->classification,
-                            'sub_classification' => $remittance->sub_classification,
-                            // Source bank info
-                            'source_bank_account_number' => $remittance->sourceBank ? $remittance->sourceBank->account_number : null,
-                            'source_bank_name' => $remittance->sourceBank ? $remittance->sourceBank->bank_name : null,
-                            // Destination bank info
-                            'destination_bank_account_number' => $remittance->destinationBank ? $remittance->destinationBank->account_number : null,
-                            'destination_bank_name' => $remittance->destinationBank ? $remittance->destinationBank->bank_name : null,
-                            // Account number used for lookup
-                            'lookup_account_number' => $accountNumber ?? null,
-                        ],
-
-                        // Remarks
-                        'remarks' => $remittance->narration ?? 'Interbank remittance sent',
-                    ]);
                 }
 
-                // 4. Recalculate cashbook totals
-                $totalReceipts = $cashbook->entries()->where('type', 'receipt')->sum('amount');
-                $totalPayments = $cashbook->entries()->where('type', 'payment')->sum('amount');
+                // Create description for incoming remittance
+                $description = $remittance->narration ?? "Remittance #{$remittance->receipt_number} (Incoming)";
 
-                // Use the new method to update balances and carry forward
-                $balances = $this->updateCashbookBalances($cashbook, $totalReceipts, $totalPayments);
-            });
+                CashbookEntry::create([
+                    // Core relationships
+                    'cashbook_id' => $cashbook->id,
+                    'bank_activities_id' => $currentBankActivityId,
+                    'user_id' => auth()->id(),
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Cashbook entries generated successfully',
-                'entries_count' => $cashbook->entries()->count(),
-                'receipts_count' => $cashbook->entries()->where('type', 'receipt')->count(),
-                'payments_count' => $cashbook->entries()->where('type', 'payment')->count(),
-                'remittances_incoming_count' => $cashbook->entries()
-                    ->where('source_type', 'remittance')
-                    ->where('type', 'receipt')
-                    ->count(),
-                'remittances_outgoing_count' => $cashbook->entries()
-                    ->where('source_type', 'remittance')
-                    ->where('type', 'payment')
-                    ->count(),
-            ]);
+                    // Transaction information
+                    'transaction_date' => $remittance->transfer_date,
+                    'description' => $description,
+                    'amount' => $remittance->amount,
+                    'type' => 'receipt',
+
+                    // Reference tracking
+                    'reference_number' => $remittance->receipt_number,
+                    'cheque_number' => null,
+
+                    // Party information
+                    'payer_name' => $remittance->sourceBank->bank_name ?? 'Source Bank',
+                    'payee_name' => null,
+
+                    // Source document tracking
+                    'source_type' => 'remittance',
+                    'source_id' => $remittance->id,
+
+                    // Classification
+                    'category' => $remittance->classification ?? 'Transfer',
+                    'sub_category' => $remittance->sub_classification ?? 'Interbank Transfer',
+
+                    // Payment details
+                    'payment_mode' => 'transfer',
+                    'bank_name' => $remittance->sourceBank->bank_name ?? null,
+
+                    // Status
+                    'status' => 'posted',
+                    'is_reconciled' => false,
+
+                    // Metadata for additional data
+                    'metadata' => [
+                        'remittance_type' => 'incoming',
+                        'source_bank_id' => $remittance->source_bank_id,
+                        'destination_bank_id' => $remittance->destination_bank_id,
+                        'receipt_number' => $remittance->receipt_number,
+                        'transfer_date' => $remittance->transfer_date,
+                        // Economic code information
+                        'economic_code_id' => $economicCode ? $economicCode->id : null,
+                        'economic_code_name' => $economicCode ? $economicCode->name : null,
+                        'economic_code_code' => $economicCode ? $economicCode->code : null,
+                        'economy_code_item_id' => $economicCodeItem ? $economicCodeItem->id : null,
+                        'economic_code_item_name' => $economicCodeItem ? $economicCodeItem->name : null,
+                        'economic_code_item_code' => $economicCodeItem ? $economicCodeItem->code : null,
+                        'classification' => $remittance->classification,
+                        'sub_classification' => $remittance->sub_classification,
+                        // Source bank info
+                        'source_bank_account_number' => $remittance->sourceBank ? $remittance->sourceBank->account_number : null,
+                        'source_bank_name' => $remittance->sourceBank ? $remittance->sourceBank->bank_name : null,
+                        // Destination bank info
+                        'destination_bank_account_number' => $remittance->destinationBank ? $remittance->destinationBank->account_number : null,
+                        'destination_bank_name' => $remittance->destinationBank ? $remittance->destinationBank->bank_name : null,
+                        // Account number used for lookup
+                        'lookup_account_number' => $accountNumber ?? null,
+                    ],
+
+                    // Remarks
+                    'remarks' => $remittance->narration ?? 'Interbank remittance received',
+                ]);
+            }
+
+            // Remittances where this bank is the source (debit side - money going out)
+            $outgoingRemittances = Remittance::where('source_bank_id', $currentBankActivityId)
+                ->whereBetween('transfer_date', [$startDate, $endDate])
+                ->where('status', 'Submitted')
+                ->with(['sourceBank', 'destinationBank'])
+                ->get();
+
+            foreach ($outgoingRemittances as $remittance) {
+                // Get economic code info from remittance
+                $economicCode = null;
+                $economicCodeItem = null;
+
+                // Try to find economic code item by source account number
+                if ($remittance->sourceBank && $remittance->sourceBank->account_number) {
+                    $accountNumber = $remittance->sourceBank->account_number;
+
+                    // Look for economic code item where name contains the account number
+                    $economicCodeItem = EconomyCodeItem::where('name', 'LIKE', "%{$accountNumber}%")->first();
+
+                    if (isset($economicCodeItem)) {
+                        // dd('A2');
+                        // Get the parent economic code
+                        $economicCode = $economicCodeItem->economyCode;
+                        $economicCode->status = 'inactive';
+                        $economicCode->update();
+                    }
+                }
+
+                // Create description for outgoing remittance
+                $description = $remittance->narration ?? "Remittance #{$remittance->receipt_number} (Outgoing)";
+
+                CashbookEntry::create([
+                    // Core relationships
+                    'cashbook_id' => $cashbook->id,
+                    'bank_activities_id' => $currentBankActivityId,
+                    'user_id' => auth()->id(),
+
+                    // Transaction information
+                    'transaction_date' => $remittance->transfer_date,
+                    'description' => $description,
+                    'amount' => $remittance->amount,
+                    'type' => 'payment',
+
+                    // Reference tracking
+                    'reference_number' => $remittance->receipt_number,
+                    'cheque_number' => null,
+
+                    // Party information
+                    'payer_name' => null,
+                    'payee_name' => $remittance->destinationBank->bank_name ?? 'Destination Bank',
+
+                    // Source document tracking
+                    'source_type' => 'remittance',
+                    'source_id' => $remittance->id,
+
+                    // Classification
+                    'category' => $remittance->classification ?? 'Transfer',
+                    'sub_category' => $remittance->sub_classification ?? 'Interbank Transfer',
+
+                    // Payment details
+                    'payment_mode' => 'transfer',
+                    'bank_name' => $remittance->destinationBank->bank_name ?? null,
+
+                    // Status
+                    'status' => 'posted',
+                    'is_reconciled' => false,
+
+                    // Metadata for additional data
+                    'metadata' => [
+                        'remittance_type' => 'outgoing',
+                        'source_bank_id' => $remittance->source_bank_id,
+                        'destination_bank_id' => $remittance->destination_bank_id,
+                        'receipt_number' => $remittance->receipt_number,
+                        'transfer_date' => $remittance->transfer_date,
+                        // Economic code information
+                        'economic_code_id' => $economicCode ? $economicCode->id : null,
+                        'economic_code_name' => $economicCode ? $economicCode->name : null,
+                        'economic_code_code' => $economicCode ? $economicCode->code : null,
+                        'economy_code_item_id' => $economicCodeItem ? $economicCodeItem->id : null,
+                        'economic_code_item_name' => $economicCodeItem ? $economicCodeItem->name : null,
+                        'economic_code_item_code' => $economicCodeItem ? $economicCodeItem->code : null,
+                        'classification' => $remittance->classification,
+                        'sub_classification' => $remittance->sub_classification,
+                        // Source bank info
+                        'source_bank_account_number' => $remittance->sourceBank ? $remittance->sourceBank->account_number : null,
+                        'source_bank_name' => $remittance->sourceBank ? $remittance->sourceBank->bank_name : null,
+                        // Destination bank info
+                        'destination_bank_account_number' => $remittance->destinationBank ? $remittance->destinationBank->account_number : null,
+                        'destination_bank_name' => $remittance->destinationBank ? $remittance->destinationBank->bank_name : null,
+                        // Account number used for lookup
+                        'lookup_account_number' => $accountNumber ?? null,
+                    ],
+
+                    // Remarks
+                    'remarks' => $remittance->narration ?? 'Interbank remittance sent',
+                ]);
+            }
+
+
+
+
+
+
+            $economicCode = $cashbook->bankAccount->economic_code;
+
+            $startDate = "{$cashbook->year}/{$cashbook->month_id}/01";
+            $endDate = "{$cashbook->year}/{$cashbook->month_id}/31";
+            $journalEntries = JournalEntry::where('account_code', $economicCode)
+                ->whereHas('journal', function ($journal) use ($startDate, $endDate) {
+                    $journal->where('status', 'approved')
+                        ->whereBetween('journal_date', [$startDate, $endDate]);
+                })->get();
+            // $journals = Journal::whereIn('id', $journalIds)->whereBetween('journal_date', [$startDate, $endDate])->where('status', 'approved')->get();
+
+            $journalCredits = 0.00;
+            $journalDebits = 0.00;
+            // if ($journalEntries->isNotEmpty()) {
+            //     dd($economicCode, $journalEntries);
+            // }
+            foreach ($journalEntries as $journalEntry) {
+
+
+                // Create description for outgoing remittance
+                $description = $journalEntry->description;
+
+                CashbookEntry::create([
+                    // Core relationships
+                    'cashbook_id' => $cashbook->id,
+                    'bank_activities_id' => $currentBankActivityId,
+                    'user_id' => auth()->id(),
+
+                    // Transaction information
+                    'transaction_date' => $journalEntry->journal->journal_date,
+                    'description' => $description,
+                    'amount' => floatVal($journalEntry->credit_amount) > 0 ? $journalEntry->credit_amount : $journalEntry->debit_amount,
+                    'type' => floatVal($journalEntry->credit_amount) > 0 ? 'payment' : 'receipt',
+
+                    // Reference tracking
+                    'reference_number' => $journalEntry->journal->journal_number,
+                    'cheque_number' => null,
+
+                    // Party information
+                    'payer_name' => 'Journal '  . $journalEntry->journal->journal_type,
+                    'payee_name' => 'Journal',
+
+                    // Source document tracking
+                    'source_type' => 'journal ' .  $journalEntry->journal->journal_type,
+                    'source_id' => $journalEntry->id,
+
+                    // Classification
+                    'category' => $remittance->classification ?? 'Transfer',
+                    'sub_category' => $remittance->sub_classification ?? 'Interbank Transfer',
+
+                    // Payment details
+                    'payment_mode' => 'transfer', // $journalEntry->journal->journal_type,
+                    'bank_name' => BankActivity::where('id', $currentBankActivityId)->first()?->bank_name ?? null,
+
+                    // Status
+                    'status' => 'posted',
+                    'is_reconciled' => false,
+
+                    // Metadata for additional data
+                    'metadata' => [
+                        'journal_type' => floatVal($journalEntry->credit_amount) > 0 ? 'outflow' : 'inflow',
+                        'journal_id' => $journalEntry->journal->journal_number,
+                        'destination_bank_id' => BankActivity::where('id', $currentBankActivityId)->first()?->id,
+                        'journal_number' => $journalEntry->journal->journal_number,
+                        'journal_type' => $journalEntry->journal->journal_type,
+                        'journal_date' => $journalEntry->journal->journal_date,
+                        'journal_entry_id' => $journalEntry->id,
+                        'journal_entry_credit' => $journalEntry->credit_amount,
+                        'journal_entry_debit' => $journalEntry->debit_amount,
+                        'journal_entry_description' => $journalEntry->description,
+                        'journal_entry_economic_code' => $journalEntry->account_code,
+                        'journal_entry_line_number' => $journalEntry->line_number,
+
+
+                    ],
+
+                    // Remarks
+                    'remarks' => $journalEntry->journal->remarks ?? 'Journal operation',
+                ]);
+            }
+
+
+
+
+
+
+            // 4. Recalculate cashbook totals
+            $totalReceipts = $cashbook->entries()->where('type', 'receipt')->sum('amount');
+            $totalPayments = $cashbook->entries()->where('type', 'payment')->sum('amount');
+
+            // Use the new method to update balances and carry forward
+            $balances = $this->updateCashbookBalances($cashbook, $totalReceipts, $totalPayments);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Cashbook entries generated successfully',
+            'entries_count' => $cashbook->entries()->count(),
+            'receipts_count' => $cashbook->entries()->where('type', 'receipt')->count(),
+            'payments_count' => $cashbook->entries()->where('type', 'payment')->count(),
+            'remittances_incoming_count' => $cashbook->entries()
+                ->where('source_type', 'remittance')
+                ->where('type', 'receipt')
+                ->count(),
+            'remittances_outgoing_count' => $cashbook->entries()
+                ->where('source_type', 'remittance')
+                ->where('type', 'payment')
+                ->count(),
+        ]);
 
         // } catch (\Exception $e) {
         //     return response()->json([
@@ -807,9 +904,18 @@ class CashbookController extends Controller
 
             // Get month name
             $monthNames = [
-                1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
-                5 => 'May', 6 => 'June', 7 => 'July', 8 => 'August',
-                9 => 'September', 10 => 'October', 11 => 'November', 12 => 'December',
+                1 => 'January',
+                2 => 'February',
+                3 => 'March',
+                4 => 'April',
+                5 => 'May',
+                6 => 'June',
+                7 => 'July',
+                8 => 'August',
+                9 => 'September',
+                10 => 'October',
+                11 => 'November',
+                12 => 'December',
             ];
             $monthName = $monthNames[$month_id] ?? 'Unknown';
 
@@ -824,7 +930,7 @@ class CashbookController extends Controller
                 ->orderBy('created_at')
                 ->get();
 
-                // dd($entries);
+            // dd($entries);
 
             // Format receipts for the view - EXACT field names as Vue expects
             $receiptsArray = [];
@@ -889,7 +995,6 @@ class CashbookController extends Controller
                 'receipts' => $receiptsArray,
                 'payments' => $paymentsArray,
             ]);
-
         } catch (\Exception $e) {
             \Log::error('Cashbook GenerateTransaction Error:', [
                 'error' => $e->getMessage(),
@@ -1031,7 +1136,7 @@ class CashbookController extends Controller
             // Get all active bank accounts for this financial year
             $bankAccounts = BankActivity::where('status', 1)->get();
 
-            
+
 
             \Log::info('Found bank accounts for batch:', [
                 'bank_accounts_count' => $bankAccounts->count(),
@@ -1058,7 +1163,7 @@ class CashbookController extends Controller
                                 'bank_account_id' => $bankAccount->id,
                                 'bank_account_name' => $bankAccount->title,
                                 'success' => false,
-                                'message' => 'Cashbook not found for this month and account',
+                                'message' => 'Cashbook not found for this month and account. Bank Activity ID: ' . $bankAccount->id . ' Title: ' . $bankAccount->title,
                                 'entries_count' => 0,
                             ];
                             $failureCount++;
@@ -1114,10 +1219,9 @@ class CashbookController extends Controller
                 ],
                 'results' => $results,
             ]);
-
         } catch (\Exception $e) {
 
-        // dd($e);
+            // dd($e);
             \Log::error('Batch generation failed:', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -1126,7 +1230,7 @@ class CashbookController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to generate batch entries: '.$e->getMessage(),
+                'message' => 'Failed to generate batch entries: ' . $e->getMessage(),
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ], 500);
@@ -1484,11 +1588,11 @@ class CashbookController extends Controller
                 // Get economic code info from receipt
                 $economicCode = EconomyCode::where('code', $receipt->eco_code)->first();
                 $economicCodeItem = EconomyCodeItem::where('code', $receipt->eco_code_item)->first();
-            
+
                 // Create description from receipt data
                 $description = $receipt->activity ?? "Receipt #{$receipt->receipt_number}";
                 if ($receipt->classification) {
-                    $description = "{$receipt->classification}: ".$description;
+                    $description = "{$receipt->classification}: " . $description;
                 }
 
                 // dd($economicCode);
@@ -1607,7 +1711,7 @@ class CashbookController extends Controller
                 // Create description
                 $description = $voucher->narration ?? "Voucher #{$voucher->voucher_number}";
                 if ($isBankChargesVoucher) {
-                    $description = 'Bank Charges: '.$description;
+                    $description = 'Bank Charges: ' . $description;
                 }
 
                 CashbookEntry::create([
@@ -1686,10 +1790,10 @@ class CashbookController extends Controller
                 ->with(['sourceBank', 'destinationBank'])
                 ->get();
 
-                // if ($cashbook->bank_activities_id == 173) {
-                //     dd( $startDate, $endDate, $incomingRemittances);
-                // }
-            
+            // if ($cashbook->bank_activities_id == 173) {
+            //     dd( $startDate, $endDate, $incomingRemittances);
+            // }
+
             foreach ($incomingRemittances as $remittance) {
                 // Get economic code info from remittance
                 $economicCode = null;
@@ -1880,6 +1984,92 @@ class CashbookController extends Controller
                 ]);
             }
 
+            $economicCode = $cashbook->bankAccount->economic_code;
+
+            $startDate = "{$cashbook->year}/{$cashbook->month_id}/01";
+            $endDate = "{$cashbook->year}/{$cashbook->month_id}/31";
+            $journalEntries = JournalEntry::where('account_code', $economicCode)
+                ->whereHas('journal', function ($journal) use ($startDate, $endDate) {
+                    $journal->where('status', 'approved')
+                        ->whereBetween('journal_date', [$startDate, $endDate]);
+                })->get();
+            // $journals = Journal::whereIn('id', $journalIds)->whereBetween('journal_date', [$startDate, $endDate])->where('status', 'approved')->get();
+
+            $journalCredits = 0.00;
+            $journalDebits = 0.00;
+            // if ($journalEntries->isNotEmpty()) {
+            //     dd($economicCode, $journalEntries);
+            // }
+            foreach ($journalEntries as $journalEntry) {
+
+
+                // Create description for outgoing remittance
+                $description = $journalEntry->description;
+
+                CashbookEntry::create([
+                    // Core relationships
+                    'cashbook_id' => $cashbook->id,
+                    'bank_activities_id' => $currentBankActivityId,
+                    'user_id' => auth()->id(),
+
+                    // Transaction information
+                    'transaction_date' => $journalEntry->journal->journal_date,
+                    'description' => $description,
+                    'amount' => floatVal($journalEntry->credit_amount) > 0 ? $journalEntry->credit_amount : $journalEntry->debit_amount,
+                    'type' => floatVal($journalEntry->credit_amount) > 0 ? 'payment' : 'receipt',
+
+                    // Reference tracking
+                    'reference_number' => $journalEntry->journal->journal_number,
+                    'cheque_number' => null,
+
+                    // Party information
+                    'payer_name' => 'Journal ' . $journalEntry->journal->journal_type,
+                    'payee_name' => 'Journal',
+
+                    // Source document tracking
+                    'source_type' => 'journal ' .  $journalEntry->journal->journal_type,
+                    'source_id' => $journalEntry->id,
+
+                    // Classification
+                    'category' => $remittance->classification ?? 'Transfer',
+                    'sub_category' => $remittance->sub_classification ?? 'Interbank Transfer',
+
+                    // Payment details
+                    'payment_mode' => 'transfer', // $journalEntry->journal->journal_type,
+                    'bank_name' => BankActivity::where('id', $currentBankActivityId)->first()?->bank_name ?? null,
+
+                    // Status
+                    'status' => 'posted',
+                    'is_reconciled' => false,
+
+                    // Metadata for additional data
+                    'metadata' => [
+                        'journal_type' => floatVal($journalEntry->credit_amount) > 0 ? 'outflow' : 'inflow',
+                        'journal_id' => $journalEntry->journal->journal_number,
+                        'destination_bank_id' => BankActivity::where('id', $currentBankActivityId)->first()?->id,
+                        'journal_number' => $journalEntry->journal->journal_number,
+                        'journal_type' => $journalEntry->journal->journal_type,
+                        'journal_date' => $journalEntry->journal->journal_date,
+                        'journal_entry_id' => $journalEntry->id,
+                        'journal_entry_credit' => $journalEntry->credit_amount,
+                        'journal_entry_debit' => $journalEntry->debit_amount,
+                        'journal_entry_description' => $journalEntry->description,
+                        'journal_entry_economic_code' => $journalEntry->account_code,
+                        'journal_entry_line_number' => $journalEntry->line_number,
+
+
+                    ],
+
+                    // Remarks
+                    'remarks' => $journalEntry->journal->remarks ?? 'Journal operation',
+                ]);
+            }
+
+
+
+
+
+
             // 4. Recalculate cashbook totals
             $totalReceipts = $cashbook->entries()->where('type', 'receipt')->sum('amount');
             $totalPayments = $cashbook->entries()->where('type', 'payment')->sum('amount');
@@ -1906,12 +2096,11 @@ class CashbookController extends Controller
                 'total_payments' => $totalPayments,
                 'closing_balance' => $closingBalance,
             ];
-
         } catch (\Exception $e) {
             // dd($cashbook, $e);
             return [
                 'success' => false,
-                'message' => 'Failed to generate entries: '.$e->getMessage(),
+                'message' => 'Failed to generate entries: ' . $e->getMessage(),
                 'error' => $e->getMessage(),
                 'entries_count' => 0,
             ];
@@ -1924,9 +2113,18 @@ class CashbookController extends Controller
     private function getMonthName($monthId)
     {
         $monthNames = [
-            1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
-            5 => 'May', 6 => 'June', 7 => 'July', 8 => 'August',
-            9 => 'September', 10 => 'October', 11 => 'November', 12 => 'December',
+            1 => 'January',
+            2 => 'February',
+            3 => 'March',
+            4 => 'April',
+            5 => 'May',
+            6 => 'June',
+            7 => 'July',
+            8 => 'August',
+            9 => 'September',
+            10 => 'October',
+            11 => 'November',
+            12 => 'December',
         ];
 
         return $monthNames[$monthId] ?? 'Unknown Month';
@@ -1946,6 +2144,21 @@ class CashbookController extends Controller
             if ($currentMonth == 1) {
                 // For January, get from cashbook financial year opening balance
                 // This is already handled in the store method
+
+                // $economicCode = $cashbook->bankAccount->economic_code;
+                // $startDate = "{$cashbook->year}/{$cashbook->month_id}/01";
+                // $endDate = "{$cashbook->year}/{$cashbook->month_id}/31";
+                // $journalIds = JournalEntry::where('account_code', $economicCode)->get()->pluck('journal_id')->toArray();
+                // $journals = Journal::whereIn('id', $journalIds)->whereBetween('journal_date', [$startDate, $endDate])->where('status', 'approved')->get();
+
+                // $journalCredits = 0.00;
+                // $journalDebits = 0.00;
+                // foreach ($journals as $journal) {
+                //     // dd($journal->entries);
+                //     $journalCredits += $journal->entries->where('account_code', $economicCode)->sum('credit_amount');
+                //     $journalDebits += $journal->entries->where('account_code', $economicCode)->sum('debit_amount');
+                // }
+
                 return $cashbook->opening_balance;
             }
 
@@ -1993,9 +2206,9 @@ class CashbookController extends Controller
 
             // Default to current opening balance if nothing found
             return (float) $cashbook->opening_balance;
-
         } catch (\Exception $e) {
-            \Log::error('Error calculating opening balance: '.$e->getMessage());
+            \Log::error('Error calculating opening balance: ' . $e->getMessage());
+
 
             return (float) $cashbook->opening_balance;
         }
@@ -2033,7 +2246,6 @@ class CashbookController extends Controller
                 'opening_balance' => $openingBalance,
                 'closing_balance' => $closingBalance,
             ];
-
         } catch (\Exception $e) {
             DB::rollBack();
             throw $e;
@@ -2139,13 +2351,12 @@ class CashbookController extends Controller
                 'message' => 'All cashbook balances recalculated successfully',
                 'results' => $results,
             ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to recalculate balances: '.$e->getMessage(),
+                'message' => 'Failed to recalculate balances: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -2219,11 +2430,10 @@ class CashbookController extends Controller
                 'has_previous_cashbook' => (bool) $januaryCashbook,
                 'note' => 'Using January opening balance as reference',
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to get previous month balance: '.$e->getMessage(),
+                'message' => 'Failed to get previous month balance: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -2271,11 +2481,10 @@ class CashbookController extends Controller
                     ? "This month's closing balance will become {$nextMonthName}'s opening balance"
                     : "No cashbook found for {$nextMonthName} {$nextYear}",
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to get next month info: '.$e->getMessage(),
+                'message' => 'Failed to get next month info: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -2410,11 +2619,10 @@ class CashbookController extends Controller
                     'bank_name' => $cashbook->bankAccount->bank_name,
                 ] : null,
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to get balance chain: '.$e->getMessage(),
+                'message' => 'Failed to get balance chain: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -2445,7 +2653,7 @@ class CashbookController extends Controller
 
         // Make bank_account accessible
         $cashbook->bank_account = $cashbook->bankAccount;
-
+        //dd();
         return inertia('admin/cashbook/print', [
             'cashbook' => $cashbook,
             'receipts' => $receipts,

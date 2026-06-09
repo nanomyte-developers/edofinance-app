@@ -97,7 +97,7 @@ class EconomyCodeController extends Controller
      */
     public function update(EconomyCodeUpdateRequest $request, $economyCode): RedirectResponse
     {
-
+        // dd($economyCode);
 
         $Model = EconomyCode::find($economyCode);
 

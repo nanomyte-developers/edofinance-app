@@ -50,7 +50,7 @@ class EconomyCodeUpdateRequest extends FormRequest
             ],
 
             // Status: Optional, defaults to 'active', must be one of the enum values
-           // 'status' => ['nullable', 'string', Rule::in(['active', 'inactive'])],
+            'status' => ['nullable', Rule::in(['1', '0', 1,0, 'inactive', 'active'])],
         ];
     }
 }

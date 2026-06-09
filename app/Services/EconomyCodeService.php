@@ -57,13 +57,14 @@ class EconomyCodeService
      */
     public function updateCode(EconomyCode $code, array $data): EconomyCode
     {
-        // dd($code);
+        // dd($data);
         if (isset($data['status'])) {
             // Convert status integer back to enum string before saving
-            $data['status'] = $data['status'] == 1 ? 'active' : 'inactive';
-        }
-    
-        $code->update($data);
+            $data['status'] = ($data['status'] == 1 || $data['status'] == '1') ? 'active' : 'inactive';
+            }
+            
+            // dd($data);
+            $code->update($data);
         return $code;
     }
 

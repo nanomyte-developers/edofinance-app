@@ -92,7 +92,7 @@ class VouchersController extends Controller
                 }
             }
             
-            $vouchers = $query->with(['mda'])
+            $vouchers = $query->with(['mda', 'bankActivity', 'items'])
                 ->orderBy('created_at', 'desc')
                 ->paginate($perPage)
                 ->through(function ($voucher) {
@@ -103,12 +103,40 @@ class VouchersController extends Controller
                         'voucher_date' => $voucher->voucher_date?->toDateString(),
                         'narration' => $voucher->narration,
                         'total_amount' => $voucher->total_amount,
+                        'payee_name' => $voucher->payee_name,
+
                         'status' => $voucher->status,
                         'mda' => $voucher->mda ? [
                             'id' => $voucher->mda->id,
                             'name' => $voucher->mda->name,
                             'initials' => $voucher->mda->initials,
+                            'code' => $voucher->mda->code
                         ] : null,
+                        'bank_activity' => $voucher->bankActivity ? [
+                        
+                            'account_number' => $voucher->bankActivity->account_number,
+                            'bank_name' => $voucher->bankActivity->bank_name,
+                            'tag' => $voucher->bankActivity->tag,
+                            'title' => $voucher->bankActivity->title,
+                            'economic_code' => $voucher->bankActivity->economic_code,
+                        ] : null,
+                        'items' =>
+                             [
+                                'description' => $voucher->items[0]->description,
+                                // 'economy_code' => $voucher->items[0]->economyCode ? [
+                                //     'id' => $voucher->items[0]->economyCode->id,
+                                //     'code' => $voucher->items[0]->economyCode->code,
+                                //     'description' => $voucher->items[0]->economyCode->description,
+                                // ] : null,
+                                'economy_code_item' => $voucher->items[0]->economyCodeItem ? [
+                                    'id' => $voucher->items[0]->economyCodeItem->id,
+                                    'code' => $voucher->items[0]->economyCodeItem->code,
+                                    'description' => $voucher->items[0]->economyCodeItem->description,
+                                ] : null,
+                                'amount' => $voucher->items[0]->amount,
+                            ] ,
+                        
+                        
                         'created_at' => $voucher->created_at?->toDateTimeString(),
                         'updated_at' => $voucher->updated_at?->toDateTimeString(),
                     ];
@@ -354,6 +382,7 @@ class VouchersController extends Controller
             'tag' => $voucher->bankActivity->tag,
             'title' => $voucher->bankActivity->title,
             'account_number' => $voucher->bankActivity->account_number,
+            'economic_code' => $voucher->bankActivity->economic_code,
         ] : null;
 
         $voucherData['items'] = $voucher->items->map(function ($item) {
@@ -569,6 +598,36 @@ class VouchersController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Voucher approved successfully.',
+            'voucher' => $voucher->fresh(),
+        ]);
+    }
+    public function makeDraft(Voucher $voucher, Request $request)
+    {
+
+        // dd($voucher);
+        // Check if user can approve
+        // $this->authorize('approve', $voucher);
+
+        // Validate voucher can be approved
+
+        // Update voucher status
+        $old_status = $voucher->status;
+        $voucher->update([
+            'status' => 'Draft',
+            'approved_by' => auth()->id(),
+            'approved_at' => now(),
+        ]);
+
+        // Log the approval
+        activity()
+            ->performedOn($voucher)
+            ->causedBy(auth()->user())
+            ->withProperties(['old_status' => $old_status, 'new_status' => 'Draft'])
+            ->log('saved voucher as draft');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Voucher saved as draft successfully.',
             'voucher' => $voucher->fresh(),
         ]);
     }

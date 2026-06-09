@@ -36,6 +36,8 @@ class JournalService
                         $q->orWhere(function ($subQuery) use ($term) {
                             $subQuery->where('journal_number', 'like', "%{$term}%")
                                 ->orWhere('description', 'like', "%{$term}%")
+                                ->orWhere('total_credit', 'like', "%{$term}%")
+                                ->orWhere('total_debit', 'like', "%{$term}%")
                                 ->orWhere('remarks', 'like', "%{$term}%")
                                 ->orWhere('reference_number', 'like', "%{$term}%")
                                 ->orWhere('batch_number', 'like', "%{$term}%")

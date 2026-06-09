@@ -379,6 +379,18 @@ const exportCSV = () => {
     dt.value.exportCSV();
 };
 
+
+const exportItemCode = (event) => {
+    const rowData = event.data; // Full row object
+    const items = rowData.items;
+
+    // Manual extraction for the exporter
+    if (items && items.length > 0 && items[0].economy_code_item) {
+        return items[0].economy_code_item.code;
+    }
+
+    return 'N/A';
+};
 </script>
 
 <template>
@@ -484,6 +496,84 @@ const exportCSV = () => {
                             <span v-else class="text-500">N/A</span>
                         </template>
                     </Column>
+                    <Column :visible="false" hidden="true" field="mda.code" header="Admin Code"
+                        headerStyle="width: 25%">
+                        <template #body="slotProps">
+                            <span v-if="slotProps.data.mda">{{
+                                slotProps.data.mda.code
+                                }}</span>
+                            <span v-else class="text-500">N/A</span>
+                        </template>
+                    </Column>
+                    <Column :visible="false" hidden="true" field="bank_activity.bank_name" header="Bank Name"
+                        headerStyle="width: 25%">
+                        <template #body="slotProps">
+                            <span v-if="slotProps.data.bank_activity">{{
+                                slotProps.data.bank_activity.bank_name
+                                }}</span>
+                            <span v-else class="text-500">N/A</span>
+                        </template>
+                    </Column>
+                    <Column :visible="false" hidden="true" field="bank_activity.title" header="Payment Title"
+                        headerStyle="width: 25%">
+                        <template #body="slotProps">
+                            <span v-if="slotProps.data.bank_activity">{{
+                                slotProps.data.bank_activity.title
+                                }}</span>
+                            <span v-else class="text-500">N/A</span>
+                        </template>
+                    </Column>
+                    <Column :visible="false" hidden="true" field="bank_activity.account_number" header="Account Number"
+                        headerStyle="width: 25%">
+                        <template #body="slotProps">
+                            <span v-if="slotProps.data.bank_activity">{{
+                                slotProps.data.bank_activity.account_number
+                                }}</span>
+                            <span v-else class="text-500">N/A</span>
+                        </template>
+                    </Column>
+                    <Column :visible="false" hidden="true" field="bank_activity.economic_code"
+                        header="Bank Economic Code" headerStyle="width: 25%">
+                        <template #body="slotProps">
+                            <span v-if="slotProps.data.bank_activity">{{
+                                slotProps.data.bank_activity.economic_code
+                                }}</span>
+                            <span v-else class="text-500">N/A</span>
+                        </template>
+                    </Column>
+
+                    <Column :visible="false" hidden="true" field="items.economy_code_item.code"
+                        header="Item Economic Code" headerStyle="width: 25%" :exportFunction="exportItemCode">
+                        <template #body="slotProps">
+                            <!-- Keep your UI template as is -->
+                            <span v-if="slotProps.data.items?.economy_code_item">
+                                {{ slotProps.data.items.economy_code_item.code }}
+                            </span>
+                            <span v-else class="text-500">N/A</span>
+                        </template>
+                    </Column>
+
+
+                    <Column :visible="false" hidden="true" field="payee_name"
+                        header="Payee/Beneficiary" headerStyle="width: 25%" >
+                        <template #body="slotProps">
+                            <!-- Keep your UI template as is -->
+                            <span v-if="slotProps.data.payee_name">
+                                {{ slotProps.data.payee_name }}
+                            </span>
+                            <span v-else class="text-500">N/A</span>
+                        </template>
+                    </Column>
+
+                    <Column :visible="false" hidden="true" field="bank_activity.tag" header="TAG"
+                        headerStyle="width: 25%">
+                        <template #body="slotProps">
+                            <span v-if="slotProps.data.bank_activity.tag">{{
+                                slotProps.data?.bank_activity.tag || 'N/A'
+                                }}</span>
+                            <span v-else class="text-500">N/A</span>
+                        </template>
+                    </Column>
 
                     <Column field="narration" header="Narration" headerStyle="width: 25%">
                         <template #body="slotProps">
@@ -528,7 +618,7 @@ const exportCSV = () => {
                                             " />
 
                                 <!-- DELETE BUTTON: Disabled for approved/submitted vouchers -->
-                                <Button icon="pi pi-trash" text rounded severity="danger" :disabled="!canDeleteVoucher(slotProps.data)
+                                <Button v-if="usePage().props.auth.userRoles.includes('Admin') || usePage().props.auth.userRoles.includes('admin')" icon="pi pi-trash" text rounded severity="danger" :disabled="!canDeleteVoucher(slotProps.data)
                                     " v-tooltip.top="canDeleteVoucher(slotProps.data)
                                         ? 'Delete Voucher'
                                         : `Cannot delete - Status: ${slotProps.data.status}`

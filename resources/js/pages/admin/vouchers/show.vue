@@ -30,6 +30,7 @@ const toast = useToast();
 // State for Retirement Modal
 const showRetirementModal = ref(false);
 const showConfirmationModal = ref(false);
+const showConfirmationModalDraft = ref(false);
 const currentAction = ref(null);
 const showRetirementHistoryModal = ref(false);
 const retirementHistory = ref([]);
@@ -299,6 +300,96 @@ const approveVoucher = async () => {
         toast.add({
             severity: 'error',
             summary: 'Approval Failed',
+            detail: errorMessage,
+            life: 5000,
+        });
+    }
+};
+const confirmDraftVoucher = async () => {
+    // console.log("we came here");
+    // return;
+    // if (!canApprove.value) return;
+
+    showConfirmationModalDraft.value = false;
+
+    try {
+        // Show loading with auto-remove after 5 seconds (in case something goes wrong)
+        const loadingToast = toast.add({
+            severity: 'info',
+            summary: 'saving as draft...',
+            detail: 'Please wait while we save the voucher as draft',
+            life: 5000, // Auto-remove after 5 seconds
+        });
+
+        const response = await axios.put(
+            `/vouchers/${props.voucher.id}/draft`,
+            {
+                approved_by: currentUserId.value,
+                approved_at: new Date().toISOString(),
+                status: 'Draft',
+            },
+        ).then((response) => {
+            if (response.data.success === 'true' || response.data.success === true) {
+                console.log('Response Ben:', response.data);
+                // canRetire.value = true;
+                // retirementStatusData.value = {
+                //     // can_retire: true,
+                //     // already_retired: false,
+                //     // retired_amount: 0,
+                //     available_balance: props.voucher.total_amount || 0,
+                // };
+            }
+            goBack();
+            router.reload({ only: ['voucher'] });
+
+        }).catch((error) => {
+            console.error('Failed to save voucher as draft:', error);
+        });
+
+        // // ✅ UPDATE BUTTON STATE HERE - JUST THIS ONE LINE
+        // isLocallyApproved.value = true;
+
+        // // ✅ ALSO UPDATE RETIREMENT STATUS DATA
+        // if (retirementStatusData.value) {
+        //     retirementStatusData.value = {
+        //         ...retirementStatusData.value,
+        //         voucher_status: 'Approved',
+        //         can_retire: true, // This is the key!
+        //         can_be_approved: false,
+        //     };
+        // }
+
+        // If success, the loading toast will auto-remove after 5 seconds
+        // OR we can replace it with success immediately
+
+        // Show success message (this will appear after loading toast auto-removes)
+        toast.add({
+            severity: 'success',
+            summary: 'Voucher Approved',
+            detail: 'Prepayment voucher has been approved for retirement.',
+            life: 3000,
+        });
+
+        // Refresh page
+        // setTimeout(() => {
+        //     router.reload({ only: ['voucher'] });
+        // }, 1000);
+    } catch (error) {
+        console.error('Failed to approve voucher:', error);
+
+        // Show error message
+        let errorMessage = 'Failed to approve voucher.';
+        if (error.response?.data?.message) {
+            errorMessage = error.response.data.message;
+        } else if (error.response?.data?.errors) {
+            errorMessage = Object.values(error.response.data.errors)
+                .flat()
+                .join(', ');
+        }
+
+        toast.add({
+            severity: 'error',
+            summary: 'Save as Draft Failed',
             detail: errorMessage,
             life: 5000,
         });
@@ -720,7 +811,10 @@ const calculateTotals = () => {
         calculateSubTotal(item);
         total += item.sub_total;
     });
-    retirementForm.value.total_amount = total;
+    retirementForm.value.total_amount = total.toFixed(2) || total;
+    console.log('This is the computed totals');
+    console.log(retirementForm.value.total_amount);
+
 };
 
 const autoBalanceToZero = () => {
@@ -958,6 +1052,23 @@ const canDeleteVoucher = (voucher) => {
     return deletableStatuses.includes(status);
 };
 
+const canDraftVoucher = (voucher) => {
+
+    console.log(usePage().props.auth.userRoles);
+    if (!voucher || !voucher.status || voucher.status.toLowerCase().trim() === 'draft') return true;
+    if (usePage().props.auth.userRoles.includes('admin') ||
+        // usePage().props.auth.userRoles.includes('Authenticated') ||
+        usePage().props.auth.userRoles.includes('supervisor') ||
+        usePage().props.auth.userRoles.includes('Admin') || // Capitalized version
+        usePage().props.auth.userRoles.includes('Supervisor')) { // Capitalized version
+        return false;
+    }
+    return true
+};
+
+
+
+
 // --- FORMATTERS ---
 const formatCurrency = (value) => {
     return new Intl.NumberFormat('en-NG', {
@@ -1091,6 +1202,19 @@ const deleteVoucher = () => {
     currentAction.value = 'delete';
     showConfirmationModal.value = true;
 };
+const draftVoucher = () => {
+    if (canDraftVoucher(props.voucher)) {
+        toast.add({
+            severity: 'error',
+            summary: 'Cannot save this voucher to draft',
+            detail: `Voucher ${props.voucher.voucher_number} is "${props.voucher.status}" and cannot be made draft.`,
+            life: 5000,
+        });
+        return;
+    }
+    currentAction.value = 'draft';
+    showConfirmationModalDraft.value = true;
+};
 
 const goBack = () => {
     window.history.back();
@@ -1121,6 +1245,7 @@ const confirmDelete = () => {
         },
     });
 };
+
 
 // --- WATCHERS ---
 watch(() => retirementForm.value.line_items, calculateTotals, { deep: true });
@@ -1213,6 +1338,11 @@ watch(
                                 ? 'Delete Voucher'
                                 : 'Cannot delete this voucher'
                                 " @click="deleteVoucher" />
+                        <Button label="Draft" icon="pi pi-trash" severity="info" :disabled="canDraftVoucher(voucher)"
+                            v-tooltip="canDraftVoucher(voucher)
+                                ? 'Save as Draft'
+                                : 'Cannot save as Draft'
+                                " @click="draftVoucher" />
                     </div>
                 </div>
             </div>
@@ -1394,7 +1524,7 @@ watch(
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-6">
+                                <div class="col-4">
                                     <div class="field">
                                         <label class="text-500 font-semibold">Bank Name</label>
                                         <div class="text-900 font-medium">
@@ -1402,13 +1532,24 @@ watch(
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-6">
+                                <div class="col-4">
                                     <div class="field">
                                         <label class="text-500 font-semibold">Account Number</label>
                                         <div class="text-900 font-medium">
                                             {{
                                                 voucher.bankActivity
                                                     .account_number
+                                            }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="field">
+                                        <label class="text-500 font-semibold">Bank Economic Code</label>
+                                        <div class="text-900 font-medium">
+                                            {{
+                                                voucher.bankActivity
+                                                    .economic_code || 'N/A'
                                             }}
                                         </div>
                                     </div>
@@ -1694,7 +1835,7 @@ watch(
                                 <template #body="slotProps">
                                     <span class="font-mono">{{
                                         slotProps.data.quantity
-                                        }}</span>
+                                    }}</span>
                                 </template>
                             </Column>
 
@@ -1714,7 +1855,7 @@ watch(
                                 <template #body="slotProps">
                                     <span class="text-primary">{{
                                         formatCurrency(slotProps.data.sub_total)
-                                        }}</span>
+                                    }}</span>
                                 </template>
                             </Column>
                         </DataTable>
@@ -1725,7 +1866,7 @@ watch(
                             <span class="text-lg font-bold">Grand Total</span>
                             <span class="text-primary text-xl font-bold">{{
                                 formatCurrency(voucher.total_amount)
-                                }}</span>
+                            }}</span>
                         </div>
                     </template>
                 </Card>
@@ -1739,7 +1880,7 @@ watch(
                             <i class="pi pi-file-pdf text-primary"></i>
                             <span>Supporting Documents ({{
                                 totalDocuments
-                            }})</span>
+                                }})</span>
                         </div>
                     </template>
                     <template #content>
@@ -2545,6 +2686,26 @@ watch(
             </template>
         </Dialog>
 
+
+        <!-- Draft Confirmation Modal -->
+        <Dialog v-model:visible="showConfirmationModalDraft" :style="{ width: '450px' }" header="Delete Voucher"
+            :modal="true">
+            <div class="align-items-center flex">
+                <i class="pi pi-exclamation-triangle mr-3 text-red-500" style="font-size: 2rem"></i>
+                <div>
+                    <span>Are you sure you want to
+                        <strong class="text-red-600">make this</strong>
+                        Voucher <strong>{{ voucher.voucher_number }}</strong> a draft?</span>
+                </div>
+            </div>
+
+            <template #footer>
+                <Button label="Cancel" icon="pi pi-times" @click="showConfirmationModalDraft = false" text />
+                <Button label="Yes, Make Draft" icon="pi pi-trash" severity="info" @click="confirmDraftVoucher"
+                    autofocus />
+            </template>
+        </Dialog>
+
         <!-- Retirement History Modal -->
         <Dialog v-model:visible="showRetirementHistoryModal"
             :style="{ width: '90vw', maxWidth: '1400px', maxHeight: '90vh' }" header="Retirement History" :modal="true"
@@ -2626,7 +2787,7 @@ watch(
                                 <i class="pi pi-list text-primary"></i>
                                 <span>Retirement Records ({{
                                     retirementHistory.length
-                                }})</span>
+                                    }})</span>
                             </div>
                         </template>
                         <template #content>

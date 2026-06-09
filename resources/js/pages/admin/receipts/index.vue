@@ -1376,7 +1376,7 @@ const exportCSV = () => {
                                         v-if="slotProps.data.status === 'Draft' || usePage().props.auth.userRoles.includes('Admin') || usePage().props.auth.userRoles.includes('admin')"
                                         icon="pi pi-pencil" text rounded severity="warning"
                                         @click="handleEdit(slotProps.data)" v-tooltip="'Edit'" />
-                                    <Button icon="pi pi-trash" text rounded severity="danger" @click="
+                                    <Button v-if="usePage().props.auth.userRoles.includes('Admin') || usePage().props.auth.userRoles.includes('admin')"  icon="pi pi-trash" text rounded severity="danger" @click="
                                         deleteReceipt(slotProps.data.id)
                                         " v-tooltip="'Delete'" />
                                 </div>

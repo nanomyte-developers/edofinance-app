@@ -42,9 +42,11 @@ use App\Http\Controllers\Admin\EconomyCodeController;
 use App\Http\Controllers\Admin\EconomyCodeItemController;
 use App\Http\Controllers\Admin\RetirementController;
 use App\Http\Controllers\Admin\AdministrativeCodeItemController;
+
 use App\Http\Controllers\Admin\JournalController;
 
 // Mara
+
 use App\Http\Controllers\Finance\FinancialReportController;
 use App\Http\Controllers\Finance\FinancialPositionController;
 use App\Http\Controllers\Finance\CashFlowController;
@@ -52,7 +54,11 @@ use App\Http\Controllers\Finance\AssetsEquityController;
 use App\Http\Controllers\Finance\NoteToGpfsController;
 use App\Http\Controllers\Finance\CashAndBankBalancesController;
 use App\Http\Controllers\Admin\MdaBankBalanceController;
+
+
 // end Mara
+
+
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -102,6 +108,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::resource('receipts', ReceiptController::class);
 
+
     Route::prefix('vouchers')->name('vouchers.')->group(function () {
         // Retirement routes for vouchers (SPECIFIC ROUTES FIRST)
         Route::get('/{voucher}/retire', [RetirementController::class, 'create'])->name('retire.create');
@@ -109,6 +116,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Approve retirement
         Route::put('/{voucher}/approve', [VouchersController::class, 'approve'])->name('vouchers.approve');
+        Route::put('/{voucher}/draft', [VouchersController::class, 'makeDraft'])->name('vouchers.draft');
+
 
         // Print route
         Route::get('/{voucher}/print', [VouchersController::class, 'print'])->name('print');
@@ -116,6 +125,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Generic resource route LAST
         Route::resource('/', VouchersController::class)->parameters(['' => 'voucher']);
     });
+
 
     Route::prefix('retirements')->name('retirements.')->group(function () {
         // Main retirement pages
@@ -138,11 +148,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/vouchers/{voucher}/retirement-history', [RetirementController::class, 'history'])->name('vouchers.retirement-history');
     });
 
+
     // // API endpoints (for AJAX calls)
     // Route::prefix('api')->name('api.')->group(function () {
     //     Route::get('/vouchers/{voucher}/retirement-status', [RetirementController::class, 'checkRetirementStatus'])->name('vouchers.retirement-status');
     //     Route::get('/vouchers/{voucher}/retirement-history', [RetirementController::class, 'history'])->name('vouchers.retirement-history');
     // });
+
+
+
+
+
+
 
     // Economic Codes routes
     Route::get('/economy-codes', [ScheduleController::class, 'getEconomyCodes']);
@@ -150,6 +167,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/economy-code-items/{economyCodeId}', [ScheduleController::class, 'getEconomyCodeItems']);
     Route::get('/payeeList', [ScheduleController::class, 'getPayees'])->name('payeeList');
     Route::get('/bankActivityList', [VouchersController::class, 'getBankActivities'])->name('bankActivityList');
+
 
     // Internal Audit Management Routes
     // Route::resource('internal-audits', InternalAuditController::class);
@@ -161,16 +179,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('remittances', RemittanceController::class);
     Route::get('/remittances/{remittance}/print', [RemittanceController::class, 'print'])->name('remittances.print');
 
+
+
+
+
     Route::resource('expenditure-control', ExpenditureControlController::class);
     Route::resource('accountant-general', AccountantGeneralController::class);
 
     // 
     Route::resource('mdas', MdaController::class);
     Route::resource('sectors', SectorController::class);
-
     // Define a named route for fetching sectors
     Route::get('/mdas/{mda}/sectors', [MdaController::class, 'fetchSectors'])
         ->name('mdas.sectors.fetch');
+
 
     // Import Vouchers
     Route::post('/import', [ImportVoucherController::class, 'import'])->name('import.upload');
@@ -211,6 +233,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 });
 
+
+
+
 Route::middleware(['auth', 'verified'])->group(function () {
     // Activity statistics routes
     Route::get('/activities', [ActivityStatsController::class, 'index'])->name('activities.index');
@@ -220,7 +245,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     route::get('/reports/trialbalance', [ReportController::class, 'index'])->name('reports.trialbalance.index');
     route::post('/reports/trialbalance', [ReportController::class, 'newTrialBalance'])->name('reports.trialbalance.view');
+    route::post('/reports/MDAtrialbalance', [ReportController::class, 'mdaTrialBalance'])->name('reports.mda.trialbalance.view');
     route::post('/reports/trialbalanceDetails', [ReportController::class, 'trialBalanceDetails'])->name('reports.trialbalance.details');
+
+
 
     // Reports routes
     Route::get('/reports/financial-report', [FinancialReportController::class, 'index'])->name('financial-report.index');
@@ -240,6 +268,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('reports.other-bank-of-the-treasury');
 });
 
+
 Route::middleware(['auth', 'verified'])->group(function () {
     // This single line registers receipts.index, receipts.show, receipts.store, etc.
     Route::resource('receipts', ReceiptController::class);
@@ -251,7 +280,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('receipts/import', [ReceiptController::class, 'import'])->name('receipts.import');
     Route::get('arsearch', [ReceiptController::class, 'search'])->name('receipts.search.index');
 });
-
 Route::middleware(['auth', 'verified'])->group(function () {
 
     // Page 1: The Master List (cashbook_financial_years)
@@ -271,6 +299,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('cashbook-years.month-accounts');
 
     Route::post('/cashbook/{cashbook}/generate-entries', [CashbookController::class, 'generateEntries']);
+
 
     Route::get('cashbook-entries/{entry}', [CashbookController::class, 'showEntry'])
         ->name('cashbook-entries.show');
@@ -317,6 +346,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('cashbook.generate');
 });
 
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('remittances', RemittanceController::class);
     Route::get('/remittances/{remittance}/print', [RemittanceController::class, 'print'])->name('remittances.print');
@@ -327,6 +357,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('economy-codess', EconomyCodeController::class)->names('economy_code');
     Route::resource('economy-code-itemss', EconomyCodeItemController::class);
     // Route::resource('financial-years', FinancialYearController::class);
+
     Route::resource('administrative-code-itemss', AdministrativeCodeItemController::class);
 });
 
@@ -340,6 +371,13 @@ Route::prefix('administrative-codes')->name('administrative-codes.')->group(func
     Route::get('/{administrative_code}', [AdministrativeCodeController::class, 'show'])->name('show');
 });
 
+// Route::prefix('administrative-codes')->name('administrative-codes.')->group(function () {
+
+//     Route::resource('administrative-code-itemss', AdministrativeCodeItemController::class);
+// });
+
+
+
 Route::prefix('receipt-activities')->name('receipt-activities.')->group(function () {
     Route::get('/', [ReceiptActivityController::class, 'index'])->name('index');
     Route::post('/', [ReceiptActivityController::class, 'store'])->name('store');
@@ -348,6 +386,8 @@ Route::prefix('receipt-activities')->name('receipt-activities.')->group(function
     Route::put('/{receipt_activity}', [ReceiptActivityController::class, 'update'])->name('update');
     Route::post('/{receipt_activity}/toggle-status', [ReceiptActivityController::class, 'toggleStatus'])->name('toggle-status');
 });
+
+
 
 Route::middleware(['auth'])->group(function () {
     // Standard CRUD resource
@@ -358,6 +398,7 @@ Route::middleware(['auth'])->group(function () {
     // Custom status toggle route
     Route::patch('/banks/{bank}/toggle-status', [BankController::class, 'toggleStatus'])->name('banks.toggle-status');
 });
+
 
 Route::middleware(['auth'])->group(function () {
     // Standard Resource Routes (excluding create/edit/show as we use a Modal)
@@ -419,5 +460,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/economic-code-items-by-series/{series}', [JournalController::class, 'getEconomicCodeItemsBySeries'])->name('api.economic-code-items-by-series');
     Route::get('/api/generate-journal-number', [JournalController::class, 'generateJournalNumber'])->name('api.generate-journal-number');
 });
+
+
+
+
+
 
 require __DIR__ . '/settings.php';

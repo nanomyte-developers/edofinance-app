@@ -457,12 +457,19 @@ const goBackToMonths = () => {
                                     icon="pi pi-eye"
                                     class="p-button-outlined p-button-info flex-1"
                                     @click="viewLedger(cashbook)"
+                                    :title="'View cashbook with accounting layout'"
+                                />
+                                <!-- <Button
+                                    label="View"
+                                    icon="pi pi-eye"
+                                    class="p-button-outlined p-button-info flex-1"
+                                    @click="viewLedger(cashbook)"
                                     :disabled="
                                         !cashbook.entries ||
                                         cashbook.entries.length === 0
                                     "
                                     :title="'View cashbook with accounting layout'"
-                                />
+                                /> -->
                             </div>
                         </template>
                     </Card>

@@ -639,7 +639,9 @@ const calculateTotals = () => {
         calculateSubTotal(item);
         total += item.sub_total;
     });
-    retirementForm.value.total_amount = total;
+    console.log('This is the computed totals');
+    console.log(total);
+    retirementForm.value.total_amount = Maths.roundToTwo(total) || total;
 };
 
 const autoBalanceToZero = () => {

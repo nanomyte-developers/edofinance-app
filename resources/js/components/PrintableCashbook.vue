@@ -4,6 +4,7 @@ import Button from 'primevue/button';
 import * as XLSX from 'xlsx';
 
 import { computed, onMounted, ref } from 'vue';
+import { get } from '@vueuse/core';
 
 const props = defineProps({
     cashbook: {
@@ -66,17 +67,19 @@ const totalPayments = computed(() => {
 });
 
 const totalDebitSide = computed(() => {
-    return openingBalance.value + totalReceipts.value;
+    return (openingBalance.value > 0) ? openingBalance.value + totalReceipts.value : totalReceipts.value;
 });
 
-const balanceCD = computed(() => {
-    return totalDebitSide.value - totalPayments.value;
-});
 
 // NEW: Credit Side Total = Total Payments + Balance Carried Down
 const totalCreditSide = computed(() => {
-    return totalPayments.value + balanceCD.value;
+    return (openingBalance.value < 0) ? Math.abs(openingBalance.value) + totalPayments.value : totalPayments.value;
 });
+
+const balanceCD = computed(() => {
+    return Math.abs(totalCreditSide.value - totalDebitSide.value);
+});
+
 
 // Calculate row count for empty rows
 const rowCount = computed(() => {
@@ -305,16 +308,83 @@ const generateTableRows = () => {
         let creditCheque = '';
         let creditAmount = '';
         let creditBank = '';
+        let credit_amount = 0;
+        let debit_amount = 0;
 
         // Debit Side Logic
-        if (i === 0) {
-            // Opening Balance
+        if (i === 0 && openingBalance.value > 0) {
             debitDate = formatShortDate(props.cashbook.start_date);
             debitCbSn = '';
             debitPayer = 'BAL B/F';
             debitTitle = 'Opening Balance';
             debitAmount = formatMergedAmount(openingBalance.value);
-            debitBank = receiptBankBalances.value[0];
+            debitBank = formatMergedAmount(openingBalance.value);
+            debit_amount = openingBalance.value;
+
+            rows.push({
+                debitDate,
+                debitCbSn,
+                debitPayer,
+                debitTitle,
+                debitNumber,
+                debitReceiptNo,
+                debitAmount,
+                debitBank,
+                creditDate,
+                creditCbSn,
+                creditDept,
+                creditPayee,
+                creditTitle,
+                creditNumber,
+                creditCheque,
+                creditAmount,
+                creditBank,
+                rowClass:
+                    i === 0 || i === props.receipts.length + 1 ? 'bg-blue-50' : '',
+                debit_amount,
+                credit_amount,
+            });
+            debitDate = '';
+            debitCbSn = '';
+            debitPayer = '';
+            debitTitle = '';
+            debitNumber = '';
+            debitReceiptNo = '';
+            debitAmount = '';
+            debitBank = '';
+
+            creditDate = '';
+            creditCbSn = '';
+            creditDept = '';
+            creditPayee = '';
+            creditTitle = '';
+            creditNumber = '';
+            creditCheque = '';
+            creditAmount = '';
+            creditBank = '';
+            debit_amount = 0;
+            credit_amount = 0;
+
+            const receipt = props.receipts[i - 1];
+            if (receipt) {
+                debitDate = formatShortDate(receipt.transaction_date);
+                debitCbSn = (i).toString();
+
+                // Use correct property names from CashbookEntry
+                debitPayer = receipt.payer_name || 'N/A';
+                debitTitle =
+                    receipt.category || receipt.classification_title || '';
+                debitNumber = receipt.sub_category || '';
+                debitReceiptNo =
+                    receipt.reference_number || receipt.receipt_no || '';
+                debitAmount = formatMergedAmount(receipt.amount);
+                debitBank = formatMergedAmount(receipt.amount);
+                debit_amount = receipt.amount;
+                // debitBank = receiptBankBalances.value[i];
+            }
+
+
+
         } else if (i <= props.receipts.length) {
             // Receipts
             const receipt = props.receipts[i - 1];
@@ -331,6 +401,7 @@ const generateTableRows = () => {
                     receipt.reference_number || receipt.receipt_no || '';
                 debitAmount = formatMergedAmount(receipt.amount);
                 debitBank = formatMergedAmount(receipt.amount);
+                debit_amount = receipt.amount;
                 // debitBank = receiptBankBalances.value[i];
             }
         } else if (i === props.receipts.length + 1) {
@@ -339,7 +410,83 @@ const generateTableRows = () => {
         }
 
         // Credit Side Logic
-        if (i < props.payments.length) {
+
+
+        if (i === 0 && openingBalance.value < 0) {
+            creditDate = formatShortDate(props.cashbook.start_date);
+            creditCbSn = '';
+            creditPayee = 'BAL B/F';
+            creditTitle = 'Opening Balance';
+            creditAmount = formatMergedAmount(Math.abs(openingBalance.value));
+            creditBank = formatMergedAmount(Math.abs(openingBalance.value));
+            credit_amount = Math.abs(openingBalance.value);
+            rows.push({
+                debitDate,
+                debitCbSn,
+                debitPayer,
+                debitTitle,
+                debitNumber,
+                debitReceiptNo,
+                debitAmount,
+                debitBank,
+                creditDate,
+                creditCbSn,
+                creditDept,
+                creditPayee,
+                creditTitle,
+                creditNumber,
+                creditCheque,
+                creditAmount,
+                creditBank,
+                rowClass:
+                    i === 0 || i === props.receipts.length + 1 ? 'bg-blue-50' : '',
+                debit_amount,
+                credit_amount,
+            });
+            debitDate = '';
+            debitCbSn = '';
+            debitPayer = '';
+            debitTitle = '';
+            debitNumber = '';
+            debitReceiptNo = '';
+            debitAmount = '';
+            debitBank = '';
+
+            creditDate = '';
+            creditCbSn = '';
+            creditDept = '';
+            creditPayee = '';
+            creditTitle = '';
+            creditNumber = '';
+            creditCheque = '';
+            creditAmount = '';
+            creditBank = '';
+            debit_amount = 0;
+            credit_amount = 0;
+
+            const payment = props.payments[i];
+            if (payment) {
+                creditDate = formatShortDate(payment.transaction_date);
+                creditCbSn = (j + 1).toString();
+                j++;
+                // creditDept = payment.department_number || '';
+                creditDept = payment.reference_number || payment.reference_number || '';
+
+                // Use correct property names from CashbookEntry
+                creditPayee = payment.payee_name || 'N/A';
+                creditTitle =
+                    payment.category || payment.classification_title || '';
+                creditNumber = payment.sub_category || '';
+                creditCheque = '';
+                creditAmount = formatMergedAmount(payment.amount);
+                creditBank = formatMergedAmount(payment.amount);
+                credit_amount = payment.amount;
+                // creditBank = paymentBankBalances.value[i];
+            }
+
+
+
+        } else if (i < props.payments.length) {
             // Payments
             const payment = props.payments[i];
             if (payment) {
@@ -357,6 +504,7 @@ const generateTableRows = () => {
                 creditCheque = '';
                 creditAmount = formatMergedAmount(payment.amount);
                 creditBank = formatMergedAmount(payment.amount);
+                credit_amount = payment.amount;
                 // creditBank = paymentBankBalances.value[i];
             }
         } else if (i === props.payments.length) {
@@ -384,12 +532,63 @@ const generateTableRows = () => {
             creditBank,
             rowClass:
                 i === 0 || i === props.receipts.length + 1 ? 'bg-blue-50' : '',
+            debit_amount,
+            credit_amount
         });
     }
 
     return rows;
 };
 
+const getTotalCredits = () => {
+    let total = 0;
+    const rows = generateTableRows();
+
+    rows.forEach((row) => {
+        if (row.credit_amount) {
+            total += parseFloat(row.credit_amount);
+        }
+    })
+    console.log( "This is the credit total: " +  total);
+    return total;
+};
+
+const getTotalDebits = () => {
+    let total = 0;
+    const rows = generateTableRows();
+
+    rows.forEach((row) => {
+        if (row.debit_amount) {
+            total += parseFloat(row.debit_amount);
+        }
+    })
+    console.log( "This is the debit total: " +  total);
+
+    return total;
+};
+
+const balanceCD2 = () => {
+    if (getTotalDebits() > getTotalCredits()) {
+        return getTotalDebits() - getTotalCredits();
+    } else {
+        return getTotalCredits() - getTotalDebits();
+    }
+};
+
+const formattedNextMonth = computed(() => {
+    if (!props.cashbook.start_date) return '';
+
+    const d = new Date(props.cashbook.start_date);
+    // Create a new date for the 1st of the next month
+    const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+
+    // Format the date
+    return new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    }).format(nextMonth);
+});
 
 const exportHtmlTableToExcel = () => {
     // Access the HTML table element
@@ -400,7 +599,7 @@ const exportHtmlTableToExcel = () => {
 
     // Create a new workbook and append the worksheet
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Cashbook.xlsx' );
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Cashbook.xlsx');
 
     // Trigger download
     XLSX.writeFile(workbook, "Cashbook.xlsx");
@@ -435,8 +634,8 @@ const exportHtmlTableToExcel = () => {
                     </h2>
                     <div class="print-subtitle font-bold">
                         {{ cashbook.title ||
-                        cashbook.bank_account?.title ||
-                        'N/A' }}:
+                            cashbook.bank_account?.title ||
+                            'N/A' }}:
                         {{
                             props.cashbook.account_number ||
                             props.cashbook.bank_account?.account_number ||
@@ -569,20 +768,71 @@ const exportHtmlTableToExcel = () => {
                     </tbody>
                     <tfoot>
                         <!-- Empty row for spacing -->
-                        <tr class="font-bold">
+                        <!-- <tr class="font-bold">
                             <td colspan="8" class="text-right">&nbsp;</td>
                             <td colspan="9">&nbsp;</td>
+                        </tr> -->
+
+
+
+                        <!-- Balance Brought Down Row -->
+                        <tr class="font-bold" v-if="getTotalCredits() > getTotalDebits()">
+                            <!-- Debit Side -->
+                            <td class="text-right"></td>
+                            <td class="text-right"></td>
+                            <td class="text-right"></td>
+                            <td colspan="3" class="text-right">BAL c/d</td>
+                            <td class="amount-cell">
+                                {{ formatMergedAmount(balanceCD2()) }}
+                            </td>
+                            <td class="amount-cell">
+                                {{ formatMergedAmount(balanceCD2()) }}
+                            </td>
+
+                            <!-- Credit Side Totals -->
+                            <td colspan="7" class="text-right"></td>
+                            <td class="amount-cell">
+
+                            </td>
+                            <td class="amount-cell">
+
+                            </td>
                         </tr>
+                        <tr class="font-bold" v-else>
+                            <!-- Debit Side -->
+                            <td class="text-right"></td>
+                            <td class="text-right"></td>
+                            <td class="text-right"></td>
+                            <td colspan="3" class="text-right"></td>
+                            <td class="amount-cell">
+
+                            </td>
+                            <td class="amount-cell">
+
+                            </td>
+
+                            <!-- Credit Side Totals -->
+                            <td colspan="7" class="text-right">BAL c/d</td>
+                            <td class="amount-cell">
+                                {{ formatMergedAmount(balanceCD2()) }}
+                            </td>
+                            <td class="amount-cell">
+                                {{ formatMergedAmount(balanceCD2()) }}
+                            </td>
+                        </tr>
+
 
                         <!-- Totals Row -->
                         <tr class="bg-blue-100 font-bold">
                             <!-- Debit Side -->
                             <td colspan="6" class="text-right">TOTAL</td>
                             <td class="amount-cell">
-                                {{ formatMergedAmount(totalDebitSide) }}
+                                {{ (getTotalDebits() > getTotalCredits()) ? formatMergedAmount(getTotalDebits()) :
+                                    formatMergedAmount(getTotalCredits()) }}
                             </td>
                             <td class="amount-cell">
-                                {{ formatMergedAmount(totalDebitSide) }}
+                                {{ (getTotalDebits() > getTotalCredits()) ? formatMergedAmount(getTotalDebits()) :
+                                    formatMergedAmount(getTotalCredits()) }}
                             </td>
 
                             <!-- Credit Side -->
@@ -592,56 +842,60 @@ const exportHtmlTableToExcel = () => {
                             <td class="text-right"></td>
                             <td colspan="3" class="text-right"></td>
                             <td class="amount-cell">
-
+                                {{ (getTotalDebits() > getTotalCredits()) ? formatMergedAmount(getTotalDebits()) :
+                                    formatMergedAmount(getTotalCredits()) }}
                             </td>
                             <td class="amount-cell">
-
+                                {{ (getTotalDebits() > getTotalCredits()) ? formatMergedAmount(getTotalDebits()) :
+                                    formatMergedAmount(getTotalCredits()) }}
                             </td>
                         </tr>
+
+
 
                         <!-- Balance Brought Down Row -->
-                        <tr class="font-bold">
+                        <tr class="font-bold" v-if="getTotalCredits() > getTotalDebits()">
                             <!-- Debit Side -->
+                            <td class="text-right">{{ formatDate(formattedNextMonth) }}</td>
                             <td class="text-right"></td>
                             <td class="text-right"></td>
-                            <td class="text-right">BAL b/d</td>
                             <td colspan="3" class="text-right"></td>
                             <td class="amount-cell">
-                                {{ formatMergedAmount(balanceCD) }}
+
                             </td>
                             <td class="amount-cell">
-                                {{ formatMergedAmount(balanceCD) }}
+
                             </td>
 
                             <!-- Credit Side Totals -->
-                            <td colspan="7" class="text-right"></td>
+                            <td colspan="7" class="text-right">BAL b/d</td>
                             <td class="amount-cell">
-                                {{ formatMergedAmount(balanceCD) }}
+                                {{ formatMergedAmount(balanceCD2()) }}
                             </td>
                             <td class="amount-cell">
-                                {{ formatMergedAmount(balanceCD) }}
+                                {{ formatMergedAmount(balanceCD2()) }}
                             </td>
                         </tr>
-                        <tr class="font-bold">
+                        <tr class="font-bold" v-else>
                             <!-- Debit Side -->
+                            <td class="text-right">{{ formatDate(formattedNextMonth) }}</td>
                             <td class="text-right"></td>
                             <td class="text-right"></td>
-                            <td class="text-right"></td>
-                            <td colspan="3" class="text-right"></td>
+                            <td colspan="3" class="text-right">BAL b/d</td>
                             <td class="amount-cell">
-
+                                {{ formatMergedAmount(balanceCD2()) }}
                             </td>
                             <td class="amount-cell">
-
+                                {{ formatMergedAmount(balanceCD2()) }}
                             </td>
 
                             <!-- Credit Side Totals -->
                             <td colspan="7" class="text-right"></td>
                             <td class="amount-cell">
-                                {{ formatMergedAmount(totalCreditSide) }}
+
                             </td>
                             <td class="amount-cell">
-                                {{ formatMergedAmount(totalCreditSide) }}
+
                             </td>
                         </tr>
                     </tfoot>

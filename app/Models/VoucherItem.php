@@ -16,7 +16,6 @@ class VoucherItem extends Model
         'unit_price',
         'sub_total',
         'budget_code',
-        'description',
     ];
 
     protected $casts = [

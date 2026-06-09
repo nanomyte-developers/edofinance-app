@@ -1,6 +1,6 @@
 <script setup>
 import AppLayout from '@/layouts/AppLayout.vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Dialog from 'primevue/dialog';
@@ -336,7 +336,8 @@ const breadcrumbs = computed(() => [
                             "
                             @click="editReceipt"
                         />
-                        <Button
+                        
+                        <Button v-if="usePage().props.auth.userRoles.includes('admin') || usePage().props.auth.userRoles.includes('Admin')"
                             label="Delete"
                             icon="pi pi-trash"
                             severity="danger"

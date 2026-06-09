@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class JournalEntry extends Model
 {
+    protected $table = 'journal_entries';
     protected $fillable = [
         'journal_id',
         'account_code',

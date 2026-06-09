@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Receipt extends Model
 {
@@ -56,5 +57,9 @@ class Receipt extends Model
     public function bankActivity()
     {
         return BankActivity::where('account_number', $this->account_number)->first();
+    }
+    public function bankActivity2() : HasOne
+    {
+        return BankActivity::where('account_number', $this->account_number);
     }
 }

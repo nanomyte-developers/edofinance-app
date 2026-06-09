@@ -46,7 +46,7 @@
                             :totalRecords="journals.total"
                             paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                             currentPageReportTemplate="Showing {first} to {last} of {totalRecords} journals"
-                            :rowsPerPageOptions="[10, 20, 50]" :first="(journals.current_page - 1) * journals.per_page
+                            :rowsPerPageOptions="[10, 20, 50, 100, 200, 500]" :first="(journals.current_page - 1) * journals.per_page
                                 " @page="onPageChange" @rows-change="onRowsPerPageChange" responsiveLayout="scroll"
                             dataKey="id" class="p-datatable-sm" stripedRows scrollable scrollHeight="flex">
                             <Column field="journal_number" header="Journal #" sortable :style="{ minWidth: '120px' }">
@@ -1056,6 +1056,22 @@ const JournalTypes = [
         label: 'Salary',
         value: 'salary',
     },
+    {
+        label: 'Loan',
+        value: 'loan',
+    },
+    {
+        label: 'Grant',
+        value: 'grant',
+    },
+    {
+        label: 'IGR',
+        value: 'igr',
+    },
+    {
+        label: 'FAAC',
+        value: 'faac',
+    },
 ];
 
 
@@ -2020,7 +2036,7 @@ const deleteJournal = (id) => {
             'Are you sure you want to delete this journal? This action cannot be undone.',
         )
     ) {
-        router.delete(route('journals.destroy', id), {
+        router.delete('journals/'+ id, {
             preserveState: true,
             onSuccess: () => {
                 toast.add({

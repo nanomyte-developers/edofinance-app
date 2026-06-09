@@ -27,7 +27,7 @@ class StoreJournalRequest extends FormRequest
 
     
         return [
-            'journal_number' => 'required|string|unique:journals',
+            // 'journal_number' => 'required|string|unique:journals',
             'journal_date' => 'required|date',
             'posting_date' => 'required|date|after_or_equal:journal_date',
             'description' => 'required|string|max:500',

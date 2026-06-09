@@ -22,7 +22,7 @@ class VoucherService
     //         try {
     //             // Generate voucher number
     //             $voucherNumber = $this->generateVoucherNumber($data['year_id']);
-                
+
     //             Log::info('=== VOUCHER CREATION STARTED ===', [
     //                 'voucher_number' => $voucherNumber,
     //                 'files_count' => count($files),
@@ -64,7 +64,7 @@ class VoucherService
 
     //             // Reload voucher with relationships to see final state
     //             $voucher->load('documents');
-                
+
     //             Log::info('=== VOUCHER CREATION COMPLETED ===', [
     //                 'voucher_id' => $voucher->id,
     //                 'documents_created' => $voucher->documents->count(),
@@ -97,7 +97,7 @@ class VoucherService
     //         try {
     //             // Generate voucher number
     //             $voucherNumber = $this->generateVoucherNumber($data['year_id']);
-                
+
     //             Log::info('=== VOUCHER CREATION STARTED ===', [
     //                 'voucher_number' => $voucherNumber,
     //                 'schedule_id' => $data['schedule_id'] ?? null,
@@ -155,7 +155,7 @@ class VoucherService
 
     //             // Reload voucher with relationships to see final state
     //             $voucher->load('documents');
-                
+
     //             Log::info('=== VOUCHER CREATION COMPLETED ===', [
     //                 'voucher_id' => $voucher->id,
     //                 'schedule_id' => $voucher->schedule_id,
@@ -187,10 +187,10 @@ class VoucherService
     {
         return DB::transaction(function () use ($data, $files, $documentTypes) {
             try {
-                
+
                 // Generate voucher number
                 // $voucherNumber = $this->generateVoucherNumber($data['year_id']);
-                
+
                 Log::info('=== VOUCHER CREATION STARTED ===', [
                     'voucher_number' => $data['voucher_number'],
                     'schedule_id' => $data['schedule_id'] ?? null,
@@ -246,12 +246,12 @@ class VoucherService
                 }
 
                 // Create initial approval record
-            
+
                 $this->createInitialApproval($voucher);
 
                 // Reload voucher with relationships to see final state
                 $voucher->load('documents');
-                
+
                 Log::info('=== VOUCHER CREATION COMPLETED ===', [
                     'voucher_id' => $voucher->id,
                     'schedule_id' => $voucher->schedule_id,
@@ -269,7 +269,6 @@ class VoucherService
                     'approvals.user',
                     'creator'
                 ]);
-
             } catch (\Exception $e) {
                 Log::error('VoucherService Transaction Failed: ' . $e->getMessage(), [
                     'data' => $data,
@@ -295,7 +294,7 @@ class VoucherService
 
         // Create a mapping of filename to document type from the frontend
         $fileTypeMapping = $this->createFileTypeMapping($files, $documentTypes);
-        
+
         Log::info('File to type mapping created:', $fileTypeMapping);
 
         foreach ($files as $file) {
@@ -304,7 +303,7 @@ class VoucherService
 
             // Get the document type from our mapping
             $documentData = $this->getDocumentTypeFromMapping($filename, $fileTypeMapping);
-            
+
             Log::info('Creating document record:', [
                 'file' => $filename,
                 'type' => $documentData['type'],
@@ -337,7 +336,7 @@ class VoucherService
     {
         $mapping = [];
         $fileNames = array_map(fn($file) => $file->getClientOriginalName(), $files);
-        
+
         Log::info('Creating file type mapping:', [
             'available_files' => $fileNames,
             'document_types' => $documentTypes
@@ -361,7 +360,7 @@ class VoucherService
         // Strategy 2: Required document type assignment for unmatched files
         $requiredTypes = ['approval_form', 'invoice', 'receipt', 'delivery_note'];
         $assignedRequiredTypes = [];
-        
+
         // Get already assigned required types from mapping
         foreach ($mapping as $fileData) {
             if (in_array($fileData['type'], $requiredTypes)) {
@@ -376,7 +375,7 @@ class VoucherService
                     if (!in_array($requiredType, $assignedRequiredTypes)) {
                         // Find the document type data for this required type
                         $docTypeData = $this->findDocumentTypeData($requiredType, $documentTypes);
-                        
+
                         $mapping[$fileName] = [
                             'type' => $requiredType,
                             'label' => $docTypeData['label'] ?? $this->getDocumentTypeLabel($requiredType),
@@ -423,7 +422,7 @@ class VoucherService
                 return $docType;
             }
         }
-        
+
         return ['type' => $type, 'label' => $this->getDocumentTypeLabel($type)];
     }
 
@@ -451,7 +450,7 @@ class VoucherService
     protected function calculateTotalAmount(array $items): float
     {
         $total = 0;
-        
+
         foreach ($items as $item) {
             if (isset($item['sub_total']) && is_numeric($item['sub_total'])) {
                 $total += (float) $item['sub_total'];
@@ -461,7 +460,7 @@ class VoucherService
                 $total += $quantity * $unitPrice;
             }
         }
-        
+
         return round($total, 2);
     }
 
@@ -550,80 +549,82 @@ class VoucherService
     //     });
     // }
     public function updateVoucher(Voucher $voucher, array $data, array $files = [], array $documentTypes = [])
-{
-    DB::beginTransaction();
-    
-    try {
-        // Update voucher details
-        $voucher->update([
-            'voucher_type' => $data['voucher_type'],
-            'year_id' => $data['year_id'],
-            'mda_id' => $data['mda_id'],
-            'voucher_date' => $data['voucher_date'],
-            'narration' => $data['narration'],
-            'status' => $data['status'],
-            'total_amount' => $data['total_amount'],
-            'payee_name' => $data['payee_name'],
-            'bank_activity_id' => $data['bank_activity_id'] ?? null,
-            'voucher_number' => $data['voucher_number'],
-        ]);
+    {
+        DB::beginTransaction();
 
-        // Sync items
-        $voucher->items()->delete();
-        foreach ($data['items'] as $itemData) {
-            $voucher->items()->create([
-                'description' => $itemData['description'],
-                'quantity' => $itemData['quantity'],
-                'unit_price' => $itemData['unit_price'],
-                'sub_total' => $itemData['sub_total'],
-                'economy_code_id' => $itemData['economy_code_id'] ?? null,
-                'economy_code_item_id' => $itemData['economy_code_item_id'] ?? null,
+        try {
+
+            $data = $this->checkRetirementStatus($voucher, $data);
+
+            // Update voucher details
+            $voucher->update([
+                'voucher_type' => $data['voucher_type'],
+                'year_id' => $data['year_id'],
+                'mda_id' => $data['mda_id'],
+                'voucher_date' => $data['voucher_date'],
+                'narration' => $data['narration'],
+                'status' => $data['status'],
+                'total_amount' => $data['total_amount'],
+                'payee_name' => $data['payee_name'],
+                'bank_activity_id' => $data['bank_activity_id'] ?? null,
+                'voucher_number' => $data['voucher_number'],
             ]);
-        }
 
-        // Handle document deletions if documents_to_delete exists
-        if (isset($data['documents_to_delete']) && !empty($data['documents_to_delete'])) {
-            foreach ($data['documents_to_delete'] as $docId) {
-                $document = VoucherDocument::find($docId);
-                if ($document) {
-                    if (Storage::exists($document->file_path)) {
-                        Storage::delete($document->file_path);
+            // Sync items
+            $voucher->items()->delete();
+            foreach ($data['items'] as $itemData) {
+                $voucher->items()->create([
+                    'description' => $itemData['description'],
+                    'quantity' => $itemData['quantity'],
+                    'unit_price' => $itemData['unit_price'],
+                    'sub_total' => $itemData['sub_total'],
+                    'economy_code_id' => $itemData['economy_code_id'] ?? null,
+                    'economy_code_item_id' => $itemData['economy_code_item_id'] ?? null,
+                ]);
+            }
+
+            // Handle document deletions if documents_to_delete exists
+            if (isset($data['documents_to_delete']) && !empty($data['documents_to_delete'])) {
+                foreach ($data['documents_to_delete'] as $docId) {
+                    $document = VoucherDocument::find($docId);
+                    if ($document) {
+                        if (Storage::exists($document->file_path)) {
+                            Storage::delete($document->file_path);
+                        }
+                        $document->delete();
                     }
-                    $document->delete();
                 }
             }
-        }
 
-        // Handle new document uploads ONLY if files exist
-        if (!empty($files)) {
-            foreach ($files as $index => $documentFile) {
-                if ($documentFile->isValid()) {
-                    $path = $documentFile->store('voucher_documents', 'public');
-                    
-                    $documentType = $documentTypes[$index]['type'] ?? 'other';
-                    $documentLabel = $documentTypes[$index]['label'] ?? $documentType;
-                    
-                    $voucher->documents()->create([
-                        'file_name' => $documentFile->getClientOriginalName(),
-                        'file_path' => $path,
-                        'file_type' => $documentFile->getMimeType(),
-                        'file_size' => $documentFile->getSize(),
-                        'document_type' => $documentType,
-                        'document_label' => $documentLabel,
-                        'uploaded_by' => auth()->id(),
-                    ]);
+            // Handle new document uploads ONLY if files exist
+            if (!empty($files)) {
+                foreach ($files as $index => $documentFile) {
+                    if ($documentFile->isValid()) {
+                        $path = $documentFile->store('voucher_documents', 'public');
+
+                        $documentType = $documentTypes[$index]['type'] ?? 'other';
+                        $documentLabel = $documentTypes[$index]['label'] ?? $documentType;
+
+                        $voucher->documents()->create([
+                            'file_name' => $documentFile->getClientOriginalName(),
+                            'file_path' => $path,
+                            'file_type' => $documentFile->getMimeType(),
+                            'file_size' => $documentFile->getSize(),
+                            'document_type' => $documentType,
+                            'document_label' => $documentLabel,
+                            'uploaded_by' => auth()->id(),
+                        ]);
+                    }
                 }
             }
+
+            DB::commit();
+            return $voucher->fresh();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
         }
-
-        DB::commit();
-        return $voucher->fresh();
-
-    } catch (\Exception $e) {
-        DB::rollBack();
-        throw $e;
     }
-}
 
     /**
      * Mark a prepayment voucher as retired
@@ -662,14 +663,14 @@ class VoucherService
     protected function generateVoucherNumber($yearId): string
     {
         $prefix = 'VCH';
-        
+
         try {
             $year = \App\Models\FinancialYear::find($yearId);
             $yearCode = $year ? substr($year->name, 2, 2) : date('y');
         } catch (\Exception $e) {
             $yearCode = date('y');
         }
-        
+
         // Get the last voucher number for this year
         $lastVoucher = Voucher::where('year_id', $yearId)
             ->orderBy('id', 'desc')
@@ -767,7 +768,7 @@ class VoucherService
             if ($document) {
                 // Delete the physical file
                 Storage::disk('public')->delete($document->file_path);
-                
+
                 // Delete the database record
                 $document->delete();
 
@@ -786,23 +787,58 @@ class VoucherService
     protected function inferDocumentTypeFromFilename(string $filename): ?string
     {
         $filename = strtolower($filename);
-        
+
         $patterns = [
             'approval_form' => [
-                'approval', 'approval_form', 'authorization', 'auth', 'approve', 
-                'authorised', 'authorized', 'clearance', 'endorsement', 'approved'
+                'approval',
+                'approval_form',
+                'authorization',
+                'auth',
+                'approve',
+                'authorised',
+                'authorized',
+                'clearance',
+                'endorsement',
+                'approved'
             ],
             'invoice' => [
-                'invoice', 'bill', 'inv_', '_inv', 'billing', 'statement',
-                'charge', 'fee', 'quotation', 'estimate', 'billed'
+                'invoice',
+                'bill',
+                'inv_',
+                '_inv',
+                'billing',
+                'statement',
+                'charge',
+                'fee',
+                'quotation',
+                'estimate',
+                'billed'
             ],
             'receipt' => [
-                'receipt', 'payment', 'paid', 'payment_receipt', 'payment_confirmation',
-                'acknowledgement', 'voucher', 'payment_voucher', 'acknowledgment', 'received'
+                'receipt',
+                'payment',
+                'paid',
+                'payment_receipt',
+                'payment_confirmation',
+                'acknowledgement',
+                'voucher',
+                'payment_voucher',
+                'acknowledgment',
+                'received'
             ],
             'delivery_note' => [
-                'delivery', 'delivery_note', 'dispatch', 'del_note', 'dn_', '_dn', 
-                'goods_received', 'grn', 'waybill', 'shipping', 'transport', 'delivered'
+                'delivery',
+                'delivery_note',
+                'dispatch',
+                'del_note',
+                'dn_',
+                '_dn',
+                'goods_received',
+                'grn',
+                'waybill',
+                'shipping',
+                'transport',
+                'delivered'
             ],
         ];
 
@@ -929,5 +965,15 @@ class VoucherService
     {
         $totalAmount = $voucher->items()->sum('sub_total');
         $voucher->update(['total_amount' => $totalAmount]);
+    }
+
+    public function checkRetirementStatus(Voucher $voucher, array $data): array
+    {
+        if ($voucher->retirementVoucher != null) {
+            if (strtolower($voucher->retirementVoucher->status) === 'submitted') {
+                $data['status'] = 'Approved';
+            }
+        }
+        return $data;
     }
 }

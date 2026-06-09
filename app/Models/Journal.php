@@ -152,7 +152,7 @@ class Journal extends Model
     /**
      * Generate journal number
      */
-    public static function generateJournalNumber(): string
+    public static function generateJournalNumber_Old(): string
     {
         $year = date('Y');
         $month = date('m');
@@ -169,8 +169,37 @@ class Journal extends Model
             $newNumber = '0001';
         }
 
+
         return "$prefix-$year$month-$newNumber";
     }
+
+    public static function generateJournalNumber(): string
+{
+    $year = date('Y');
+    $month = date('m');
+    $prefix = 'JNL';
+    $base = "$prefix-$year$month-";
+
+    // 1. Get the latest number as a starting point
+    $lastJournal = self::where('journal_number', 'like', "$base%")
+        ->orderBy('id', 'desc')
+        ->first();
+
+    $counter = $lastJournal 
+        ? (int) substr($lastJournal->journal_number, -4) + 1 
+        : 1;
+
+    // 2. Loop until a unique number is found
+    do {
+        $newNumber = str_pad($counter, 4, '0', STR_PAD_LEFT);
+        $journalNumber = $base . $newNumber;
+        
+        $counter++;
+    } while (self::where('journal_number', $journalNumber)->exists());
+
+    return $journalNumber;
+}
+
 
     // Add relationships
     public function mda()
