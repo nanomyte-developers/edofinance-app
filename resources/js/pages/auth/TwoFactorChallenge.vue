@@ -71,7 +71,7 @@ const codeValue = computed<string>(() => code.value.join(''));
                         <div class="flex w-full items-center justify-center">
                             <PinInput
                                 id="otp"
-                                placeholder="○"
+                                placeholder="â—‹"
                                 v-model="code"
                                 type="number"
                                 otp

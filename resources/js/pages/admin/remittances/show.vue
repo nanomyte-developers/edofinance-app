@@ -12,11 +12,11 @@ import { computed, ref } from 'vue';
 
 const toast = useToast();
 
-// 💡 State for Modal
+// ðŸ’¡ State for Modal
 const showConfirmationModal = ref(false);
 const currentAction = ref(null);
 
-// 💡 PROPS: Receive remittance data from Laravel controller
+// ðŸ’¡ PROPS: Receive remittance data from Laravel controller
 const props = defineProps({
     remittance: {
         type: Object,
@@ -450,7 +450,7 @@ const breadcrumbs = computed(() => [
                                         {{
                                             remittance.source_bank_details.title
                                         }}
-                                        •
+                                        â€¢
                                         {{
                                             remittance.source_bank_details
                                                 .account_number
@@ -488,7 +488,7 @@ const breadcrumbs = computed(() => [
                                             remittance.destination_bank_details
                                                 .title
                                         }}
-                                        •
+                                        â€¢
                                         {{
                                             remittance.destination_bank_details
                                                 .account_number

@@ -417,7 +417,7 @@ const exportToCSV = () => {
     }
 
     try {
-        const headers = ['#', 'Account Code', 'Description', 'Debit (₦)', 'Credit (₦)', 'Type'];
+        const headers = ['#', 'Account Code', 'Description', 'Debit (â‚¦)', 'Credit (â‚¦)', 'Type'];
         const csvData = props.journal.entries.map((entry, index) => [
             index + 1,
             entry.account_code || '',
@@ -854,7 +854,7 @@ onMounted(() => {
                                         'text-green-600': isBalanced,
                                         'text-red-600': !isBalanced
                                     }">
-                                        {{ isBalanced ? '✓ Balanced' : '✗ Not Balanced' }}
+                                        {{ isBalanced ? 'âœ“ Balanced' : 'âœ— Not Balanced' }}
                                     </div>
                                 </div>
                             </div>
@@ -965,7 +965,7 @@ onMounted(() => {
 
                             <Column
                                 field="debit_amount"
-                                header="Debit (₦)"
+                                header="Debit (â‚¦)"
                                 headerStyle="width: 15%"
                                 bodyClass="text-right"
                             >
@@ -987,7 +987,7 @@ onMounted(() => {
 
                             <Column
                                 field="credit_amount"
-                                header="Credit (₦)"
+                                header="Credit (â‚¦)"
                                 headerStyle="width: 15%"
                                 bodyClass="text-right"
                             >
@@ -1079,7 +1079,7 @@ onMounted(() => {
                                             'text-green-600': isBalanced,
                                             'text-red-600': !isBalanced
                                         }">
-                                            {{ isBalanced ? '✓ Balanced' : '✗ Not Balanced' }}
+                                            {{ isBalanced ? 'âœ“ Balanced' : 'âœ— Not Balanced' }}
                                         </div>
                                     </div>
                                 </div>

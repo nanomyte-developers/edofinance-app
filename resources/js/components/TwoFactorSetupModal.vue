@@ -248,7 +248,7 @@ watch(
                             >
                                 <PinInput
                                     id="otp"
-                                    placeholder="○"
+                                    placeholder="â—‹"
                                     v-model="code"
                                     type="number"
                                     otp

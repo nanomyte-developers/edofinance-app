@@ -48,13 +48,13 @@ const breadcrumbs = [{ title: 'Reports' }, { title: 'Note 24.3' }, { title: 'Oth
                     <Column field="economic_code" header="" />
 
 
-                    <Column header="(₦)" class="text-right">
+                    <Column header="(â‚¦)" class="text-right">
                         <template #body="{ data }">
                             {{ formatCurrency(data.current_year) }}
                         </template>
                     </Column>
 
-                    <Column header=" (₦)" class="text-right">
+                    <Column header=" (â‚¦)" class="text-right">
                         <template #body="{ data }">
                             {{ formatCurrency(data.prev_year) }}
                         </template>

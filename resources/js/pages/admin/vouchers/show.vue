@@ -179,7 +179,7 @@ const approveTooltip = computed(() => {
             }
         }
 
-        return reasons.join(' • ') || 'Cannot approve voucher';
+        return reasons.join(' â€¢ ') || 'Cannot approve voucher';
     }
     return 'Approve this prepayment voucher for retirement';
 });
@@ -212,7 +212,7 @@ const retireTooltip = computed(() => {
             }
         }
 
-        return reasons.join(' • ') || 'Cannot retire voucher';
+        return reasons.join(' â€¢ ') || 'Cannot retire voucher';
     }
     return 'Retire prepayment voucher';
 });
@@ -256,10 +256,10 @@ const approveVoucher = async () => {
             console.error('Failed to approve voucher:', error);
         });
 
-        // ✅ UPDATE BUTTON STATE HERE - JUST THIS ONE LINE
+        // âœ… UPDATE BUTTON STATE HERE - JUST THIS ONE LINE
         isLocallyApproved.value = true;
 
-        // ✅ ALSO UPDATE RETIREMENT STATUS DATA
+        // âœ… ALSO UPDATE RETIREMENT STATUS DATA
         if (retirementStatusData.value) {
             retirementStatusData.value = {
                 ...retirementStatusData.value,
@@ -346,10 +346,10 @@ const confirmDraftVoucher = async () => {
             console.error('Failed to save voucher as draft:', error);
         });
 
-        // // ✅ UPDATE BUTTON STATE HERE - JUST THIS ONE LINE
+        // // âœ… UPDATE BUTTON STATE HERE - JUST THIS ONE LINE
         // isLocallyApproved.value = true;
 
-        // // ✅ ALSO UPDATE RETIREMENT STATUS DATA
+        // // âœ… ALSO UPDATE RETIREMENT STATUS DATA
         // if (retirementStatusData.value) {
         //     retirementStatusData.value = {
         //         ...retirementStatusData.value,
@@ -1896,7 +1896,7 @@ watch(
                                             {{ document.file_name }}
                                         </div>
                                         <div class="text-500 text-sm">
-                                            {{ document.document_type_label }} •
+                                            {{ document.document_type_label }} â€¢
                                             {{
                                                 (
                                                     document.file_size / 1024
@@ -1943,7 +1943,7 @@ watch(
                                             <Tag :value="approval.approval_role" severity="info" class="ml-2" />
                                         </div>
                                         <div class="text-500 mt-1 text-sm">
-                                            Step {{ approval.approval_step }} •
+                                            Step {{ approval.approval_step }} â€¢
                                             {{
                                                 formatDateTime(
                                                     approval.action_at,
@@ -2420,14 +2420,14 @@ watch(
                                                         <span v-if="
                                                             remainingBalance ===
                                                             0
-                                                        ">✓ Perfectly
+                                                        ">âœ“ Perfectly
                                                             Balanced</span>
                                                         <span v-else-if="
                                                             remainingBalance >
                                                             0
-                                                        ">⚠ Partial
+                                                        ">âš  Partial
                                                             Retirement</span>
-                                                        <span v-else>✗ Amount
+                                                        <span v-else>âœ— Amount
                                                             Exceeded</span>
                                                     </div>
                                                 </div>
@@ -3022,13 +3022,13 @@ retirement, index
                                                         retirement.total_amount,
                                                     )
                                                 }}</span>
-                                                <span class="text-500">•</span>
+                                                <span class="text-500">â€¢</span>
                                                 <span>{{
                                                     retirement.items
                                                         ?.length || 0
                                                 }}
                                                     items</span>
-                                                <span class="text-500">•</span>
+                                                <span class="text-500">â€¢</span>
                                                 <span>By:
                                                     {{
                                                         retirement.creator

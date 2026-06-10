@@ -58,12 +58,12 @@ const onPage = (event) => {
 };
 
 
-// 💡 State for Modal
+// ðŸ’¡ State for Modal
 const showConfirmationModal = ref(false);
 const currentVoucher = ref(null);
 const currentAction = ref(null);
 
-// 💡 PROPS: Receive real data from Laravel controller
+// ðŸ’¡ PROPS: Receive real data from Laravel controller
 const props = defineProps({
     // vouchers: {
     //     type: Object,
@@ -182,36 +182,36 @@ const getStatusSeverity = (status) => {
     const normalizedStatus = status.toLowerCase().trim();
 
     switch (normalizedStatus) {
-        // ✅ Approved/Completed States
+        // âœ… Approved/Completed States
         case 'approved':
         case 'paid':
         case 'closed':
             return 'success';
 
-        // ✅ Rejected/Declined States
+        // âœ… Rejected/Declined States
         case 'declined':
         case 'rejected':
         case 'decline and close':
             return 'danger';
 
-        // ✅ Returned/Needs Attention States
+        // âœ… Returned/Needs Attention States
         case 'sent back':
         case 'returned':
         case 'cancelled':
             return 'warning';
 
-        // ✅ In Progress/Pending States
+        // âœ… In Progress/Pending States
         case 'submitted':
         case 'pending':
         case 'forwarded':
             return 'secondary';
 
-        // ✅ Draft/Saved States
+        // âœ… Draft/Saved States
         case 'draft':
         case 'saved':
             return 'info';
 
-        // ⚠️ Default fallback
+        // âš ï¸ Default fallback
         default:
             return 'info';
     }
@@ -660,7 +660,7 @@ const exportItemCode = (event) => {
                     voucher. Set v-if to "true" to enable this debug view.
                 </div>
                 <div v-for="voucher in vouchers.data" :key="voucher.id" class="surface-50 border-round mb-2 p-2">
-                    <strong>{{ voucher.voucher_number }}</strong>: Status: "<strong>{{ voucher.status }}</strong>" → Can
+                    <strong>{{ voucher.voucher_number }}</strong>: Status: "<strong>{{ voucher.status }}</strong>" â†’ Can
                     Edit:
                     <strong :class="canEditVoucher(voucher)
                         ? 'text-green-600'

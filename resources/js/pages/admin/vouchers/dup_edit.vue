@@ -449,7 +449,7 @@ const scheduleInfo = computed(() => {
 // Format currency function - FIXED
 const formatCurrency = (value: number) => {
     if (isNaN(value) || value === null || value === undefined) {
-        return '₦0.00';
+        return 'â‚¦0.00';
     }
     return new Intl.NumberFormat('en-NG', {
         style: 'currency',
@@ -637,12 +637,12 @@ const updateItemSubTotal = (
     console.log(`Updating ${field}:`, { quantity, unit_price, sub_total });
 
     if (field === 'quantity' || field === 'unit_price') {
-        // Calculate sub_total from quantity × unit_price
+        // Calculate sub_total from quantity Ã— unit_price
         const calculatedSubTotal = quantity * unit_price;
         item.sub_total = parseFloat(calculatedSubTotal.toFixed(2));
         console.log('Calculated new sub_total:', item.sub_total);
     } else if (field === 'sub_total') {
-        // Calculate unit_price from sub_total ÷ quantity
+        // Calculate unit_price from sub_total Ã· quantity
         if (quantity > 0) {
             const calculatedUnitPrice = sub_total / quantity;
             item.unit_price = parseFloat(calculatedUnitPrice.toFixed(2));
@@ -1141,7 +1141,7 @@ const validateLineItems = () => {
         );
         if (subTotalDifference > 0.01) {
             itemErrors.sub_total =
-                'Sub total does not match quantity × unit price';
+                'Sub total does not match quantity Ã— unit price';
             isValid = false;
         }
 
@@ -2094,7 +2094,7 @@ fetchBankActivityData(1);
                                                     doc.file_name
                                                 }}</span>
                                                 <small class="text-500 block">
-                                                    {{ doc.document_label }} •
+                                                    {{ doc.document_label }} â€¢
                                                     {{
                                                         (
                                                             doc.file_size / 1024

@@ -259,7 +259,7 @@ const generateSelectedCashbooks = async () => {
             toast.add({
                 severity: 'success',
                 summary: 'Batch Generation Complete',
-                detail: `Processed ${summary.total_cashbooks} cashbooks (${summary.total_months} months × ${summary.total_accounts} accounts). ${summary.successful} succeeded, ${summary.failed} failed. Total entries: ${summary.total_entries}`,
+                detail: `Processed ${summary.total_cashbooks} cashbooks (${summary.total_months} months Ã— ${summary.total_accounts} accounts). ${summary.successful} succeeded, ${summary.failed} failed. Total entries: ${summary.total_entries}`,
                 life: 8000,
             });
 
@@ -273,14 +273,14 @@ const generateSelectedCashbooks = async () => {
             const successes = response.data.results.filter((r) => r.success);
             const failures = response.data.results.filter((r) => !r.success);
 
-            console.log(`✓ ${successes.length} cashbooks succeeded`);
-            console.log(`✗ ${failures.length} cashbooks failed`);
+            console.log(`âœ“ ${successes.length} cashbooks succeeded`);
+            console.log(`âœ— ${failures.length} cashbooks failed`);
 
             // Show first 5 failures if any
             if (failures.length > 0) {
                 failures.slice(0, 5).forEach((failure) => {
                     console.error(
-                        `✗ ${failure.month_name} - ${failure.bank_account_name}: ${failure.message}`,
+                        `âœ— ${failure.month_name} - ${failure.bank_account_name}: ${failure.message}`,
                     );
                 });
 

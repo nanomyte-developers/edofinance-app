@@ -641,10 +641,10 @@
                                             Description
                                         </th>
                                         <th class="px-4 py-2 text-left">
-                                            Debit (₦)
+                                            Debit (â‚¦)
                                         </th>
                                         <th class="px-4 py-2 text-left">
-                                            Credit (₦)
+                                            Credit (â‚¦)
                                         </th>
                                         <th v-if="isEditable(form.status)" class="px-4 py-2 text-left">
                                             Actions
@@ -2459,9 +2459,9 @@ const formatDateForBackend = (dateValue) => {
 // Format currency
 const formatCurrency = (value) => {
     try {
-        if (!value && value !== 0) return '₦0.00';
+        if (!value && value !== 0) return 'â‚¦0.00';
         const numValue = Number(value);
-        if (isNaN(numValue)) return '₦0.00';
+        if (isNaN(numValue)) return 'â‚¦0.00';
         return new Intl.NumberFormat('en-NG', {
             style: 'currency',
             currency: 'NGN',
@@ -2470,7 +2470,7 @@ const formatCurrency = (value) => {
         }).format(numValue || 0);
     } catch (error) {
         console.error('Error formatting currency:', error);
-        return '₦0.00';
+        return 'â‚¦0.00';
     }
 };
 

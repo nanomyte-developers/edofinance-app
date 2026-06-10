@@ -15,12 +15,12 @@ import { computed, ref } from 'vue';
 
 const toast = useToast();
 
-// 💡 State for Modal
+// ðŸ’¡ State for Modal
 const showConfirmationModal = ref(false);
 const currentVoucher = ref(null);
 const currentAction = ref(null);
 
-// 💡 PROPS: Receive real data from Laravel controller
+// ðŸ’¡ PROPS: Receive real data from Laravel controller
 const props = defineProps({
     vouchers: {
         type: Object,

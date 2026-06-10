@@ -443,7 +443,7 @@ import UserRolesPermissions from './UserRolesPermissions.vue';
 
 const toast = useToast();
 
-// 💡 State for Modals
+// ðŸ’¡ State for Modals
 const showConfirmationModal = ref(false);
 const currentUser = ref(null);
 const currentAction = ref(null);
@@ -454,10 +454,10 @@ const permissionsDialog = ref(false);
 const selectedUser = ref(null);
 const loading = ref(false);
 
-// 💡 Menu Reference
+// ðŸ’¡ Menu Reference
 const menu = ref(null);
 
-// 💡 PROPS: Receive real data from Laravel controller
+// ðŸ’¡ PROPS: Receive real data from Laravel controller
 const props = defineProps({
     users: {
         type: Object,
@@ -714,24 +714,24 @@ const loadUsers = () => {
 
 // In index.vue - update the onUserFormSaved method
 const onUserFormSaved = (formData) => {
-    console.log('✅ index.vue - onUserFormSaved received data:', formData);
-    console.log('✅ index.vue - UserFormEditMode:', userFormEditMode.value);
-    console.log('✅ index.vue - Selected User ID:', selectedUser.value?.id);
+    console.log('âœ… index.vue - onUserFormSaved received data:', formData);
+    console.log('âœ… index.vue - UserFormEditMode:', userFormEditMode.value);
+    console.log('âœ… index.vue - Selected User ID:', selectedUser.value?.id);
 
     userFormDialog.value = false;
 
     if (userFormEditMode.value) {
         // Editing existing user
         console.log(
-            '🔄 index.vue - Sending PUT request for user ID:',
+            'ðŸ”„ index.vue - Sending PUT request for user ID:',
             selectedUser.value.id,
         );
 
         router.put(`/users/${selectedUser.value.id}`, formData, {
             preserveScroll: true,
             onSuccess: (page) => {
-                console.log('✅ index.vue - PUT request successful');
-                console.log('✅ index.vue - Response:', page);
+                console.log('âœ… index.vue - PUT request successful');
+                console.log('âœ… index.vue - Response:', page);
                 router.reload({
                     preserveScroll: true,
                     onSuccess: () => {
@@ -745,7 +745,7 @@ const onUserFormSaved = (formData) => {
                 });
             },
             onError: (errors) => {
-                console.error('❌ index.vue - PUT request failed:', errors);
+                console.error('âŒ index.vue - PUT request failed:', errors);
                 toast.add({
                     severity: 'error',
                     summary: 'Error',
@@ -756,18 +756,18 @@ const onUserFormSaved = (formData) => {
                 });
             },
             onFinish: () => {
-                console.log('🔄 index.vue - PUT request finished');
+                console.log('ðŸ”„ index.vue - PUT request finished');
             },
         });
     } else {
         // Creating new user
-        console.log('🔄 index.vue - Sending POST request for new user');
+        console.log('ðŸ”„ index.vue - Sending POST request for new user');
 
         router.post('/users', formData, {
             preserveScroll: true,
             onSuccess: (page) => {
-                console.log('✅ index.vue - POST request successful');
-                console.log('✅ index.vue - Response:', page);
+                console.log('âœ… index.vue - POST request successful');
+                console.log('âœ… index.vue - Response:', page);
                 router.reload({
                     preserveScroll: true,
                     onSuccess: () => {
@@ -781,7 +781,7 @@ const onUserFormSaved = (formData) => {
                 });
             },
             onError: (errors) => {
-                console.error('❌ index.vue - POST request failed:', errors);
+                console.error('âŒ index.vue - POST request failed:', errors);
                 toast.add({
                     severity: 'error',
                     summary: 'Error',
@@ -792,7 +792,7 @@ const onUserFormSaved = (formData) => {
                 });
             },
             onFinish: () => {
-                console.log('🔄 index.vue - POST request finished');
+                console.log('ðŸ”„ index.vue - POST request finished');
             },
         });
     }

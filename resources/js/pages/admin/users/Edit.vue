@@ -12,7 +12,7 @@ import Create from './Create.vue';
 
 defineProps({
     user: Object,
-    // 🔥 CRITICAL FIX: Define all the assignment list props
+    // ðŸ”¥ CRITICAL FIX: Define all the assignment list props
     allRoles: { type: Array, default: () => [] },
     allPermissions: { type: Array, default: () => [] },
     allMdas: { type: Array, default: () => [] },

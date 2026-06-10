@@ -577,8 +577,8 @@ const rowCount = computed(() => {
 //                                 <th rowspan="2" class="payer-col">From Whom Received</th>
 //                                 <th colspan="2" class="class-col">Classification</th>
 //                                 <th rowspan="2" class="receipt-col">Treasury Receipt No.</th>
-//                                 <th rowspan="2" class="amount-col">Receipts (₦)</th>
-//                                 <th rowspan="2" class="bank-col">Bank (₦)</th>
+//                                 <th rowspan="2" class="amount-col">Receipts (â‚¦)</th>
+//                                 <th rowspan="2" class="bank-col">Bank (â‚¦)</th>
                                 
 //                                 <!-- Credit Side Column Headers -->
 //                                 <th rowspan="2" class="date-col">Date</th>
@@ -587,8 +587,8 @@ const rowCount = computed(() => {
 //                                 <th rowspan="2" class="payee-col">To Whom Paid</th>
 //                                 <th colspan="2" class="class-col">Classification</th>
 //                                 <th rowspan="2" class="cheque-col">Cheque No.</th>
-//                                 <th rowspan="2" class="amount-col">Payments (₦)</th>
-//                                 <th rowspan="2" class="bank-col">Bank (₦)</th>
+//                                 <th rowspan="2" class="amount-col">Payments (â‚¦)</th>
+//                                 <th rowspan="2" class="bank-col">Bank (â‚¦)</th>
 //                             </tr>
 //                             <tr>
 //                                 <!-- Debit Side Sub-headers -->
@@ -779,10 +779,10 @@ const exportToCSV = () => {
             'Classification Title',
             'Classification Number',
             'Receipt No/Cheque No/Dept No',
-            'Receipts (₦)',
-            'Bank (₦)',
-            'Payments (₦)',
-            'Bank (₦)',
+            'Receipts (â‚¦)',
+            'Bank (â‚¦)',
+            'Payments (â‚¦)',
+            'Bank (â‚¦)',
             'Type',
             'Transaction Date',
             'Amount'
@@ -1497,8 +1497,8 @@ const refreshBalanceData = async () => {
                                                 >
                                                     Number
                                                 </th>
-                                                <th>₦</th>
-                                                <th>₦</th>
+                                                <th>â‚¦</th>
+                                                <th>â‚¦</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1772,8 +1772,8 @@ const refreshBalanceData = async () => {
                                                 >
                                                     Number
                                                 </th>
-                                                <th>₦</th>
-                                                <th>₦</th>
+                                                <th>â‚¦</th>
+                                                <th>â‚¦</th>
                                             </tr>
                                         </thead>
                                         <tbody>

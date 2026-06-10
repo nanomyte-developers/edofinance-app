@@ -111,7 +111,7 @@
                         {{ selectedLog.description }}
                     </h4>
                     <p class="text-500">
-                        {{ selectedLog.log_name }} •
+                        {{ selectedLog.log_name }} â€¢
                         {{ selectedLog.event || 'No event' }}
                     </p>
                 </div>

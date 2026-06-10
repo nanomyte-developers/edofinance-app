@@ -267,10 +267,10 @@ const form = useForm({
 
 // --- INITIALIZATION FUNCTIONS ---
 const initializeFormData = () => {
-    console.log('🔍 UserForm - Initializing with user data:', props.user);
-    console.log('🔍 UserForm - Edit mode:', props.editMode);
+    console.log('ðŸ” UserForm - Initializing with user data:', props.user);
+    console.log('ðŸ” UserForm - Edit mode:', props.editMode);
     console.log(
-        '🔍 UserForm - Toggle states - Roles:',
+        'ðŸ” UserForm - Toggle states - Roles:',
         assignRolesPermissions.value,
         'MDAs:',
         assignMdas.value,
@@ -301,7 +301,7 @@ watch(
     () => mdaList.value[1],
     (newTarget) => {
         console.log(
-            '🔍 UserForm - MDA selection changed:',
+            'ðŸ” UserForm - MDA selection changed:',
             newTarget.map((m) => m.name),
         );
     },
@@ -310,14 +310,14 @@ watch(
 
 // Watch toggle changes for debugging
 watch([assignRolesPermissions, assignMdas], ([newRoles, newMdas]) => {
-    console.log('🔍 UserForm - Toggle states changed:');
+    console.log('ðŸ” UserForm - Toggle states changed:');
     console.log('  - Roles & Permissions:', newRoles);
     console.log('  - MDAs:', newMdas);
 });
 
 // Initialize component
 onMounted(() => {
-    console.log('🔍 UserForm mounted:');
+    console.log('ðŸ” UserForm mounted:');
     console.log('  - Edit Mode:', props.editMode);
     console.log(
         '  - Toggle states - Roles:',
@@ -332,10 +332,10 @@ onMounted(() => {
 
 // --- SAVE FUNCTION ---
 const onSave = () => {
-    console.log('💾 UserForm - Save button clicked!');
-    console.log('💾 UserForm - Edit Mode:', props.editMode);
+    console.log('ðŸ’¾ UserForm - Save button clicked!');
+    console.log('ðŸ’¾ UserForm - Edit Mode:', props.editMode);
     console.log(
-        '💾 UserForm - Toggle states - Roles:',
+        'ðŸ’¾ UserForm - Toggle states - Roles:',
         assignRolesPermissions.value,
         'MDAs:',
         assignMdas.value,
@@ -367,7 +367,7 @@ const onSave = () => {
         delete formData.password_confirmation;
     }
 
-    console.log('💾 UserForm - Emitting saved event with data:', formData);
+    console.log('ðŸ’¾ UserForm - Emitting saved event with data:', formData);
     emit('saved', formData);
 };
 </script>

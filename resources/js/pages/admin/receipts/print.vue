@@ -214,7 +214,7 @@
                 <div class="space-y-6">
                     <!-- Amount in Figures -->
                     <div class="flex items-center text-2xl font-bold">
-                        <span class="mr-2">₦</span>
+                        <span class="mr-2">â‚¦</span>
                         <span class="min-w-[150px] border-b-2 border-dotted border-black px-6 pb-1">
                             {{ formatCurrency(receipt.amount) }}
                         </span>
@@ -444,7 +444,7 @@ const formatEcoCode = (code) => {
 // Format economy code item with padding
 const formatEcoCodeItem = (code) => {
     if (!code) return '___________';
-    return code.padEnd(15, '_') + '—';
+    return code.padEnd(15, '_') + 'â€”';
 };
 
 // Format MDA name with padding
@@ -457,7 +457,7 @@ const formatMdaName = (name) => {
 // Format MDA code with padding
 const formatMdaCode = (code) => {
     if (!code) return '___________';
-    return code.padEnd(15, '_') + '—';
+    return code.padEnd(15, '_') + 'â€”';
 };
 
 // Get date day and month with leading zeros for both

@@ -12,7 +12,7 @@ import { computed, ref } from 'vue';
 
 const toast = useToast();
 
-// 💡 PROPS: Receive schedule data from Laravel controller
+// ðŸ’¡ PROPS: Receive schedule data from Laravel controller
 const props = defineProps({
     schedule: {
         type: Object,

@@ -55,13 +55,13 @@ const breadcrumbs = [{ title: 'Reports' }, { title: 'GPFS Cash and Bank Balances
 
                     <Column field="account_number" header="ACCOUNT NO." />
 
-                    <Column header="2024 (₦)" class="text-right">
+                    <Column header="2024 (â‚¦)" class="text-right">
                         <template #body="{ data }">
                             {{ formatCurrency(data.balance_current_year) }}
                         </template>
                     </Column>
 
-                    <Column header="2023 (₦)" class="text-right">
+                    <Column header="2023 (â‚¦)" class="text-right">
                         <template #body="{ data }">
                             {{ formatCurrency(data.balance_previous_year) }}
                         </template>

@@ -51,10 +51,10 @@ const breadcrumbs = [{ title: 'Reports' }, { title: 'Notes' }, { title: 'Invento
                             <th class="border border-black p-2 w-2 text-center">Note</th>
                             <th class="border border-black p-2 text-left">Details</th>
                             <th class="border border-black p-2 w-16 text-center">Ref. Notes</th>
-                            <th class="border border-black p-2 w-32 text-center">Actual<br>₦</th>
-                            <th class="border border-black p-2 w-32 text-center">Budget 2025<br>₦</th>
-                            <th class="border border-black p-2 w-32 text-center">Variance<br>₦</th>
-                            <th class="border border-black p-2 w-32 text-center text-[9px]">2024<br>Actual ₦</th>
+                            <th class="border border-black p-2 w-32 text-center">Actual<br>â‚¦</th>
+                            <th class="border border-black p-2 w-32 text-center">Budget 2025<br>â‚¦</th>
+                            <th class="border border-black p-2 w-32 text-center">Variance<br>â‚¦</th>
+                            <th class="border border-black p-2 w-32 text-center text-[9px]">2024<br>Actual â‚¦</th>
                         </tr>
                         </thead>
                         <tbody>

@@ -245,7 +245,7 @@ const form = useForm({
     password: '',
     password_confirmation: '',
 
-    // ✅ SOLUTION: Initialize with existing user data if available
+    // âœ… SOLUTION: Initialize with existing user data if available
     selectedRoles: props.user?.roles?.map((r) => r.name) || [],
     selectedPermissions: props.user?.permissions?.map((p) => p.name) || [],
     selectedMdas: props.user?.mdas?.map((m) => m.id) || [],
@@ -357,7 +357,7 @@ const form = useForm({
     password: '',
     password_confirmation: '',
 
-    // 🔥 FIX 1: Load existing assignments into form object in edit mode
+    // ðŸ”¥ FIX 1: Load existing assignments into form object in edit mode
     selectedRoles: props.user?.roles?.map((r) => r.name) || [],
     selectedPermissions: props.user?.permissions?.map((p) => p.name) || [],
     selectedMdas: [], // PickList will initialize this below, keep empty for now
@@ -366,7 +366,7 @@ const form = useForm({
 // --- INITIALIZATION ---
 
 const initializeMdas = () => {
-    // 🔥 FIX 2: Correctly map the array of MDA objects (props.user.mdas) to an array of IDs
+    // ðŸ”¥ FIX 2: Correctly map the array of MDA objects (props.user.mdas) to an array of IDs
     // const assignedIds = props.user?.mdas?.map((mda) => mda.id) || [];
     const assignedIds = props.user?.mdas?.map((mda) => mda.id) || [];
 
@@ -425,7 +425,7 @@ const onSave = () => {
     delete formData.selectedPermissions;
     delete formData.selectedMdas; // Remove old key
 
-    // 🔥 FIX 3: Assign the collected arrays to the keys the backend expects
+    // ðŸ”¥ FIX 3: Assign the collected arrays to the keys the backend expects
     formData.roles = rolesToSubmit;
     formData.permissions = permissionsToSubmit;
     formData.mdas = mdasToSubmit; // Use the correct key 'mdas'
@@ -467,7 +467,7 @@ const assignMdas = ref(false);
 // --- PICKLIST STATE ---
 const mdaList = ref([[], []]);
 
-// --- FORM DATA REFS (🔥 ALL INITIALIZATION FIXES ARE HERE) ---
+// --- FORM DATA REFS (ðŸ”¥ ALL INITIALIZATION FIXES ARE HERE) ---
 // const form = useForm({
 //     // FIX 1: Basic fields are initialized from props.user
 //     name: props.user?.name || '',
@@ -492,7 +492,7 @@ const mdaList = ref([[], []]);
 //     password: '',
 //     password_confirmation: '',
 
-//     // ⭐ FIX: Initialize selectedRoles and selectedPermissions from existing user data in edit mode
+//     // â­ FIX: Initialize selectedRoles and selectedPermissions from existing user data in edit mode
 //     selectedRoles: props.user?.roles?.map((r) => r.name) || [],
 //     selectedPermissions: props.user?.permissions?.map((p) => p.name) || [],
 //     selectedMdas: props.user?.mdas?.map((m) => m.id) || [],
@@ -504,7 +504,7 @@ const form = useForm({
     password: '',
     password_confirmation: '',
 
-    // ⭐ FIX: Initialize V-MODEL TARGETS with existing user data in edit mode
+    // â­ FIX: Initialize V-MODEL TARGETS with existing user data in edit mode
     // Map role objects to an array of names (e.g., ['admin', 'editor'])
     selectedRoles: props.user?.roles?.map((r) => r.name) || [],
     // Map permission objects to an array of names (e.g., ['users.view', 'posts.create'])
@@ -517,7 +517,7 @@ const form = useForm({
 
 const initializeMdas = () => {
     // 1. Get the list of IDs assigned to the user (if in edit mode)
-    // 🔥 FIX 4: The correct key from your resource log is 'mdas', NOT 'selected_mdas'
+    // ðŸ”¥ FIX 4: The correct key from your resource log is 'mdas', NOT 'selected_mdas'
     const assignedIds = props.user?.mdas?.map((mda) => mda.id) || [];
 
     // 2. Separate all MDAs into source and target lists
@@ -2063,16 +2063,16 @@ onMounted(() => {
 //     emit('saved', formData);
 // };
 // const onSaved = (formData) => {
-//     console.log('💾 Frontend - Sending data to backend:', formData);
+//     console.log('ðŸ’¾ Frontend - Sending data to backend:', formData);
 
 //     if (editMode.value) {
 //         // Make sure we're using the correct user ID and method
-//         console.log('💾 Frontend - Updating user ID:', props.user.id);
+//         console.log('ðŸ’¾ Frontend - Updating user ID:', props.user.id);
 
 //         router.put(`/users/${props.user.id}`, formData, {
 //             preserveScroll: true,
 //             onSuccess: () => {
-//                 console.log('✅ Frontend - Update successful');
+//                 console.log('âœ… Frontend - Update successful');
 //                 router.reload({
 //                     preserveScroll: true,
 //                     onSuccess: () => {
@@ -2086,7 +2086,7 @@ onMounted(() => {
 //                 });
 //             },
 //             onError: (errors) => {
-//                 console.error('❌ Frontend - Update failed:', errors);
+//                 console.error('âŒ Frontend - Update failed:', errors);
 //                 toast.add({
 //                     severity: 'error',
 //                     summary: 'Error',
@@ -2101,7 +2101,7 @@ onMounted(() => {
 //         router.post('/users', formData, {
 //             preserveScroll: true,
 //             onSuccess: () => {
-//                 console.log('✅ Frontend - Create successful');
+//                 console.log('âœ… Frontend - Create successful');
 //                 router.reload({
 //                     preserveScroll: true,
 //                     onSuccess: () => {
@@ -2115,7 +2115,7 @@ onMounted(() => {
 //                 });
 //             },
 //             onError: (errors) => {
-//                 console.error('❌ Frontend - Create failed:', errors);
+//                 console.error('âŒ Frontend - Create failed:', errors);
 //                 toast.add({
 //                     severity: 'error',
 //                     summary: 'Error',
@@ -2131,16 +2131,16 @@ onMounted(() => {
 
 // --- SAVE FUNCTION ---
 const onSave = () => {
-    console.log('💾 UserForm - Save button clicked!');
-    console.log('💾 UserForm - Edit Mode:', props.editMode);
-    console.log('💾 UserForm - Form data:', form.data());
-    console.log('💾 UserForm - Selected Roles:', selectedRoles.value);
+    console.log('ðŸ’¾ UserForm - Save button clicked!');
+    console.log('ðŸ’¾ UserForm - Edit Mode:', props.editMode);
+    console.log('ðŸ’¾ UserForm - Form data:', form.data());
+    console.log('ðŸ’¾ UserForm - Selected Roles:', selectedRoles.value);
     console.log(
-        '💾 UserForm - Selected Permissions:',
+        'ðŸ’¾ UserForm - Selected Permissions:',
         selectedPermissions.value,
     );
     console.log(
-        '💾 UserForm - MDAs:',
+        'ðŸ’¾ UserForm - MDAs:',
         mdaList.value[1].map((m) => m.id),
     );
 
@@ -2169,13 +2169,13 @@ const onSave = () => {
         delete formData.password_confirmation;
     }
 
-    console.log('💾 UserForm - Emitting saved event with data:', formData);
+    console.log('ðŸ’¾ UserForm - Emitting saved event with data:', formData);
     emit('saved', formData);
 };
 
 // Add a test function to check if the button is working
 const testButton = () => {
-    console.log('✅ Test button clicked!');
+    console.log('âœ… Test button clicked!');
 };
 </script>
 

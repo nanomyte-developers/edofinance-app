@@ -14,11 +14,11 @@ import { computed, ref } from 'vue';
 
 const toast = useToast();
 
-// 💡 State for Modal
+// ðŸ’¡ State for Modal
 const showConfirmationModal = ref(false);
 const currentAction = ref(null);
 
-// 💡 PROPS: Receive voucher data from Laravel controller
+// ðŸ’¡ PROPS: Receive voucher data from Laravel controller
 const props = defineProps({
     voucher: {
         type: Object,
@@ -781,7 +781,7 @@ const breadcrumbs = computed(() => [
                                             {{ document.file_name }}
                                         </div>
                                         <div class="text-500 text-sm">
-                                            {{ document.document_type_label }} •
+                                            {{ document.document_type_label }} â€¢
                                             {{
                                                 (
                                                     document.file_size / 1024
@@ -828,7 +828,7 @@ const breadcrumbs = computed(() => [
                                             <Tag :value="approval.approval_role" severity="info" class="ml-2" />
                                         </div>
                                         <div class="text-500 mt-1 text-sm">
-                                            Step {{ approval.approval_step }} •
+                                            Step {{ approval.approval_step }} â€¢
                                             {{
                                                 formatDateTime(
                                                     approval.action_at,

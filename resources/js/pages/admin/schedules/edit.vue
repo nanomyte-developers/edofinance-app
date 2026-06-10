@@ -1488,7 +1488,7 @@ fetchData(1);
                             </template>
                         </Column>
 
-                        <Column header="Amount (₦)" style="width: 16%; min-width: 150px">
+                        <Column header="Amount (â‚¦)" style="width: 16%; min-width: 150px">
                             <template #body="slotProps">
                                 <InputNumber v-model="slotProps.data.amount" mode="currency" currency="NGN"
                                     locale="en-NG" class="w-full" inputClass="text-right font-bold" :min="0" :class="{

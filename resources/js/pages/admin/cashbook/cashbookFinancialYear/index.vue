@@ -323,7 +323,7 @@ onMounted(() => {
                 </div>
             </div>
             <div class="field">
-                <label>Opening Balance (₦)</label>
+                <label>Opening Balance (â‚¦)</label>
                 <InputNumber
                     v-model="form.opening_balance"
                     mode="decimal"

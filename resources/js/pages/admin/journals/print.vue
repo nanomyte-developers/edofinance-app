@@ -95,8 +95,8 @@
                             <th class="border border-black p-3">Account Code</th>
                             <th class="border border-black p-3">Account Name</th>
                             <th class="border border-black p-3">Economic Code</th>
-                            <th class="border border-black p-3 text-right">Debit (₦)</th>
-                            <th class="border border-black p-3 text-right">Credit (₦)</th>
+                            <th class="border border-black p-3 text-right">Debit (â‚¦)</th>
+                            <th class="border border-black p-3 text-right">Credit (â‚¦)</th>
                             <th class="border border-black p-3">Description</th>
                         </tr>
                     </thead>
@@ -116,8 +116,8 @@
                             <td class="border border-black p-3 text-right">{{ formatCurrency(journal.total_debit) }}</td>
                             <td class="border border-black p-3 text-right">{{ formatCurrency(journal.total_credit) }}</td>
                             <td class="border border-black p-3">
-                                <span v-if="journal.total_debit === journal.total_credit" class="text-green-600">✓ Balanced</span>
-                                <span v-else class="text-red-600">✗ Not Balanced</span>
+                                <span v-if="journal.total_debit === journal.total_credit" class="text-green-600">âœ“ Balanced</span>
+                                <span v-else class="text-red-600">âœ— Not Balanced</span>
                             </td>
                         </tr>
                     </tbody>
@@ -186,7 +186,7 @@ const props = defineProps({
 
 // Format currency
 const formatCurrency = (amount: number) => {
-    if (!amount && amount !== 0) return '₦0.00';
+    if (!amount && amount !== 0) return 'â‚¦0.00';
     return new Intl.NumberFormat('en-NG', {
         style: 'currency',
         currency: 'NGN',

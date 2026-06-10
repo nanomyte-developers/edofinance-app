@@ -34,14 +34,14 @@ const filters = ref({
 
 const toast = useToast();
 
-// 💡 State for Modals
+// ðŸ’¡ State for Modals
 const showConfirmationModal = ref(false);
 const showVoucherTypeModal = ref(false);
 const currentSchedule = ref(null);
 const currentAction = ref(null);
 const selectedVoucherType = ref(null);
 
-// 💡 PROPS: Receive real schedules data from Laravel controller
+// ðŸ’¡ PROPS: Receive real schedules data from Laravel controller
 const props = defineProps({
     schedules: {
         type: Object,
@@ -113,28 +113,28 @@ const getStatusSeverity = (status) => {
     const normalizedStatus = status.toLowerCase().trim();
 
     switch (normalizedStatus) {
-        // ✅ Fully Processed
+        // âœ… Fully Processed
         case 'voucher raised':
         case 'processed':
         case 'approved':
             return 'success';
 
-        // ❌ Rejected
+        // âŒ Rejected
         case 'rejected':
         case 'declined':
             return 'danger';
 
-        // ⚠️ Needs Action
+        // âš ï¸ Needs Action
         case 'returned':
         case 'needs attention':
             return 'warning';
 
-        // ⏳ In Progress
+        // â³ In Progress
         case 'submitted':
         case 'awaiting voucher':
             return 'secondary';
 
-        // 📝 Initial
+        // ðŸ“ Initial
         case 'draft':
         case 'saved':
             return 'info';

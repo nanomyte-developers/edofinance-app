@@ -1411,7 +1411,7 @@ const exportCSV = () => {
                         Note: Date format should be YYYY-MM-DD
                     </p>
                     <p class="mt-1 text-xs text-amber-600">
-                        ⚠️ Important: Your CSV should NOT include an 'id'
+                        âš ï¸ Important: Your CSV should NOT include an 'id'
                         column. The first column should be receipt_number.
                     </p>
                 </div>
@@ -1450,10 +1450,10 @@ const exportCSV = () => {
                             }}
                         </p>
                         <p class="mt-1 text-xs text-gray-500">
-                            Maximum file size: 2MB • CSV format only
+                            Maximum file size: 2MB â€¢ CSV format only
                         </p>
                         <p v-if="importForm.file" class="mt-1 text-xs text-green-600">
-                            ✓ File selected:
+                            âœ“ File selected:
                             {{ (importForm.file.size / 1024).toFixed(1) }} KB
                         </p>
                     </label>
@@ -1584,10 +1584,10 @@ const exportCSV = () => {
 
                         <div class="space-y-2">
                             <label class="block text-sm font-medium text-gray-700">
-                                Amount (₦) <span class="text-red-500">*</span>
+                                Amount (â‚¦) <span class="text-red-500">*</span>
                             </label>
                             <InputNumber v-model="amount" mode="currency" currency="NGN" locale="en-NG"
-                                :class="{ 'p-invalid': amountError }" placeholder="₦ 0.00" class="w-full" :min="0" />
+                                :class="{ 'p-invalid': amountError }" placeholder="â‚¦ 0.00" class="w-full" :min="0" />
                             <small class="p-error block text-xs" v-if="amountError">{{ amountError }}</small>
                         </div>
                     </div>
@@ -1694,7 +1694,7 @@ const exportCSV = () => {
                                             }}</span>
                                             <span class="text-xs text-gray-500">
                                                 {{ slotProps.option.title }}
-                                                •
+                                                â€¢
                                                 {{
                                                     slotProps.option
                                                         .account_number

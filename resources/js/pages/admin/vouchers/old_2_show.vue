@@ -133,7 +133,7 @@ const approveTooltip = computed(() => {
             reasons.push('No approval permission');
         }
 
-        return reasons.join(' • ') || 'Cannot approve voucher';
+        return reasons.join(' â€¢ ') || 'Cannot approve voucher';
     }
     return 'Approve this prepayment voucher for retirement';
 });
@@ -1907,7 +1907,7 @@ watch(
                                             {{ document.file_name }}
                                         </div>
                                         <div class="text-500 text-sm">
-                                            {{ document.document_type_label }} •
+                                            {{ document.document_type_label }} â€¢
                                             {{
                                                 (
                                                     document.file_size / 1024
@@ -1974,7 +1974,7 @@ watch(
                                             />
                                         </div>
                                         <div class="text-500 mt-1 text-sm">
-                                            Step {{ approval.approval_step }} •
+                                            Step {{ approval.approval_step }} â€¢
                                             {{
                                                 formatDateTime(
                                                     approval.action_at,
@@ -2669,7 +2669,7 @@ watch(
                                                                 remainingBalance ===
                                                                 0
                                                             "
-                                                            >✓ Perfectly
+                                                            >âœ“ Perfectly
                                                             Balanced</span
                                                         >
                                                         <span
@@ -2677,11 +2677,11 @@ watch(
                                                                 remainingBalance >
                                                                 0
                                                             "
-                                                            >⚠ Partial
+                                                            >âš  Partial
                                                             Retirement</span
                                                         >
                                                         <span v-else
-                                                            >✗ Amount
+                                                            >âœ— Amount
                                                             Exceeded</span
                                                         >
                                                     </div>
@@ -3463,7 +3463,7 @@ watch(
                                                         )
                                                     }}</span
                                                 >
-                                                <span class="text-500">•</span>
+                                                <span class="text-500">â€¢</span>
                                                 <span
                                                     >{{
                                                         retirement.items
@@ -3471,7 +3471,7 @@ watch(
                                                     }}
                                                     items</span
                                                 >
-                                                <span class="text-500">•</span>
+                                                <span class="text-500">â€¢</span>
                                                 <span
                                                     >By:
                                                     {{

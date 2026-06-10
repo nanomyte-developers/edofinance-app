@@ -3,13 +3,14 @@ import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
 import laravel from 'laravel-vite-plugin';
 import { defineConfig } from 'vite';
+import path from 'path';
 
 export default defineConfig({
     plugins: [
         laravel({
             input: ['resources/js/app.ts',
-                    'resources/css/app.css', // Add this
-                    'resources/css/sakai-theme.css', // Add this
+                    'resources/css/app.css',
+                    'resources/css/sakai-theme.css',
                 ],
             ssr: 'resources/js/ssr.ts',
             refresh: true,
@@ -29,7 +30,9 @@ export default defineConfig({
     ],
     resolve: {
         alias: {
-            'ziggy-js': '/vendor/tightenco/ziggy/dist/vue.es.js', // or the correct path
+            // Use index.esm.js instead of vue.es.js
+            'ziggy-js': path.resolve(__dirname, 'vendor/tightenco/ziggy/dist/'),
+            '@': path.resolve(__dirname, 'resources/js'),
         },
     },
 });

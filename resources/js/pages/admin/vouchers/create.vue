@@ -607,7 +607,7 @@ const validateLineItems = () => {
         );
         if (subTotalDifference > 0.01) {
             itemErrors.sub_total =
-                'Sub total does not match quantity × unit price';
+                'Sub total does not match quantity Ã— unit price';
             isValid = false;
         }
 

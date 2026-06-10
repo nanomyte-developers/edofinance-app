@@ -164,7 +164,7 @@
                                                 slotProps.data
                                                     .source_bank_details.title
                                             }}
-                                            •
+                                            â€¢
                                             {{
                                                 slotProps.data
                                                     .source_bank_details
@@ -219,7 +219,7 @@
                                                     .destination_bank_details
                                                     .title
                                             }}
-                                            •
+                                            â€¢
                                             {{
                                                 slotProps.data
                                                     .destination_bank_details
@@ -464,7 +464,7 @@
                                     for="amount"
                                     class="block text-sm font-medium text-gray-700"
                                 >
-                                    Amount (₦)
+                                    Amount (â‚¦)
                                     <span class="text-red-500">*</span>
                                 </label>
                                 <InputNumber
@@ -558,7 +558,7 @@
                                                     class="text-xs text-gray-500"
                                                 >
                                                     {{ slotProps.option.title }}
-                                                    •
+                                                    â€¢
                                                     {{
                                                         slotProps.option
                                                             .account_number
@@ -647,7 +647,7 @@
                                                     class="text-xs text-gray-500"
                                                 >
                                                     {{ slotProps.option.title }}
-                                                    •
+                                                    â€¢
                                                     {{
                                                         slotProps.option
                                                             .account_number
@@ -698,7 +698,7 @@
                                 >
                                     <i class="pi pi-exclamation-triangle"></i>
                                     <span class="text-sm font-medium">
-                                        ⚠️ Warning: Source account and
+                                        âš ï¸ Warning: Source account and
                                         destination account cannot be the same.
                                     </span>
                                 </div>
@@ -1678,7 +1678,7 @@ const onRowsPerPageChange = (event) => {
 
 // Format currency
 const formatCurrency = (value) => {
-    if (!value && value !== 0) return '₦0.00';
+    if (!value && value !== 0) return 'â‚¦0.00';
     return new Intl.NumberFormat('en-NG', {
         style: 'currency',
         currency: 'NGN',

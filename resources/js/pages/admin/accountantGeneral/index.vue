@@ -54,7 +54,7 @@ const agVoucherData = computed(() => {
 });
 
 // --- 4. STATE FOR MODAL AND ACTIONS ---
-const showDeclineModal = ref(false); // 💡 Renamed from showRejectionModal for clarity in AG flow
+const showDeclineModal = ref(false); // ðŸ’¡ Renamed from showRejectionModal for clarity in AG flow
 const showApprovalModal = ref(false); 
 const showDocumentViewer = ref(false);
 const currentVoucher = ref(null);
@@ -103,7 +103,7 @@ const handleApprove = () => {
     });
 };
 
-// 💡 NEW: Sends the voucher back to the Director of Finance (DFA)
+// ðŸ’¡ NEW: Sends the voucher back to the Director of Finance (DFA)
 const handleDeclineToDFA = () => {
     if (!rejectionReason.value) {
         toast.add({ severity: 'warn', summary: 'Required', detail: 'Please provide a reason for declining.', life: 3000 });
@@ -125,7 +125,7 @@ const handleDeclineToDFA = () => {
     });
 };
 
-// 💡 NEW: Declines and permanently closes the voucher
+// ðŸ’¡ NEW: Declines and permanently closes the voucher
 const handleDeclineAndClose = () => {
     if (!rejectionReason.value) {
         toast.add({ severity: 'warn', summary: 'Required', detail: 'Please provide a reason for declining and closing.', life: 3000 });
