@@ -13,100 +13,9 @@ const hasPermission = (permission) => {
     return usePage().props.auth.userPermissions.includes(permission);
 };
 
-const model = ref([
-    // {
-    //     label: 'Pages',
-    //     icon: 'pi pi-fw pi-briefcase',
-    //     to: '/pages',
-    //     items: [
-    //         {
-    //             label: 'Auth',
-    //             icon: 'pi pi-fw pi-user',
-    //             items: [
-    //                 {
-    //                     label: 'Login',
-    //                     icon: 'pi pi-fw pi-sign-in',
-    //                     to: '/auth/login',
-    //                 },
-    //                 {
-    //                     label: 'Error',
-    //                     icon: 'pi pi-fw pi-times-circle',
-    //                     to: '/auth/error',
-    //                 },
-    //                 {
-    //                     label: 'Access Denied',
-    //                     icon: 'pi pi-fw pi-lock',
-    //                     to: '/auth/access',
-    //                 },
-    //             ],
-    //         },
-    //     ],
-    // },
-    // {
-    //     label: 'Hierarchy',
-    //     items: [
-    //         {
-    //             label: 'Submenu 1',
-    //             icon: 'pi pi-fw pi-bookmark',
-    //             items: [
-    //                 {
-    //                     label: 'Submenu 1.1',
-    //                     icon: 'pi pi-fw pi-bookmark',
-    //                     items: [
-    //                         { label: 'Submenu 1.1.1', icon: 'pi pi-fw pi-bookmark' },
-    //                         { label: 'Submenu 1.1.2', icon: 'pi pi-fw pi-bookmark' },
-    //                         { label: 'Submenu 1.1.3', icon: 'pi pi-fw pi-bookmark' }
-    //                     ]
-    //                 },
-    //                 {
-    //                     label: 'Submenu 1.2',
-    //                     icon: 'pi pi-fw pi-bookmark',
-    //                     items: [{ label: 'Submenu 1.2.1', icon: 'pi pi-fw pi-bookmark' }]
-    //                 }
-    //             ]
-    //         },
-    //         {
-    //             label: 'Submenu 2',
-    //             icon: 'pi pi-fw pi-bookmark',
-    //             items: [
-    //                 {
-    //                     label: 'Submenu 2.1',
-    //                     icon: 'pi pi-fw pi-bookmark',
-    //                     items: [
-    //                         { label: 'Submenu 2.1.1', icon: 'pi pi-fw pi-bookmark' },
-    //                         { label: 'Submenu 2.1.2', icon: 'pi pi-fw pi-bookmark' }
-    //                     ]
-    //                 },
-    //                 {
-    //                     label: 'Submenu 2.2',
-    //                     icon: 'pi pi-fw pi-bookmark',
-    //                     items: [{ label: 'Submenu 2.2.1', icon: 'pi pi-fw pi-bookmark' }]
-    //                 }
-    //             ]
-    //         }
-    //     ]
-    // },
-    // {
-    //     label: 'Get Started',
-    //     items: [
-    //         {
-    //             label: 'Documentation',
-    //             icon: 'pi pi-fw pi-book',
-    //             to: '/documentation'
-    //         },
-    //         {
-    //             label: 'View Source',
-    //             icon: 'pi pi-fw pi-github',
-    //             url: 'https://github.com/primefaces/sakai-vue',
-    //             target: '_blank'
-    //         }
-    //     ]
-    // }
-]);
+const model = ref([]);
 
 onMounted(() => {
-    // console.log("Roles: " + roles);
-    // console.log(usePage().props.auth.userRoles, usePage().props.auth.userPermissions);
     if (usePage().props.auth.userRoles.includes('Authenticated')) {
         model.value.push({
             label: 'Home',
@@ -135,6 +44,7 @@ onMounted(() => {
             to: '/roles',
         });
     }
+    
     if (usePage().props.auth.userRoles.includes('Permissions')) {
         menu.push({
             label: 'Permissions',
@@ -144,8 +54,6 @@ onMounted(() => {
         });
     }
 
-    // { label: 'Vouchers', icon: 'pi pi-fw pi-table', to: '/vouchers' },
-
     if (usePage().props.auth.userRoles.includes('Accountant General')) {
         menu.push({
             label: 'Accountant General (AG)',
@@ -153,6 +61,7 @@ onMounted(() => {
             to: '/accountant-general',
         });
     }
+    
     if (usePage().props.auth.userRoles.includes('Director of Finance')) {
         menu.push({
             label: 'Director of Finance (DFA)',
@@ -168,57 +77,65 @@ onMounted(() => {
                     icon: 'pi pi-fw pi-cart-arrow-down',
                     to: '/vouchers',
                 },
-                // {
-                //     label: "Sector's",
-                //     icon: 'pi pi-fw pi-times-circle',
-                //     to: '/sectors',
-                // },
-                // {
-                //     label: 'Access Denied',
-                //     icon: 'pi pi-fw pi-lock',
-                //     to: '/auth/access'
-                // }
             ],
         });
     }
 
-    // if (usePage().props.auth.userRoles.includes('Final Account')) {
-    //     menu.push({
-    //         label: 'Final Account (FA)',
-    //         icon: 'pi pi-fw pi-share-alt',
-    //         to: '/final-accounts',
-    //     });
-    // }
-
+    // ============ FINAL ACCOUNT (FA) MENU - COMPLETE ============
     if (usePage().props.auth.userRoles.includes('Final Account')) {
         menu.push({
             label: 'Final Account (FA)',
             icon: 'pi pi-fw pi-share-alt',
             items: [
                 {
-                    label: 'Voucher Validation',
+                    label: 'Vouchers',
                     icon: 'pi pi-fw pi-times-circle',
-                    to: '/vouchers',
+                    items: [
+                        {
+                            label: 'Standard Voucher',
+                            icon: 'pi pi-fw pi-bookmark',
+                            to: '/final-accounts/vouchers/create?type=standard',
+                            description: 'Direct approval - Standard'
+                        },
+                        {
+                            label: 'Prepayment Voucher',
+                            icon: 'pi pi-fw pi-list',
+                            to: '/final-accounts/vouchers/create?type=prepayment',
+                            description: 'Direct approval - Prepayment'
+                        },
+                        {
+                            label: 'Salary Voucher',
+                            icon: 'pi pi-fw pi-dollar',
+                            to: '/final-accounts/vouchers/create?type=salary',
+                            description: 'Direct approval - Salary'
+                        },
+                        {
+                            label: 'Validate All Vouchers',
+                            icon: 'pi pi-fw pi-check-square',
+                            to: '/vouchers',
+                            description: 'View and validate all vouchers'
+                        }
+                    ]
                 },
                 {
                     label: 'Receipts',
-                    icon: 'pi pi-fw pi-times-circle',
+                    icon: 'pi pi-fw pi-receipt',
                     to: '/receipts',
                 },
                 {
                     label: 'Remittance',
-                    icon: 'pi pi-fw pi-lock',
+                    icon: 'pi pi-fw pi-send',
                     to: '/remittances',
                 },
                 {
                     label: 'Journals',
-                    icon: 'pi pi-fw pi-lock',
+                    icon: 'pi pi-fw pi-book',
                     to: '/journals/index',
                 },
-
             ],
         });
     }
+    // ============ END FINAL ACCOUNT MENU ============
 
     if (usePage().props.auth.userRoles.includes('Expenditure Control')) {
         menu.push({
@@ -251,7 +168,6 @@ onMounted(() => {
             to: '#',
         });
     }
-    
 
     if (usePage().props.auth.userRoles.includes('Internal Audit')) {
         menu.push({
@@ -261,53 +177,8 @@ onMounted(() => {
         });
     }
 
-
-
-    // ============ ADD ACTIVITY LOGS MENU ITEM HERE ============
-    // Check if user has admin or supervisor role for activity logs
-    // if (
-    //     usePage().props.auth.userRoles.includes('admin') ||
-    //     usePage().props.auth.userRoles.includes('Authenticated') ||
-    //     usePage().props.auth.userRoles.includes('supervisor') ||
-    //     usePage().props.auth.userRoles.includes('Admin') || // Capitalized version
-    //     usePage().props.auth.userRoles.includes('Supervisor')
-    // ) {
-    //     // Capitalized version
-
-    //     menu.push({
-    //         label: 'Activity Logs',
-    //         icon: 'pi pi-fw pi-history',
-    //         to: '/activity-logs',
-    //         class: 'text-blue-500', // Optional: add special styling
-    //     });
-    // }
-    // ============ END ACTIVITY LOGS MENU ITEM ============
-
-    // { label: 'Logout', icon: 'pi pi-fw pi-user', to: '' },
-    // { label: 'Misc', icon: 'pi pi-fw pi-circle', to: '/uikit/misc' }
-
-    // if (usePage().props.auth.userRoles.includes('Authenticated')) {
-    //     model.value.push({
-    //         label: 'Logout',
-    //         icon: 'pi pi-fw pi-sign-out',
-    //         command: () => {
-    //             console.log('Logout command called');
-    //             handleLogout();
-    //         },
-    //         class: 'text-red-500 hover:text-red-700',
-    //     });
-    // }
-
-
-    if (
-        usePage().props.auth.userRoles.includes('Trial Balance')
-        // usePage().props.auth.userRoles.includes('Authenticated') ||
-
-
-    ) {
-
-
-        // Capitalized version
+    // ============ SPECIAL REPORTS MENU ============
+    if (usePage().props.auth.userRoles.includes('Trial Balance')) {
         menu.push({
             label: 'Special Reports (SR)',
             icon: 'pi pi-fw pi-share-alt',
@@ -318,16 +189,10 @@ onMounted(() => {
                     to: '/reports/trialbalance',
                 },
             ]
-
         });
     }
-    if (
-        usePage().props.auth.userRoles.includes('cashbook')
-        // usePage().props.auth.userRoles.includes('Authenticated') ||
-
-
-    ) {
-        // Capitalized version
+    
+    if (usePage().props.auth.userRoles.includes('cashbook')) {
         menu.push({
             label: 'Special Reports (SR)',
             icon: 'pi pi-fw pi-share-alt',
@@ -338,79 +203,75 @@ onMounted(() => {
                     to: '/cashbook-years/1/months',
                 },
             ]
-
         });
     }
 
-
+    // ============ SYSTEM SETTINGS MENU - COMPLETE ============
     if (
         usePage().props.auth.userRoles.includes('admin') ||
-        // usePage().props.auth.userRoles.includes('Authenticated') ||
         usePage().props.auth.userRoles.includes('supervisor') ||
-        usePage().props.auth.userRoles.includes('Admin') || // Capitalized version
+        usePage().props.auth.userRoles.includes('Admin') ||
         usePage().props.auth.userRoles.includes('Supervisor')
     ) {
-        // Capitalized version
         menu.push({
             label: 'System Settings (SS)',
-            icon: 'pi pi-fw pi-share-alt',
+            icon: 'pi pi-fw pi-cog',
             items: [
-                // {
-                //     label: 'Activity Logs',
-                //     icon: 'pi pi-fw pi-times-circle',
-                //     to: '/activity-logs',
-                // },
+                {
+                    label: 'Activity Logs',
+                    icon: 'pi pi-fw pi-history',
+                    to: '/activity-logs',
+                },
                 {
                     label: 'Bank Activities (BA)',
-                    icon: 'pi pi-fw pi-times-circle',
+                    icon: 'pi pi-fw pi-building',
                     to: '/bank-activities',
                 },
                 {
                     label: 'Eco Codes (EC)',
-                    icon: 'pi pi-fw pi-lock',
+                    icon: 'pi pi-fw pi-tag',
                     to: '/economy-codess',
                 },
                 {
                     label: 'Eco Code Items (ECI)',
-                    icon: 'pi pi-fw pi-lock',
+                    icon: 'pi pi-fw pi-tags',
                     to: '/economy-code-itemss',
                 },
                 {
                     label: 'Financial Years (FY)',
-                    icon: 'pi pi-fw pi-lock',
+                    icon: 'pi pi-fw pi-calendar',
                     to: '/financial-years',
                 },
-                // {
-                //     label: 'Bank (BK)',
-                //     icon: 'pi pi-fw pi-chart-bar',
-                //     to: '/banks',
-                // },
                 {
-                    label: 'Receipt-Activities (RA)',
-                    icon: 'pi pi-fw pi-chart-bar',
+                    label: 'Receipt Activities (RA)',
+                    icon: 'pi pi-fw pi-receipt',
                     to: '/receipt-activities',
                 },
                 {
-                    label: 'Administrative-codes (AC)',
-                    icon: 'pi pi-fw pi-chart-bar',
+                    label: 'Administrative Codes (AC)',
+                    icon: 'pi pi-fw pi-code',
                     to: '/administrative-codes',
                 },
                 {
-                    label: "Administrative-code-items (ACI)",
-                    icon: 'pi pi-fw pi-times-circle',
+                    label: 'Administrative Code Items (ACI)',
+                    icon: 'pi pi-fw pi-codesandbox',
                     to: '/administrative-code-itemss',
                 },
                 {
-                    label: "Manage MDA's",
-                    icon: 'pi pi-fw pi-sign-in',
+                    label: 'Manage MDAs',
+                    icon: 'pi pi-fw pi-building',
                     to: '/mdas',
                 },
                 {
-                    label: 'Cash Book Balance Bfw (CBBF)',
-                    icon: 'pi pi-fw pi-chart-bar',
+                    label: 'Cash Book Balance B/F (CBBF)',
+                    icon: 'pi pi-fw pi-book',
                     to: '/cash-book',
                 },
-                { label: 'Payees (PY)', icon: 'pi pi-fw pi-chart-bar', to: '/payees' },
+                {
+                    label: 'Payees (PY)',
+                    icon: 'pi pi-fw pi-users',
+                    to: '/payees',
+                },
                 {
                     label: 'General Trial Balance',
                     icon: 'pi pi-fw pi-chart-bar',
@@ -418,43 +279,40 @@ onMounted(() => {
                 },
                 {
                     label: 'Financial Performance',
-                    icon: 'pi pi-fw pi-chart-bar',
+                    icon: 'pi pi-fw pi-chart-line',
                     to: '/reports/financial-report',
                 },
                 {
                     label: 'Financial Position',
-                    icon: 'pi pi-fw pi-chart-bar',
+                    icon: 'pi pi-fw pi-chart-pie',
                     to: '/reports/balance-sheet',
                 },
                 {
                     label: 'Cash Book Years',
-                    icon: 'pi pi-fw pi-chart-bar',
+                    icon: 'pi pi-fw pi-calendar',
                     to: '/cashbook-years',
+                },
+                {
+                    label: 'Programme Codes',
+                    icon: 'pi pi-fw pi-bookmark',
+                    to: '/programme-codes',
+                },
+                {
+                    label: 'Budget Management',
+                    icon: 'pi pi-fw pi-chart-line',
+                    to: '/budget-management',
                 },
             ],
         });
     }
+    // ============ END SYSTEM SETTINGS MENU ============
 
+    // Add the menu to the model
     model.value.push({
         label: 'Menu',
         items: menu,
     });
 });
-// Logout function using POST method
-// const handleLogout = () => {
-//     console.log('handleLogout function called');
-//     if (confirm('Are you sure you want to logout?')) {
-//         console.log('Proceeding with logout');
-//         router.post(
-//             '/logout',
-//             {},
-//             {
-//                 onSuccess: () => console.log('Logout successful'),
-//                 onError: (errors) => console.log('Logout error:', errors),
-//             },
-//         );
-//     }
-// };
 </script>
 
 <template>
@@ -466,4 +324,15 @@ onMounted(() => {
     </ul>
 </template>
 
-<style lang="scss" scoped></style>
+<style lang="scss" scoped>
+.layout-menu {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    
+    .menu-separator {
+        border-top: 1px solid var(--p-surface-200);
+        margin: 0.5rem 0;
+    }
+}
+</style>

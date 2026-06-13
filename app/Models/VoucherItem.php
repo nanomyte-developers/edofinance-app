@@ -16,6 +16,9 @@ class VoucherItem extends Model
         'unit_price',
         'sub_total',
         'budget_code',
+        'programme_code_id',
+        'programme_code',
+        'programme_name',
     ];
 
     protected $casts = [
@@ -37,7 +40,7 @@ class VoucherItem extends Model
      */
     public function economyCode(): BelongsTo
     {
-        return $this->belongsTo(EconomyCode::class);
+        return $this->belongsTo(EconomyCode::class, 'economy_code_id');
     }
 
     /**
@@ -45,7 +48,15 @@ class VoucherItem extends Model
      */
     public function economyCodeItem(): BelongsTo
     {
-        return $this->belongsTo(EconomyCodeItem::class);
+        return $this->belongsTo(EconomyCodeItem::class, 'economy_code_item_id');
+    }
+
+    /**
+     * Get the Programme Code for this item
+     */
+    public function programmeCode(): BelongsTo
+    {
+        return $this->belongsTo(ProgrammeCode::class, 'programme_code_id');
     }
 
     /**

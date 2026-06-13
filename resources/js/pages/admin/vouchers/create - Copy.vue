@@ -32,6 +32,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 let nextItemId = 1;
 
+
 const voucherTypes = [
     {
         label: 'Standard',
@@ -47,7 +48,7 @@ const voucherTypes = [
     },
 ];
 
-// Define types for line items - UPDATED with programme code fields
+// Define types for line items
 interface LineItem {
     id: number;
     description: string;
@@ -56,10 +57,6 @@ interface LineItem {
     quantity: number;
     unit_price: number;
     sub_total: number;
-    programme_code_id: number | null;
-    programme_code: string | null;
-    programme_name: string | null;
-    budget_code: string | null;
     errors?: {
         description?: string;
         economy_code_id?: string;
@@ -67,8 +64,6 @@ interface LineItem {
         quantity?: string;
         unit_price?: string;
         sub_total?: string;
-        programme_code_id?: string;
-        budget_code?: string;
     };
 }
 
@@ -87,18 +82,6 @@ interface UploadedDocument {
     label: string;
     file: File;
     document_type: string;
-}
-
-// Programme code interface
-interface ProgrammeCode {
-    id: number;
-    code: string;
-    name: string;
-    budget_code: string;
-    remaining_budget: number;
-    economic_code_id: number;
-    label?: string;
-    value?: number;
 }
 
 // Props from Laravel controller
@@ -133,15 +116,16 @@ const props = defineProps({
         type: String,
         default: new Date().toISOString().split('T')[0],
     },
+
     voucherNumber: {
         type: String,
         required: true,
         default: '',
     },
-    programmeCodes: {
-        type: Array,
-        default: () => [],
-    },
+
+
+
+
 });
 
 // Page title based on voucher type and schedule
@@ -183,158 +167,62 @@ const documentTypeOptions = [
     { label: 'Other Document', value: 'other' },
 ];
 
-// Document management
+// Document management - Only one required document is compulsory
 const requiredDocuments = ref<RequiredDocument[]>([
     {
         type: 'approval_memo',
         label: 'Approval Memo',
-        required: true,
+        required: true, // This one is compulsory
         uploaded: false,
     },
+
+    // {
+    //     type: 'invoice',
+    //     label: 'Invoice',
+    //     required: false, // Changed to optional
+    //     uploaded: false,
+    // },
+    // {
+    //     type: 'receipt',
+    //     label: 'Receipt',
+    //     required: false, // Changed to optional
+    //     uploaded: false,
+    // },
+    // {
+    //     type: 'Delivery Note',
+    //     label: 'Delivery Note',
+    //     required: false, // Changed to optional
+    //     uploaded: false,
+    // },
 ]);
 
 const optionalDocuments = ref<UploadedDocument[]>([]);
-const selectedDocumentType = ref<string>('');
-const fileUploadRef = ref();
+const selectedDocumentType = ref<string>(''); // For the dropdown
+const fileUploadRef = ref(); // Ref for FileUpload component
 
 // Economic Code Options
 const economyCodeOptions = computed(() => {
     return props.economyCodes;
 });
 
-// Programme Codes Management - UPDATED with search functionality
-const programmeCodes = ref<ProgrammeCode[]>([]);
-const programmeCodeLoading = ref(false);
-const selectedProgrammeCodeMap = ref<Record<number, ProgrammeCode>>({});
-
-// NEW: Searchable programme code refs
-const programmeCodeSearchQuery = ref('');
-const programmeCodeOptions = ref([]);
-const programmeCodeSearchLoading = ref(false);
-const programmeCodeSearchDebounce = ref(null);
-
-// NEW: Fetch programme codes from API (searchable)
-const searchProgrammeCodes = async (search = '') => {
-    programmeCodeSearchLoading.value = true;
-    try {
-        const response = await axios.get('/programme-codes/search', {
-            params: {
-                q: search,
-                financial_year_id: form.year_id,
-            }
-        });
-        
-        programmeCodeOptions.value = response.data.map((pc: any) => ({
-            id: pc.id,
-            code: pc.code,
-            name: pc.name,
-            budget_code: pc.budget_code,
-            remaining_budget: pc.remaining_budget,
-            economic_code_id: pc.economic_code_id,
-            economic_code_code: pc.economic_code_code,
-            economic_code_name: pc.economic_code_name,
-            display_text: pc.display_text,
-            detail_text: pc.detail_text,
-            label: `${pc.code} - ${pc.name} (₦${Number(pc.remaining_budget).toLocaleString()})`,
-            value: pc.id
-        }));
-    } catch (error) {
-        console.error('Error searching programme codes:', error);
-        toast.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to search programme codes',
-            life: 3000,
-        });
-    } finally {
-        programmeCodeSearchLoading.value = false;
-    }
-};
-
-// NEW: Handle programme code search input
-const onProgrammeCodeSearch = (event: any) => {
-    const query = event.query;
-    
-    // Clear previous debounce
-    if (programmeCodeSearchDebounce.value) {
-        clearTimeout(programmeCodeSearchDebounce.value);
-    }
-    
-    // Debounce search
-    programmeCodeSearchDebounce.value = setTimeout(() => {
-        searchProgrammeCodes(query);
-    }, 300);
-};
-
-// NEW: Handle programme code selection (updated version)
-const onProgrammeCodeSelect = (item: LineItem, selectedProgramme: number | null) => {
-    if (!selectedProgramme) {
-        item.programme_code_id = null;
-        item.programme_code = null;
-        item.programme_name = null;
-        item.budget_code = null;
-        delete selectedProgrammeCodeMap.value[item.id];
-        return;
-    }
-    
-    // Find the selected programme
-    const programme = programmeCodeOptions.value.find((pc: any) => pc.id === selectedProgramme);
-    
-    if (programme) {
-        item.programme_code_id = programme.id;
-        item.programme_code = programme.code;
-        item.programme_name = programme.name;
-        item.budget_code = programme.budget_code;
-        
-        // Also set economic code if available and not already set
-        if (programme.economic_code_id && !item.economy_code_id) {
-            item.economy_code_id = programme.economic_code_id;
-            // Trigger economy code change to load items
-            onEconomyCodeChange(item);
-        }
-        
-        selectedProgrammeCodeMap.value[item.id] = programme;
-        
-        // Validate budget availability
-        if (programme.remaining_budget < item.sub_total) {
-            toast.add({
-                severity: 'warn',
-                summary: 'Budget Alert',
-                detail: `Insufficient budget for programme ${programme.code}. Available: ₦${programme.remaining_budget.toLocaleString()}`,
-                life: 5000,
-            });
-        }
-        
-        // Clear any previous errors
-        if (item.errors?.programme_code_id) {
-            delete item.errors.programme_code_id;
-        }
-        if (item.errors?.budget_code) {
-            delete item.errors.budget_code;
-        }
-    }
-};
-
-// Update fetchProgrammeCodes to work with the search
-const fetchProgrammeCodes = async (itemId: number, economicCodeId: number | null, filter = '') => {
-    // For searchable dropdown, we don't pre-fetch all
-    // Just set empty and let search handle it
-    programmeCodes.value = [];
-};
-
-// Filter Economic Code items
+// Filter Economic Code items based on selected Economic Code for each row
 const getEconomyCodeItemOptions = (economyCodeId: number | null) => {
-    if (!economyCodeId || !props.economyCodeItems || props.economyCodeItems.length === 0) {
+    if (
+        !economyCodeId ||
+        !props.economyCodeItems ||
+        props.economyCodeItems.length === 0
+    ) {
         return [];
     }
+
     return props.economyCodeItems.filter((item: any) => {
         return item.economy_code_id === economyCodeId;
     });
 };
 
-// Inertia form setup - UPDATED with programme code fields
+// Inertia form setup
 const form = useForm({
-    schedule_id: props.schedule?.id || null,
+    schedule_id: props.schedule?.id || null, // This should already be there
     voucher_type: props.voucherType,
     year_id: props.schedule?.year_id || null,
     mda_id: props.schedule?.mda_id || null,
@@ -346,9 +234,25 @@ const form = useForm({
     documents: [] as File[],
     voucher_number: props.voucherNumber || '',
     payee_name: props.schedule?.payee_name || '',
+
 });
 
-// Auto-select MDA and Financial Year based on schedule
+// Add computed property to show retirement info for prepayment vouchers
+// const isPrepaymentVoucher = computed(() => {
+//     return props.voucherType === 'prepayment';
+// });
+
+// const retirementInfo = computed(() => {
+//     if (!isPrepaymentVoucher.value) return null;
+
+//     return {
+//         requires_retirement: true,
+//         message:
+//             'This is a prepayment voucher and will require retirement after approval.',
+//     };
+// });
+
+// NEW: Auto-select MDA and Financial Year based on schedule
 const autoSelectMdaAndYear = () => {
     if (props.schedule?.mda_id && props.mdas.length > 0) {
         const mdaExists = props.mdas.some(
@@ -369,7 +273,7 @@ const autoSelectMdaAndYear = () => {
     }
 };
 
-// Generate narration from schedule
+// NEW: Generate narration from schedule
 const generateNarrationFromSchedule = () => {
     if (props.schedule && !form.narration) {
         const mdaName = props.schedule.mda?.name || 'MDA';
@@ -387,29 +291,68 @@ const voucherTotal = computed(() => {
     return voucherSubtotal.value;
 });
 
+// NEW: Computed property to check if voucher total matches schedule total
 const voucherTotalMatchesSchedule = computed(() => {
     if (!props.schedule?.total_amount) return true;
     return Math.abs(voucherTotal.value - props.schedule.total_amount) < 0.01;
 });
 
+// NEW: Computed property for schedule total
 const scheduleTotal = computed(() => {
     return props.schedule?.total_amount || 0;
 });
 
-// Number to words converter
+// Fixed Number to words converter
 const convertNumberToWords = (amount: number): string => {
     if (isNaN(amount) || amount === 0) return 'Zero Naira';
 
-    const units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
-    const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    const units = [
+        '',
+        'One',
+        'Two',
+        'Three',
+        'Four',
+        'Five',
+        'Six',
+        'Seven',
+        'Eight',
+        'Nine',
+    ];
+    const teens = [
+        'Ten',
+        'Eleven',
+        'Twelve',
+        'Thirteen',
+        'Fourteen',
+        'Fifteen',
+        'Sixteen',
+        'Seventeen',
+        'Eighteen',
+        'Nineteen',
+    ];
+    const tens = [
+        '',
+        '',
+        'Twenty',
+        'Thirty',
+        'Forty',
+        'Fifty',
+        'Sixty',
+        'Seventy',
+        'Eighty',
+        'Ninety',
+    ];
 
     const convertHundreds = (num: number): string => {
         let result = '';
+
+        // Hundreds
         if (num >= 100) {
             result += units[Math.floor(num / 100)] + ' Hundred ';
             num %= 100;
         }
+
+        // Tens and units
         if (num >= 20) {
             result += tens[Math.floor(num / 10)] + ' ';
             num %= 10;
@@ -417,9 +360,12 @@ const convertNumberToWords = (amount: number): string => {
             result += teens[num - 10] + ' ';
             num = 0;
         }
+
+        // Units
         if (num > 0) {
             result += units[num] + ' ';
         }
+
         return result.trim();
     };
 
@@ -427,18 +373,27 @@ const convertNumberToWords = (amount: number): string => {
     let nairaAmount = Math.floor(amount);
     let koboAmount = Math.round((amount - nairaAmount) * 100);
 
+    // Billions
     if (nairaAmount >= 1000000000) {
-        words += convertHundreds(Math.floor(nairaAmount / 1000000000)) + ' Billion ';
+        words +=
+            convertHundreds(Math.floor(nairaAmount / 1000000000)) + ' Billion ';
         nairaAmount %= 1000000000;
     }
+
+    // Millions
     if (nairaAmount >= 1000000) {
-        words += convertHundreds(Math.floor(nairaAmount / 1000000)) + ' Million ';
+        words +=
+            convertHundreds(Math.floor(nairaAmount / 1000000)) + ' Million ';
         nairaAmount %= 1000000;
     }
+
+    // Thousands
     if (nairaAmount >= 1000) {
         words += convertHundreds(Math.floor(nairaAmount / 1000)) + ' Thousand ';
         nairaAmount %= 1000;
     }
+
+    // Hundreds
     if (nairaAmount > 0) {
         words += convertHundreds(nairaAmount) + ' ';
     }
@@ -446,6 +401,7 @@ const convertNumberToWords = (amount: number): string => {
     words = words.trim();
     words += words ? 'Naira' : 'Zero Naira';
 
+    // Convert Kobo part
     if (koboAmount > 0) {
         words += ' and ';
         if (koboAmount >= 20) {
@@ -455,21 +411,26 @@ const convertNumberToWords = (amount: number): string => {
             words += teens[koboAmount - 10] + ' ';
             koboAmount = 0;
         }
+
         if (koboAmount > 0) {
             words += units[koboAmount] + ' ';
         }
+
         words += 'Kobo';
     }
 
     return words.trim() + ' Only';
 };
 
+// Computed property for amount in words
 const amountInWords = computed(() => {
     return convertNumberToWords(voucherTotal.value);
 });
 
+// NEW: Computed property to show schedule info
 const scheduleInfo = computed(() => {
     if (!props.schedule) return null;
+
     return {
         schedule_number: props.schedule.schedule_number,
         mda: props.schedule.mda?.name,
@@ -477,6 +438,33 @@ const scheduleInfo = computed(() => {
         total_amount: props.schedule.total_amount,
     };
 });
+
+// Debug helper
+const documentStats = computed(() => {
+    return {
+        formDocuments: form.documents.length,
+        requiredDocuments: requiredDocuments.value.filter((d) => d.uploaded)
+            .length,
+        optionalDocuments: optionalDocuments.value.length,
+        totalUniqueFiles: new Set([
+            ...form.documents.map((f) => f.name),
+            ...requiredDocuments.value
+                .filter((d) => d.uploaded)
+                .map((d) => d.file?.name)
+                .filter(Boolean),
+            ...optionalDocuments.value.map((d) => d.file.name),
+        ]).size,
+    };
+});
+
+// Log changes
+watch(
+    documentStats,
+    (newStats) => {
+        console.log('Document Stats Updated:', newStats);
+    },
+    { deep: true },
+);
 
 // Validation functions
 const validateHeader = () => {
@@ -490,16 +478,19 @@ const validateHeader = () => {
         documents: '',
         payee_name: '',
         voucher_number: '',
+
     };
 
     if (!form.year_id) {
         validationErrors.value.year_id = 'Financial Year selection is required';
         isValid = false;
     }
+
     if (!form.mda_id) {
         validationErrors.value.mda_id = 'MDA selection is required';
         isValid = false;
     }
+
     if (!form.voucher_date) {
         validationErrors.value.voucher_date = 'Voucher date is required';
         isValid = false;
@@ -507,24 +498,30 @@ const validateHeader = () => {
         const selectedDate = new Date(form.voucher_date);
         const today = new Date();
         if (selectedDate > today) {
-            validationErrors.value.voucher_date = 'Voucher date cannot be in the future';
+            validationErrors.value.voucher_date =
+                'Voucher date cannot be in the future';
             isValid = false;
         }
     }
+
     if (!form.narration.trim()) {
         validationErrors.value.narration = 'Narration is required';
         isValid = false;
     } else if (form.narration.length < 10) {
-        validationErrors.value.narration = 'Narration must be at least 10 characters';
+        validationErrors.value.narration =
+            'Narration must be at least 10 characters';
         isValid = false;
     } else if (form.narration.length > 500) {
-        validationErrors.value.narration = 'Narration cannot exceed 500 characters';
+        validationErrors.value.narration =
+            'Narration cannot exceed 500 characters';
         isValid = false;
     }
-    if (!form.voucher_number || form.voucher_number.length < 5) {
+    if (form.voucher_number.length < 5) {
+        console.log(form.voucher_number.length);
         validationErrors.value.voucher_number = 'Voucher number is required';
         isValid = false;
     }
+
     if (!form.payee_name.trim()) {
         validationErrors.value.payee_name = 'Payee name is required';
         isValid = false;
@@ -533,7 +530,6 @@ const validateHeader = () => {
     return isValid;
 };
 
-// FIXED: Validate line items with programme code validation - budget code is optional now
 const validateLineItems = () => {
     let isValid = true;
 
@@ -544,19 +540,20 @@ const validateLineItems = () => {
     });
 
     if (form.items.length === 0) {
-        validationErrors.value.line_items = 'At least one line item is required';
+        validationErrors.value.line_items =
+            'At least one line item is required';
         return false;
     }
 
     form.items.forEach((item) => {
         const itemErrors: any = {};
 
-        // Description validation
         if (!item.description?.trim()) {
             itemErrors.description = 'Description is required';
             isValid = false;
         } else if (item.description.length < 3) {
-            itemErrors.description = 'Description must be at least 3 characters';
+            itemErrors.description =
+                'Description must be at least 3 characters';
             isValid = false;
         } else if (item.description.length > 255) {
             itemErrors.description = 'Description cannot exceed 255 characters';
@@ -569,60 +566,49 @@ const validateLineItems = () => {
             isValid = false;
         }
 
-        // Economic Code Item validation
         if (!item.economy_code_item_id) {
             itemErrors.economy_code_item_id = 'Economic Code item is required';
             isValid = false;
         }
 
-        // Programme code validation for series 32 economic codes
-        const selectedEconomyCode = props.economyCodes.find((ec: any) => ec.value === item.economy_code_id);
-        const isSeries32 = selectedEconomyCode && (selectedEconomyCode.code?.startsWith('32') || selectedEconomyCode.type === 'capital');
-        
-        if (isSeries32 && !item.programme_code_id) {
-            itemErrors.programme_code_id = 'Programme Code is required for series 32 (Capital Expenditure)';
-            isValid = false;
-        }
-
-        // FIXED: Budget code validation - auto-fill from programme code, don't make it required
-        if (!item.budget_code && item.programme_code_id) {
-            // Try to auto-fill from selected programme
-            const programme = selectedProgrammeCodeMap.value[item.id];
-            if (programme && programme.budget_code) {
-                item.budget_code = programme.budget_code;
-            } else {
-                // Budget code is not required for draft/submission
-                // It can be auto-filled by the backend if needed
-                console.log(`Budget code not set for item ${item.id}, but will be handled by backend`);
-            }
-        }
-
-        // Quantity validation
         if (!item.quantity || item.quantity <= 0) {
             itemErrors.quantity = 'Quantity must be greater than 0';
             isValid = false;
+        // } else if (item.quantity > 999999) {
+        //     itemErrors.quantity = 'Quantity is too large';
+        //     isValid = false;
         }
 
-        // Unit price validation
-        if (item.unit_price === null || item.unit_price === undefined || item.unit_price < 0) {
-            itemErrors.unit_price = 'Unit price is required and cannot be negative';
+        if (!item.unit_price && item.unit_price !== 0) {
+            itemErrors.unit_price = 'Unit price is required';
             isValid = false;
-        }
-
-        // Sub total validation
-        if (item.sub_total === null || item.sub_total === undefined || item.sub_total < 0) {
-            itemErrors.sub_total = 'Sub total is required and cannot be negative';
+        } else if (item.unit_price < 0) {
+            itemErrors.unit_price = 'Unit price cannot be negative';
             isValid = false;
+        // } else if (item.unit_price > 99999999.99) {
+        //     itemErrors.unit_price = 'Unit price is too large';
+        //     isValid = false;
         }
 
-        // Check if sub_total matches quantity * unit_price
-        if (item.quantity && item.unit_price && item.quantity > 0 && item.unit_price >= 0) {
-            const calculatedSubTotal = item.quantity * item.unit_price;
-            const subTotalDifference = Math.abs(item.sub_total - calculatedSubTotal);
-            if (subTotalDifference > 0.01) {
-                itemErrors.sub_total = 'Sub total does not match quantity × unit price';
-                isValid = false;
-            }
+        if (!item.sub_total && item.sub_total !== 0) {
+            itemErrors.sub_total = 'Sub total is required';
+            isValid = false;
+        } else if (item.sub_total < 0) {
+            itemErrors.sub_total = 'Sub total cannot be negative';
+            isValid = false;
+        // } else if (item.sub_total > 99999999.99) {
+        //     itemErrors.sub_total = 'Sub total is too large';
+        //     isValid = false;
+        }
+
+        const calculatedSubTotal = item.quantity * item.unit_price;
+        const subTotalDifference = Math.abs(
+            item.sub_total - calculatedSubTotal,
+        );
+        if (subTotalDifference > 0.01) {
+            itemErrors.sub_total =
+                'Sub total does not match quantity Ã— unit price';
+            isValid = false;
         }
 
         if (Object.keys(itemErrors).length > 0) {
@@ -631,50 +617,73 @@ const validateLineItems = () => {
     });
 
     if (voucherTotal.value <= 0) {
-        validationErrors.value.line_items = 'Total voucher amount must be greater than 0';
+        validationErrors.value.line_items =
+            'Total voucher amount must be greater than 0';
         isValid = false;
-    } else {
-        validationErrors.value.line_items = '';
     }
+
+    // NEW: Validate that voucher total matches schedule total
+    // if (props.schedule?.total_amount && !voucherTotalMatchesSchedule.value) {
+    //     validationErrors.value.line_items = `Voucher total (${formatCurrency(voucherTotal.value)}) must match schedule total (${formatCurrency(props.schedule.total_amount)})`;
+    //     isValid = false;
+    // }
 
     return isValid;
 };
 
+// Enhanced document validation - Only require at least one document for submission
 const validateDocuments = () => {
     validationErrors.value.documents = '';
 
+    // For draft status, documents are optional
     if (form.status === 'Draft') {
         return true;
     }
 
+    // For submission, require at least ONE document (any type)
     if (form.status === 'Submitted') {
         const totalUploadedDocuments =
             requiredDocuments.value.filter((doc) => doc.uploaded).length +
             optionalDocuments.value.length;
 
         if (totalUploadedDocuments === 0) {
-            validationErrors.value.documents = 'At least one supporting document is required for submission';
+            validationErrors.value.documents =
+                'At least one supporting document is required for submission';
             return false;
         }
 
-        const hasAnyRequiredDocument = requiredDocuments.value.some((doc) => doc.uploaded);
+        // Optional: You can make specific documents required if needed
+        // For example, if you want at least one of the required documents:
+        const hasAnyRequiredDocument = requiredDocuments.value.some(
+            (doc) => doc.uploaded,
+        );
         if (!hasAnyRequiredDocument) {
-            validationErrors.value.documents = 'At least one supporting document is required';
+            validationErrors.value.documents =
+                'At least one supporting document (Approval Memo, Release Warrant, Exco Approval/Conclusion, Ministerial Tender Board, State Tenders Board, Certificate Of Incorporation, Tax Clearance, Tax Identification Number (TIN), Procurement Registration Certificate, Advance Payment Guarantee (APG), Invoice, Receipt, or Delivery Note) is required';
             return false;
         }
     }
 
+    // Validate file sizes and types for all uploaded documents
     const maxFileSize = 10 * 1024 * 1024;
     const allowedTypes = [
-        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
-        'application/pdf', 'application/msword',
+        'image/jpeg',
+        'image/jpg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'application/pdf',
+        'application/msword',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'application/vnd.ms-excel',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ];
 
+    // Check all uploaded files
     const allFiles = [
-        ...requiredDocuments.value.filter((doc) => doc.uploaded && doc.file).map((doc) => doc.file!),
+        ...requiredDocuments.value
+            .filter((doc) => doc.uploaded && doc.file)
+            .map((doc) => doc.file!),
         ...optionalDocuments.value.map((doc) => doc.file),
         ...form.documents,
     ];
@@ -684,8 +693,9 @@ const validateDocuments = () => {
             validationErrors.value.documents = `File "${file.name}" exceeds the 10MB size limit`;
             return false;
         }
+
         if (!allowedTypes.includes(file.type)) {
-            validationErrors.value.documents = `File "${file.name}" has an unsupported format`;
+            validationErrors.value.documents = `File "${file.name}" has an unsupported format. Allowed formats: Images, PDF, Word, Excel`;
             return false;
         }
     }
@@ -693,6 +703,7 @@ const validateDocuments = () => {
     return true;
 };
 
+// Methods
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-NG', {
         style: 'currency',
@@ -700,8 +711,11 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
-// Update line item sub_total - UPDATED to validate budget
-const updateItemSubTotal = (item: LineItem, field: 'quantity' | 'unit_price' | 'sub_total') => {
+// Update line item sub_total
+const updateItemSubTotal = (
+    item: LineItem,
+    field: 'quantity' | 'unit_price' | 'sub_total',
+) => {
     const quantity = parseFloat(item.quantity?.toString() || '0');
     const unit_price = parseFloat(item.unit_price?.toString() || '0');
     let sub_total = parseFloat(item.sub_total?.toString() || '0');
@@ -719,19 +733,6 @@ const updateItemSubTotal = (item: LineItem, field: 'quantity' | 'unit_price' | '
 
     form.total_amount = voucherTotal.value;
 
-    // Check budget availability if programme code is selected
-    if (item.programme_code_id && selectedProgrammeCodeMap.value[item.id]) {
-        const programme = selectedProgrammeCodeMap.value[item.id];
-        if (programme.remaining_budget < item.sub_total) {
-            toast.add({
-                severity: 'warn',
-                summary: 'Budget Alert',
-                detail: `Insufficient budget for programme ${programme.code}. Available: ₦${programme.remaining_budget.toLocaleString()}`,
-                life: 5000,
-            });
-        }
-    }
-
     if (item.errors) {
         delete item.errors[field];
         if (field === 'quantity' || field === 'unit_price') {
@@ -740,7 +741,7 @@ const updateItemSubTotal = (item: LineItem, field: 'quantity' | 'unit_price' | '
     }
 };
 
-// Add new line item - UPDATED with programme code fields
+// Add new line item
 const addItem = () => {
     const newItem: LineItem = {
         id: nextItemId++,
@@ -750,40 +751,44 @@ const addItem = () => {
         quantity: 1,
         unit_price: 0,
         sub_total: 0,
-        programme_code_id: null,
-        programme_code: null,
-        programme_name: null,
-        budget_code: null,
     };
     form.items.push(newItem);
     validationErrors.value.line_items = '';
 };
 
+// Delete line item
 const deleteItem = (id: number) => {
     if (form.items.length > 1) {
         form.items = form.items.filter((item) => item.id !== id);
         form.total_amount = voucherTotal.value;
-        // Clean up programme code map
-        delete selectedProgrammeCodeMap.value[id];
     }
 };
 
-// Watch for Economic Code changes - UPDATED
+// Watch for Economic Code changes to reset Economic Code item
 const onEconomyCodeChange = (item: LineItem) => {
-    item.economy_code_item_id = null;
-    // Don't clear programme code when economic code changes
-    // Keep it as is, user can search for any programme code
+    item.economy_code_item_id = null; // Reset the item when parent code changes
 };
 
-// File upload handlers
+// FIXED: File upload handler - prevents duplicate uploads
 const isFileAlreadyUploaded = (file: File) => {
+    // Check required documents
     const inRequired = requiredDocuments.value.some(
-        (doc) => doc.file && doc.file.name === file.name && doc.file.size === file.size,
+        (doc) =>
+            doc.file &&
+            doc.file.name === file.name &&
+            doc.file.size === file.size,
     );
+
+    // Check optional documents
     const inOptional = optionalDocuments.value.some(
         (doc) => doc.file.name === file.name && doc.file.size === file.size,
     );
-    const inForm = form.documents.some((f) => f.name === file.name && f.size === file.size);
+
+    // Check form documents
+    const inForm = form.documents.some(
+        (f) => f.name === file.name && f.size === file.size,
+    );
+
     return inRequired || inOptional || inForm;
 };
 
@@ -791,7 +796,16 @@ const onSelect = (event: any) => {
     const newFiles = [...event.files];
     validationErrors.value.documents = '';
 
-    const uniqueNewFiles = newFiles.filter((file) => !isFileAlreadyUploaded(file));
+    console.log(
+        'Files selected:',
+        newFiles.map((f) => f.name),
+    );
+    console.log('Selected document type:', selectedDocumentType.value);
+
+    // Filter out duplicates
+    const uniqueNewFiles = newFiles.filter(
+        (file) => !isFileAlreadyUploaded(file),
+    );
 
     if (uniqueNewFiles.length !== newFiles.length) {
         toast.add({
@@ -803,30 +817,42 @@ const onSelect = (event: any) => {
     }
 
     if (uniqueNewFiles.length === 0) {
+        // Clear the FileUpload component
         if (fileUploadRef.value) {
             fileUploadRef.value.clear();
         }
         return;
     }
 
+    // Clear the FileUpload component to prevent duplicates
     if (fileUploadRef.value) {
         fileUploadRef.value.clear();
     }
 
+    // Process unique files
     uniqueNewFiles.forEach((file) => {
-        if (selectedDocumentType.value && selectedDocumentType.value !== 'Other') {
+        if (
+            selectedDocumentType.value &&
+            selectedDocumentType.value !== 'Other'
+        ) {
+            // Assign to required document
             const requiredDoc = requiredDocuments.value.find(
                 (doc) => doc.type === selectedDocumentType.value,
             );
 
             if (requiredDoc) {
+                // Remove any existing file for this document type
                 if (requiredDoc.uploaded && requiredDoc.file) {
-                    form.documents = form.documents.filter((f) => f !== requiredDoc.file);
+                    // Remove old file from form.documents
+                    form.documents = form.documents.filter(
+                        (f) => f !== requiredDoc.file,
+                    );
                 }
 
                 requiredDoc.uploaded = true;
                 requiredDoc.file = file;
 
+                // Add to form.documents if not already there
                 if (!form.documents.includes(file)) {
                     form.documents.push(file);
                 }
@@ -839,8 +865,10 @@ const onSelect = (event: any) => {
                 });
             }
         } else {
+            // Add as optional document
             const existingOptionalDoc = optionalDocuments.value.find(
-                (doc) => doc.file.name === file.name && doc.file.size === file.size,
+                (doc) =>
+                    doc.file.name === file.name && doc.file.size === file.size,
             );
 
             if (!existingOptionalDoc) {
@@ -851,6 +879,7 @@ const onSelect = (event: any) => {
                     document_type: 'Other',
                 });
 
+                // Add to form.documents if not already there
                 if (!form.documents.includes(file)) {
                     form.documents.push(file);
                 }
@@ -858,14 +887,19 @@ const onSelect = (event: any) => {
         }
     });
 
+    // Reset document type selection
     selectedDocumentType.value = '';
 };
 
+// FIXED: Manual document type assignment for already uploaded files
 const assignDocumentType = (file: File, documentType: string) => {
-    if (documentType === 'Other') return;
+    if (documentType === 'Other') return; // Don't reassign optional documents
 
-    const requiredDoc = requiredDocuments.value.find((doc) => doc.type === documentType);
+    const requiredDoc = requiredDocuments.value.find(
+        (doc) => doc.type === documentType,
+    );
     if (requiredDoc) {
+        // Remove from optional documents if it's there
         const optionalDocIndex = optionalDocuments.value.findIndex(
             (doc) => doc.file.name === file.name,
         );
@@ -874,18 +908,24 @@ const assignDocumentType = (file: File, documentType: string) => {
         }
 
         if (requiredDoc.uploaded && requiredDoc.file) {
+            // Move existing required document file to optional
             optionalDocuments.value.push({
                 type: 'Other',
                 label: 'Replaced Document',
                 file: requiredDoc.file,
                 document_type: 'Other',
             });
-            form.documents = form.documents.filter((f) => f !== requiredDoc.file);
+
+            // Remove old file from form.documents
+            form.documents = form.documents.filter(
+                (f) => f !== requiredDoc.file,
+            );
         }
 
         requiredDoc.uploaded = true;
         requiredDoc.file = file;
 
+        // Ensure file is in form.documents
         if (!form.documents.includes(file)) {
             form.documents.push(file);
         }
@@ -899,67 +939,111 @@ const assignDocumentType = (file: File, documentType: string) => {
     }
 };
 
+// FIXED: Remove document assignment
 const removeDocumentAssignment = (documentType: string) => {
-    const requiredDoc = requiredDocuments.value.find((doc) => doc.type === documentType);
+    const requiredDoc = requiredDocuments.value.find(
+        (doc) => doc.type === documentType,
+    );
     if (requiredDoc && requiredDoc.file) {
+        // Move to optional documents
         optionalDocuments.value.push({
             type: 'Other',
             label: 'Additional Document',
             file: requiredDoc.file,
             document_type: 'Other',
         });
+
+        // Remove from required
         requiredDoc.uploaded = false;
         requiredDoc.file = undefined;
     }
 };
 
+// FIXED: Enhanced document removal
 const onRemove = (event: any) => {
     const fileToRemove = event.file;
 
+    console.log('Removing file:', fileToRemove.name);
+
+    // Check if this is a required document
     const requiredDoc = requiredDocuments.value.find(
         (doc) => doc.file && doc.file.name === fileToRemove.name,
     );
 
     if (requiredDoc) {
+        console.log('Removing from required documents:', requiredDoc.label);
         requiredDoc.uploaded = false;
         requiredDoc.file = undefined;
     }
 
+    // Remove from optional documents
     const optionalDocIndex = optionalDocuments.value.findIndex(
         (doc) => doc.file.name === fileToRemove.name,
     );
     if (optionalDocIndex > -1) {
+        console.log(
+            'Removing from optional documents at index:',
+            optionalDocIndex,
+        );
         optionalDocuments.value.splice(optionalDocIndex, 1);
     }
 
-    const formDocIndex = form.documents.findIndex((file) => file.name === fileToRemove.name);
+    // Remove from form documents
+    const formDocIndex = form.documents.findIndex(
+        (file) => file.name === fileToRemove.name,
+    );
     if (formDocIndex > -1) {
+        console.log('Removing from form documents at index:', formDocIndex);
         form.documents.splice(formDocIndex, 1);
     }
 
     if (form.documents.length > 0) {
         validationErrors.value.documents = '';
     }
+
+    console.log(
+        'After removal - Form docs:',
+        form.documents.length,
+        'Required docs:',
+        requiredDocuments.value.filter((d) => d.uploaded).length,
+        'Optional docs:',
+        optionalDocuments.value.length,
+    );
 };
 
+// FIXED: Enhanced clear all documents
 const clearAllDocuments = () => {
+    console.log('Clearing all documents');
+
+    // Reset required documents
     requiredDocuments.value.forEach((doc) => {
         doc.uploaded = false;
         doc.file = undefined;
     });
+
+    // Clear optional documents
     optionalDocuments.value = [];
+
+    // Clear form documents
     form.documents = [];
+
+    // Clear the FileUpload component
     if (fileUploadRef.value) {
         fileUploadRef.value.clear();
     }
+
     validationErrors.value.documents = '';
     selectedDocumentType.value = '';
+
+    console.log('All documents cleared');
 };
 
+// Track upload events
 const onUpload = (event: any) => {
     console.log('Upload event triggered:', event);
 };
 
+// FIXED: Form submission with proper document type assignment
 const submitVoucher = () => {
     if (!validateForm()) {
         toast.add({
@@ -971,41 +1055,50 @@ const submitVoucher = () => {
         return;
     }
 
+    // Prepare document types data - SIMPLIFIED AND CLEAR
     const documentTypesData: { type: string; label: string; file_name: string; }[] = [];
 
+    console.log('=== PREPARING DOCUMENT TYPES ===');
+
+    // Add required documents that have files - CRITICAL: Include filename
     requiredDocuments.value
         .filter((doc) => doc.uploaded && doc.file)
         .forEach((doc) => {
+            console.log('Adding REQUIRED document:', {
+                type: doc.type,
+                label: doc.label,
+                file_name: doc.file?.name, // THIS IS CRITICAL
+            });
+
             documentTypesData.push({
                 type: doc.type,
                 label: doc.label,
-                file_name: doc.file?.name || '',
+                file_name: doc.file?.name || '', // MUST INCLUDE FILENAME
             });
         });
 
+    // Add optional documents with their assigned types
     optionalDocuments.value.forEach((doc) => {
+        console.log('Adding OPTIONAL document:', {
+            type: doc.document_type,
+            label: doc.label,
+            file_name: doc.file.name, // THIS IS CRITICAL
+        });
+
         documentTypesData.push({
             type: doc.document_type,
             label: doc.label,
-            file_name: doc.file.name,
+            file_name: doc.file.name, // MUST INCLUDE FILENAME
         });
     });
 
+    console.log('Final document types to send:', documentTypesData);
+    console.log(
+        'Files to upload:',
+        form.documents.map((f) => f.name),
+    );
+    
     form.voucher_date = moment(form.voucher_date).format('YYYY-MM-DD');
-
-    // Ensure budget_code is set for all items before submission
-    form.items.forEach(item => {
-        if (item.programme_code_id && !item.budget_code) {
-            const programme = selectedProgrammeCodeMap.value[item.id];
-            if (programme && programme.budget_code) {
-                item.budget_code = programme.budget_code;
-            }
-        }
-        // If still no budget code, set a default or leave empty (backend will handle)
-        if (!item.budget_code) {
-            item.budget_code = '';
-        }
-    });
 
     const submitData = {
         ...form.data(),
@@ -1013,19 +1106,29 @@ const submitVoucher = () => {
             ...item,
             amount: item.sub_total,
         })),
-        document_types: documentTypesData,
+        document_types: documentTypesData, // Include all document types with filenames
     };
+
+    console.log('=== SUBMITTING VOUCHER ===');
+    console.log('Document types being sent:', documentTypesData);
+    console.log(
+        'Files being sent:',
+        form.documents.map((f) => f.name),
+    );
 
     form.post('/vouchers', {
         data: submitData,
         preserveScroll: true,
         onSuccess: (response) => {
+            console.log(response);
             let message = '';
             if (form.status === 'Draft') {
-                message = 'Voucher saved as draft successfully! You can edit it later.';
+                message =
+                    'Voucher saved as draft successfully! You can edit it later.';
             } else {
                 message = 'Voucher submitted for approval successfully!';
             }
+
             toast.add({
                 severity: 'success',
                 summary: 'Success',
@@ -1045,8 +1148,10 @@ const submitVoucher = () => {
     });
 };
 
+// Save as draft - CHANGED: This is now the default behavior
 const saveDraft = () => {
     form.status = 'Draft';
+
     if (!validateHeader() || !validateLineItems()) {
         toast.add({
             severity: 'error',
@@ -1056,11 +1161,15 @@ const saveDraft = () => {
         });
         return;
     }
+
     submitVoucher();
 };
 
+// Submit for approval - CHANGED: Now requires documents
 const submitForApproval = () => {
     form.status = 'Submitted';
+
+    // Validate all fields including documents
     if (!validateForm()) {
         toast.add({
             severity: 'error',
@@ -1070,6 +1179,7 @@ const submitForApproval = () => {
         });
         return;
     }
+
     submitVoucher();
 };
 
@@ -1077,6 +1187,7 @@ const validateForm = () => {
     const isHeaderValid = validateHeader();
     const areLineItemsValid = validateLineItems();
 
+    // Only validate documents when submitting for approval
     if (form.status === 'Submitted') {
         const areDocumentsValid = validateDocuments();
         return isHeaderValid && areLineItemsValid && areDocumentsValid;
@@ -1085,17 +1196,35 @@ const validateForm = () => {
     return isHeaderValid && areLineItemsValid;
 };
 
-// Payee lazy loading
+// Initialize with schedule data
+onMounted(() => {
+    console.log('Schedule data received:', props.schedule);
+
+    // Auto-populate form with schedule header data only
+    autoSelectMdaAndYear();
+    generateNarrationFromSchedule();
+
+    // Add initial empty line item (NOT populated from schedule)
+    if (form.items.length === 0) {
+        addItem();
+    }
+});
+
+
 const lazyItems: any = ref([]);
 const loading = ref(false);
 const currentPage = ref(0);
 const filterValue = ref('');
 
+
+
 const fetchData = async (page: number, filter = '') => {
     loading.value = true;
     try {
+        // Use an API endpoint (e.g., /api/items) instead of an Inertia endpoint for XHR requests
         const response = await axios.get(`/payeeList?page=${page}&filter=${filter}`);
         const newItems = response.data.data.map((item: { name: any; id: any; }) => ({ label: item.name, value: item.name }));
+
         if (page === 1) {
             lazyItems.value = newItems;
         } else {
@@ -1109,32 +1238,34 @@ const fetchData = async (page: number, filter = '') => {
     }
 };
 
-const onFilter = (event: any) => {
+const onLazyLoad = (event) => {
+    // Check if we need to load more items based on scroll position
+    // The event object provides information about the first and last visible indices
+    // You need logic to determine the next page
+    // A simple approach is to load the next page every time the event fires (if more data is available)
+    fetchData(currentPage.value + 1, filterValue.value);
+};
+
+// Handle filtering (if filter="true" is used)
+const onFilter = (event) => {
     filterValue.value = event.value;
+    // Reset page to 1 and fetch filtered data
     fetchData(1, event.value);
 };
 
-fetchData(1);
 
-// Initialize
-onMounted(() => {
-    console.log('Schedule data received:', props.schedule);
-    autoSelectMdaAndYear();
-    generateNarrationFromSchedule();
-    if (form.items.length === 0) {
-        addItem();
-    }
-    // Initialize programme code options from props
-    if (props.programmeCodes && props.programmeCodes.length > 0) {
-        programmeCodeOptions.value = props.programmeCodes;
-    }
-    // Load initial programme codes for search
-    searchProgrammeCodes('');
-});
+fetchData(1);
 </script>
+
+<style scoped>
+.uppercase-input {
+    text-transform: uppercase;
+}
+</style>
 
 <template>
     <AppLayout :breadcrumbs="breadcrumbs">
+
         <Head :title="pageTitle" />
         <Toast />
 
@@ -1266,7 +1397,7 @@ onMounted(() => {
                             <label for="voucher_date" class="text-500 mb-1 block text-sm font-semibold">
                                 Voucher Date *
                             </label>
-                            <Calendar id="voucher_date" v-model="form.voucher_date" dateFormat="yy-mm-dd"
+                            <Calendar id="voucher_date" :v-model="form.voucher_date" dateFormat="yy-mm-dd"
                                 class="w-full" :class="{
                                     'p-invalid':
                                         form.errors.voucher_date ||
@@ -1291,6 +1422,8 @@ onMounted(() => {
                             <label class="text-500 mb-1 block text-sm font-semibold">
                                 Voucher Type
                             </label>
+                            <!-- <InputText :modelValue="voucherType.toUpperCase()" class="w-full" disabled /> -->
+
                             <Dropdown
                                 v-model="form.voucher_type"
                                 :options="voucherTypes"
@@ -1335,58 +1468,64 @@ onMounted(() => {
                                 <small v-if="form.errors.voucher_number" class="p-error">
                                     {{ form.errors.voucher_number }}
                                 </small>
+                                <small :class="form.voucher_number.length > 500
+                                    ? 'p-error'
+                                    : 'text-500'
+                                    " />
                                 <small class="text-500">Voucher Number: {{ voucherNumber }}</small>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Narration and Payee -->
-                <div class="mb-4 grid">
+                <!-- Narration -->
+                <div class="field mb-4">
                     <div class="col-6">
-                        <div class="field">
-                            <label for="narration" class="text-500 mb-1 block text-sm font-semibold">
-                                Narration *
-                            </label>
-                            <Textarea id="narration" v-model="form.narration" rows="3" class="w-full"
-                                placeholder="Enter voucher description or purpose..." :class="{
-                                    'p-invalid':
-                                        form.errors.narration ||
-                                        validationErrors.narration,
-                                }" @input="validationErrors.narration = ''" />
-                            <div class="justify-content-between mt-1 flex">
-                                <small v-if="validationErrors.narration" class="p-error">
-                                    {{ validationErrors.narration }}
-                                </small>
-                                <small v-if="form.errors.narration" class="p-error">
-                                    {{ form.errors.narration }}
-                                </small>
-                                <small :class="form.narration.length > 500
-                                    ? 'p-error'
-                                    : 'text-500'
-                                    ">
-                                    {{ form.narration.length }}/500
-                                </small>
-                            </div>
+                        <label for="narration" class="text-500 mb-1 block text-sm font-semibold">
+                            Narration *
+                        </label>
+                        <Textarea id="narration" v-model="form.narration" rows="3" class="w-full"
+                            placeholder="Enter voucher description or purpose..." :class="{
+                                'p-invalid':
+                                    form.errors.narration ||
+                                    validationErrors.narration,
+                            }" @input="validationErrors.narration = ''" />
+                        <div class="justify-content-between mt-1 flex">
+                            <small v-if="validationErrors.narration" class="p-error">
+                                {{ validationErrors.narration }}
+                            </small>
+                            <small v-if="form.errors.narration" class="p-error">
+                                {{ form.errors.narration }}
+                            </small>
+                            <small :class="form.narration.length > 500
+                                ? 'p-error'
+                                : 'text-500'
+                                ">
+                                {{ form.narration.length }}/500
+                            </small>
                         </div>
                     </div>
 
                     <div class="col-6">
-                        <div class="field">
+                        
                             <label for="payee_name" class="text-500 mb-1 block text-sm font-semibold">
-                                Payee Name/Beneficiary Name *
+                                Payee Name/Beneficiary Name
                             </label>
                             <Dropdown editable v-model="form.payee_name" :options="lazyItems" optionLabel="label"
                                 optionValue="value" :loading="loading" placeholder="Select who is being paid" filter
                                 @filter="onFilter" class="w-full" />
+
                             <small class="p-error block" v-if="form.errors?.payee_name">{{
                                 form.errors.payee_name
                                 }}</small>
-                        </div>
-                    </div>
-                </div>
 
-                <!-- Line Items Table -->
+                        </div>
+
+                    </div>
+
+                
+
+                <!-- Line Items Table - EMPTY for user to fill -->
                 <div class="mb-4">
                     <div class="justify-content-between align-items-center mb-3 flex">
                         <h4 class="m-0">Line Items</h4>
@@ -1400,8 +1539,8 @@ onMounted(() => {
                     </div>
 
                     <DataTable :value="form.items" class="p-datatable-sm fixed-column-table" responsiveLayout="scroll">
-                        <Column field="description" header="Description" headerStyle="width: 25%; min-width: 200px"
-                            bodyStyle="width: 25%; min-width: 200px">
+                        <Column field="description" header="Description" headerStyle="width: 30%; min-width: 200px"
+                            bodyStyle="width: 30%; min-width: 200px">
                             <template #body="slotProps">
                                 <div class="flex-column flex">
                                     <Textarea v-model="slotProps.data.description" rows="2" autoResize
@@ -1423,10 +1562,10 @@ onMounted(() => {
                             </template>
                         </Column>
 
-                        <!-- Economic Code Column -->
+                        <!-- Economic Code Column - FIXED WIDTH WITH SEARCH -->
                         <Column field="economy_code_id" header="Economic Code"
-                            headerStyle="width: 150px; min-width: 150px; max-width: 150px"
-                            bodyStyle="width: 150px; min-width: 150px; max-width: 150px">
+                            headerStyle="width: 180px; min-width: 180px; max-width: 180px"
+                            bodyStyle="width: 180px; min-width: 180px; max-width: 180px">
                             <template #body="slotProps">
                                 <div class="flex-column fixed-dropdown-container flex">
                                     <Dropdown v-model="slotProps.data.economy_code_id" :options="economyCodeOptions"
@@ -1452,10 +1591,10 @@ onMounted(() => {
                             </template>
                         </Column>
 
-                        <!-- Economic Code Item Column -->
+                        <!-- Economic Code Item Column - FIXED WIDTH WITH SEARCH -->
                         <Column field="economy_code_item_id" header="Code Item"
-                            headerStyle="width: 150px; min-width: 150px; max-width: 150px"
-                            bodyStyle="width: 150px; min-width: 150px; max-width: 150px">
+                            headerStyle="width: 180px; min-width: 180px; max-width: 180px"
+                            bodyStyle="width: 180px; min-width: 180px; max-width: 180px">
                             <template #body="slotProps">
                                 <div class="flex-column fixed-dropdown-container flex">
                                     <Dropdown v-model="slotProps.data.economy_code_item_id
@@ -1488,50 +1627,9 @@ onMounted(() => {
                             </template>
                         </Column>
 
-                        <!-- Programme Code Column - SEARCHABLE VERSION -->
-                        <Column field="programme_code_id" header="Programme Code"
-                            headerStyle="width: 280px; min-width: 280px; max-width: 280px"
-                            bodyStyle="width: 280px; min-width: 280px; max-width: 280px">
-                            <template #body="slotProps">
-                                <div class="flex-column flex">
-                                    <Dropdown 
-                                        v-model="slotProps.data.programme_code_id" 
-                                        :options="programmeCodeOptions" 
-                                        optionLabel="label" 
-                                        optionValue="value" 
-                                        placeholder="Search Programme Code..." 
-                                        class="w-full" 
-                                        :loading="programmeCodeSearchLoading"
-                                        :filter="true"
-                                        filterPlaceholder="Type to search by code or name..."
-                                        :showClear="true"
-                                        :class="{
-                                            'p-invalid': slotProps.data.errors?.programme_code_id,
-                                        }" 
-                                        @filter="onProgrammeCodeSearch"
-                                        @change="onProgrammeCodeSelect(slotProps.data, $event.value)"
-                                    >
-                                        <template #option="slotProps">
-                                            <div class="flex flex-column">
-                                                <span class="font-medium">{{ slotProps.option.display_text || slotProps.option.label }}</span>
-                                                <small class="text-500">{{ slotProps.option.detail_text || `Budget Code: ${slotProps.option.budget_code} | Remaining: ₦${Number(slotProps.option.remaining_budget).toLocaleString()}` }}</small>
-                                            </div>
-                                        </template>
-                                    </Dropdown>
-                                    <small v-if="slotProps.data.errors?.programme_code_id" class="p-error mt-1">
-                                        {{ slotProps.data.errors.programme_code_id }}
-                                    </small>
-                                    <small v-else-if="slotProps.data.programme_code_id && selectedProgrammeCodeMap[slotProps.data.id]" class="text-500 mt-1">
-                                        <i class="pi pi-info-circle mr-1"></i>
-                                        Remaining: ₦{{ Number(selectedProgrammeCodeMap[slotProps.data.id].remaining_budget).toLocaleString() }}
-                                    </small>
-                                </div>
-                            </template>
-                        </Column>
-
                         <Column field="quantity" header="Qty"
-                            headerStyle="width: 80px; min-width: 80px; max-width: 80px"
-                            bodyStyle="width: 80px; min-width: 80px; max-width: 80px">
+                            headerStyle="width: 100px; min-width: 100px; max-width: 100px"
+                            bodyStyle="width: 100px; min-width: 100px; max-width: 100px">
                             <template #body="slotProps">
                                 <div class="flex-column flex">
                                     <InputNumber v-model="slotProps.data.quantity" @update:modelValue="
@@ -1555,8 +1653,8 @@ onMounted(() => {
                         </Column>
 
                         <Column field="unit_price" header="Unit Price"
-                            headerStyle="width: 130px; min-width: 130px; max-width: 130px"
-                            bodyStyle="width: 130px; min-width: 130px; max-width: 130px">
+                            headerStyle="width: 150px; min-width: 150px; max-width: 150px"
+                            bodyStyle="width: 150px; min-width: 150px; max-width: 150px">
                             <template #body="slotProps">
                                 <div class="flex-column flex">
                                     <InputNumber v-model="slotProps.data.unit_price" @update:modelValue="
@@ -1582,8 +1680,8 @@ onMounted(() => {
                         </Column>
 
                         <Column field="sub_total" header="Sub Total"
-                            headerStyle="width: 130px; min-width: 130px; max-width: 130px"
-                            bodyStyle="width: 130px; min-width: 130px; max-width: 130px"
+                            headerStyle="width: 150px; min-width: 150px; max-width: 150px"
+                            bodyStyle="width: 150px; min-width: 150px; max-width: 150px"
                             bodyClass="font-bold text-right">
                             <template #body="slotProps">
                                 <div class="flex-column flex">
@@ -1609,8 +1707,8 @@ onMounted(() => {
                             </template>
                         </Column>
 
-                        <Column headerStyle="width: 60px; min-width: 60px; max-width: 60px"
-                            bodyStyle="width: 60px; min-width: 60px; max-width: 60px" bodyClass="text-center">
+                        <Column headerStyle="width: 70px; min-width: 70px; max-width: 70px"
+                            bodyStyle="width: 70px; min-width: 70px; max-width: 70px" bodyClass="text-center">
                             <template #body="slotProps">
                                 <Button icon="pi pi-trash" severity="danger" text rounded
                                     :disabled="form.items.length === 1" @click="deleteItem(slotProps.data.id)" />
@@ -1681,16 +1779,18 @@ onMounted(() => {
                             <!-- Required Documents Status -->
                             <div class="mb-4">
                                 <h5 class="mb-2">
-                                    Required Document:
+                                    Supporting Documents Status:
                                 </h5>
                                 <div class="grid">
-                                    <div v-for="doc in requiredDocuments" :key="doc.type" class="col-12 mb-3">
+                                    <div v-for="doc in requiredDocuments" :key="doc.type" class="col-6 mb-3">
                                         <div class="surface-100 border-round border-1 p-3">
                                             <div class="align-items-center justify-content-between mb-2 flex">
                                                 <div class="align-items-center flex gap-2">
                                                     <i :class="doc.uploaded
                                                         ? 'pi pi-check-circle text-green-500'
-                                                        : 'pi pi-exclamation-circle text-orange-500'
+                                                        : doc.required
+                                                            ? 'pi pi-exclamation-circle text-orange-500'
+                                                            : 'pi pi-circle text-500'
                                                         "></i>
                                                     <span :class="doc.uploaded
                                                         ? 'text-700 font-semibold'
@@ -1704,6 +1804,7 @@ onMounted(() => {
                                                     " value="Required" severity="warning" size="small" />
                                                     <Badge v-else-if="doc.uploaded" value="Uploaded" severity="success"
                                                         size="small" />
+                                                    <Badge v-else value="Optional" severity="info" size="small" />
                                                 </div>
                                                 <Button v-if="doc.uploaded" icon="pi pi-times" severity="danger" text
                                                     rounded size="small" @click="
@@ -1729,7 +1830,11 @@ onMounted(() => {
                                             </div>
                                             <div v-else class="mt-1">
                                                 <small class="text-500">
-                                                    Required for submission
+                                                    {{
+                                                        doc.required
+                                                            ? 'Required for submission'
+                                                            : 'Optional document'
+                                                    }}
                                                 </small>
                                             </div>
                                         </div>
@@ -1813,7 +1918,8 @@ onMounted(() => {
                                         <small class="text-500">
                                             <strong>Document Requirements:</strong>
                                             At least one supporting document is
-                                            required for submission.
+                                            required for submission. Approval
+                                            Form is recommended.
                                         </small>
                                     </div>
                                     <div v-if="validationErrors.documents" class="mt-2">
@@ -1843,7 +1949,7 @@ onMounted(() => {
                                 <!-- Unassigned/Optional Documents -->
                                 <div v-if="optionalDocuments.length > 0" class="mb-4">
                                     <h6 class="mb-2 text-blue-600">
-                                        Additional Documents:
+                                        Documents to Assign:
                                     </h6>
                                     <div class="grid">
                                         <div v-for="(
@@ -1871,8 +1977,18 @@ doc, index
                                                 </div>
                                                 <div class="align-items-center flex gap-2">
                                                     <Dropdown v-model="doc.document_type
-                                                        " :options="documentTypeOptions"
-                                                        optionLabel="label" optionValue="value"
+                                                        " :options="documentTypeOptions.filter(
+                                                            (opt) =>
+                                                                opt.value ===
+                                                                'other' ||
+                                                                !requiredDocuments.find(
+                                                                    (rd) =>
+                                                                        rd.type ===
+                                                                        opt.value &&
+                                                                        rd.uploaded,
+                                                                ),
+                                                        )
+                                                            " optionLabel="label" optionValue="value"
                                                         placeholder="Assign type..." class="w-10rem" @change="
                                                             assignDocumentType(
                                                                 doc.file,
@@ -1897,7 +2013,7 @@ doc, index
                                     )
                                 " class="mb-3">
                                     <h6 class="mb-2 text-green-600">
-                                        Required Document:
+                                        Assigned Required Documents:
                                     </h6>
                                     <ul class="m-0 list-none p-0">
                                         <li v-for="doc in requiredDocuments.filter(
@@ -1943,7 +2059,7 @@ doc, index
                         <div class="totals-section">
                             <h4 class="mb-3">Voucher Summary</h4>
 
-                            <!-- Schedule Total Reference -->
+                            <!-- NEW: Schedule Total Reference -->
                             <div v-if="scheduleInfo" class="surface-50 border-round mb-3 p-3">
                                 <div class="justify-content-between align-items-center flex">
                                     <span class="text-500 font-semibold">Schedule Total:</span>
@@ -1956,46 +2072,46 @@ doc, index
 
                             <div class="justify-content-between total-row mb-2 flex">
                                 <span class="text-500">Number of Vouchers Raised:</span>
-                                <span class="font-semibold">{{ props.schedule.voucher_count || 0 }}</span>
+                                <span class="font-semibold">{{ props.schedule.voucher_count }}</span>
                             </div>
                             <div class="justify-content-between total-row mb-2 flex">
                                 <span class="text-500">Total Amount Raised:</span>
-                                <span class="font-semibold">{{ formatCurrency(props.schedule.amount_posted || 0) }}</span>
+                                <span class="font-semibold">{{ formatCurrency(props.schedule.amount_posted) }}</span>
                             </div>
                             <div class="justify-content-between total-row mb-2 flex">
                                 <span class="text-500">Outstanding Balance:</span>
                                 <span class="font-semibold">{{ formatCurrency(scheduleTotal -
-                                    (props.schedule.amount_posted || 0)) }}</span>
+                                    props.schedule.amount_posted) }}</span>
                             </div>
                             <div class="justify-content-between total-row mb-2 flex">
                                 <span class="text-500">Voucher Subtotal:</span>
                                 <span class="font-semibold" :class="{
                                     'text-green-500':
-                                        scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) >= 0,
+                                        scheduleTotal - (props.schedule.amount_posted + voucherSubtotal) >= 0,
                                     'text-red-500':
-                                        scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) < 0,
+                                        scheduleTotal - (props.schedule.amount_posted + voucherSubtotal) < 0,
                                 }">{{ formatCurrency(voucherSubtotal) }}</span>
                             </div>
                             <Divider />
                             <div class="justify-content-between total-row flex text-xl font-bold" :class="{
                                 'text-green-500':
-                                    scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) >= 0,
+                                    scheduleTotal - (props.schedule.amount_posted + voucherSubtotal) >= 0,
                                 'text-orange-500':
-                                    scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) < 0,
+                                    scheduleTotal - (props.schedule.amount_posted + voucherSubtotal) < 0,
                             }">
                                 <span>Voucher Total:</span>
                                 <span>{{ formatCurrency(voucherTotal) }}</span>
                             </div>
 
-                            <!-- Validation Status -->
+                            <!-- NEW: Validation Status -->
                             <div v-if="scheduleInfo" class="mt-2">
-                                <div v-if="scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) == 0"
+                                <div v-if="scheduleTotal - (props.schedule.amount_posted + voucherSubtotal) == 0"
                                     class="align-items-center flex gap-2 text-green-500">
                                     <i class="pi pi-check-circle"></i>
                                     <small class="font-semibold">Total amount on raised vouchers now matches schedule
                                         total</small>
                                 </div>
-                                <div v-if="scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) > 0 && voucherTotal > 0"
+                                <div v-if="scheduleTotal - (props.schedule.amount_posted + voucherSubtotal) > 0 && voucherTotal > 0"
                                     class="align-items-center flex gap-2 text-orange-400">
                                     <i class="pi pi-exclamation-triangle"></i>
                                     <small class="font-semibold">Total amount on raised vouchers is below the schedule
@@ -2004,7 +2120,7 @@ doc, index
                                         <br />Alternatively, you may
                                         have to add another voucher to this schedule.</small>
                                 </div>
-                                <div v-if="scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) < 0"
+                                <div v-if="scheduleTotal - (props.schedule.amount_posted + voucherSubtotal) < 0"
                                     class="align-items-center flex gap-2 text-red-500">
                                     <i class="pi pi-exclamation-triangle"></i>
                                     <small class="font-semibold">You have exceeded the total amount on the schedule
@@ -2026,7 +2142,7 @@ doc, index
                         @click="saveDraft" title="Save as draft (documents optional, can edit later)" />
                     <Button label="Submit for Approval" icon="pi pi-send" severity="success" :loading="form.processing"
                         @click="submitForApproval"
-                        title="Submit for approval to Internal Audit (requires all documents)" />
+                        title="Submit for approval to Internal Audit (requires all documents)" disabled />
                 </div>
             </template>
         </Card>
@@ -2034,10 +2150,6 @@ doc, index
 </template>
 
 <style scoped>
-.uppercase-input {
-    text-transform: uppercase;
-}
-
 .voucher-card {
     min-height: 100vh;
 }
@@ -2067,7 +2179,7 @@ doc, index
     border: 1px solid var(--p-surface-200);
     border-radius: 6px;
     width: 100%;
-    overflow-x: auto;
+    overflow-x: hidden;
 }
 
 :deep(.p-datatable-thead > tr > th) {
@@ -2138,6 +2250,7 @@ doc, index
     margin-bottom: 0.5rem;
 }
 
+/* Ensure table columns maintain consistent widths */
 :deep(.p-datatable-table) {
     table-layout: fixed;
     width: 100%;

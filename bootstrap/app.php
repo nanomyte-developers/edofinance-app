@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\ImportBudgetProgrammeCodes;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
@@ -33,6 +34,10 @@ return Application::configure(basePath: dirname(__DIR__))
             // 'check_role' => \App\Http\Middleware\CheckRole::class,
         ]);
     })
+    ->withCommands([
+        // Register your custom Artisan commands
+        ImportBudgetProgrammeCodes::class,
+    ])
     ->withExceptions(function (Exceptions $exceptions): void {
         //
     })->create();

@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use App\Models\FinancialYear;
 use App\Helpers\NumberToWords;
 use App\Models\EconomyCodeItem;
+use App\Models\ProgrammeCode;
 use App\Services\ActivityLogger;
 use App\Services\VoucherService;
 use App\Models\AdministrativeCode;
@@ -22,22 +23,24 @@ use Illuminate\Http\RedirectResponse;
 use App\Http\Resources\VoucherResource;
 use Illuminate\Support\Facades\Storage;
 use App\Http\Requests\VoucherStoreUpdateRequest;
+use App\Services\BudgetService;
 
 class VouchersController extends Controller
 {
     protected VoucherService $voucherService;
     protected $activityLogger;
+    protected BudgetService $budgetService;
 
-    public function __construct(VoucherService $voucherService, ActivityLogger $activityLogger)
+    public function __construct(VoucherService $voucherService, ActivityLogger $activityLogger, BudgetService $budgetService)
     {
         $this->voucherService = $voucherService;
         $this->activityLogger = $activityLogger;
+        $this->budgetService = $budgetService;
     }
 
     public function index(Request $request)
     {
         try {
-            // Log view activity
             $this->activityLogger->log(
                 "Viewed vouchers list",
                 [
@@ -48,13 +51,9 @@ class VouchersController extends Controller
                 'voucher'
             );
 
-            return Inertia::render('admin/vouchers/index', [
-                // 'vouchers' => $vouchers,
-                // 'paginator' => $paginator
-            ]);
+            return Inertia::render('admin/vouchers/index', []);
         } catch (\Exception $e) {
             \Log::error('Voucher Index Error: ' . $e->getMessage());
-
             return Inertia::render('admin/vouchers/index', [
                 'vouchers' => [
                     'data' => [],
@@ -104,7 +103,6 @@ class VouchersController extends Controller
                         'narration' => $voucher->narration,
                         'total_amount' => $voucher->total_amount,
                         'payee_name' => $voucher->payee_name,
-
                         'status' => $voucher->status,
                         'mda' => $voucher->mda ? [
                             'id' => $voucher->mda->id,
@@ -113,30 +111,21 @@ class VouchersController extends Controller
                             'code' => $voucher->mda->code
                         ] : null,
                         'bank_activity' => $voucher->bankActivity ? [
-                        
                             'account_number' => $voucher->bankActivity->account_number,
                             'bank_name' => $voucher->bankActivity->bank_name,
                             'tag' => $voucher->bankActivity->tag,
                             'title' => $voucher->bankActivity->title,
                             'economic_code' => $voucher->bankActivity->economic_code,
                         ] : null,
-                        'items' =>
-                             [
-                                'description' => $voucher->items[0]->description,
-                                // 'economy_code' => $voucher->items[0]->economyCode ? [
-                                //     'id' => $voucher->items[0]->economyCode->id,
-                                //     'code' => $voucher->items[0]->economyCode->code,
-                                //     'description' => $voucher->items[0]->economyCode->description,
-                                // ] : null,
-                                'economy_code_item' => $voucher->items[0]->economyCodeItem ? [
-                                    'id' => $voucher->items[0]->economyCodeItem->id,
-                                    'code' => $voucher->items[0]->economyCodeItem->code,
-                                    'description' => $voucher->items[0]->economyCodeItem->description,
-                                ] : null,
-                                'amount' => $voucher->items[0]->amount,
-                            ] ,
-                        
-                        
+                        'items' => $voucher->items->isNotEmpty() ? [
+                            'description' => $voucher->items[0]->description,
+                            'economy_code_item' => $voucher->items[0]->economyCodeItem ? [
+                                'id' => $voucher->items[0]->economyCodeItem->id,
+                                'code' => $voucher->items[0]->economyCodeItem->code,
+                                'description' => $voucher->items[0]->economyCodeItem->description,
+                            ] : null,
+                            'amount' => $voucher->items[0]->sub_total,
+                        ] : null,
                         'created_at' => $voucher->created_at?->toDateTimeString(),
                         'updated_at' => $voucher->updated_at?->toDateTimeString(),
                     ];
@@ -156,7 +145,6 @@ class VouchersController extends Controller
                 "to" => $vouchers->perPage(),
             ];
 
-            // Log search activity
             $this->activityLogger->log(
                 "Searched vouchers",
                 [
@@ -192,6 +180,9 @@ class VouchersController extends Controller
                 return [
                     'value' => $code->id,
                     'label' => $code->code . ' - ' . $code->name,
+                    'code' => $code->code,
+                    'name' => $code->name,
+                    'type' => $code->type ?? 'operational',
                 ];
             })->toArray();
 
@@ -207,12 +198,44 @@ class VouchersController extends Controller
                 ];
             })->toArray();
 
-        // Log creation form access
+        $financialYearId = $schedule?->year_id ?? FinancialYear::where('is_active', true)->first()?->id;
+        
+        $programmeCodes = ProgrammeCode::with('economicCode')
+            ->active()
+            ->projects()
+            ->when($financialYearId, function ($query) use ($financialYearId) {
+                $query->where('financial_year_id', $financialYearId);
+            })
+            ->orderBy('code')
+            ->get()
+            ->map(function ($programme) {
+                return [
+                    'id' => $programme->id,
+                    'code' => $programme->code,
+                    'name' => $programme->name,
+                    'description' => $programme->project_description ?: $programme->name,
+                    'budget_code' => $programme->budget_code,
+                    'remaining_budget' => (float) $programme->remaining_budget,
+                    'approved_budget' => (float) $programme->approved_budget,
+                    'economic_code_id' => $programme->economic_code_id,
+                    'economic_code' => $programme->economicCode ? [
+                        'id' => $programme->economicCode->id,
+                        'code' => $programme->economicCode->code,
+                        'name' => $programme->economicCode->name,
+                    ] : null,
+                    'mda_name' => $programme->mda_name,
+                    'sector' => $programme->sector,
+                    'label' => "{$programme->code} - {$programme->name} (₦" . number_format($programme->remaining_budget, 2) . ")",
+                    'value' => $programme->id,
+                ];
+            });
+
         $this->activityLogger->log(
             "Accessed voucher creation form",
             [
                 'schedule_id' => $request->get('schedule_id'),
                 'voucher_type' => $request->get('type', 'standard'),
+                'programme_codes_count' => $programmeCodes->count(),
                 'user_id' => auth()->id()
             ],
             'voucher'
@@ -231,6 +254,7 @@ class VouchersController extends Controller
                 'amount_posted' => $schedule->vouchers->sum('total_amount'),
                 'voucher_count' => $schedule->vouchers->count(),
                 'narration' => $schedule->narration,
+                'payee_name' => $schedule->payee_name,
             ] : null,
             'mdas' => Mda::all()->map(fn($mda) => [
                 'value' => $mda->id,
@@ -242,37 +266,266 @@ class VouchersController extends Controller
             ]),
             'economyCodes' => $economyCodes,
             'economyCodeItems' => $economyCodeItems,
+            'programmeCodes' => $programmeCodes,
             'today' => now()->format('Y-m-d'),
+            'voucherNumber' => $this->generateVoucherNumber(),
         ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
+    private function generateVoucherNumber()
+    {
+        $year = date('y');
+        $month = date('m');
+        
+        $lastVoucher = Voucher::whereYear('created_at', date('Y'))
+            ->orderBy('id', 'desc')
+            ->first();
+        
+        if ($lastVoucher && preg_match('/VCH-' . $year . $month . '-(\d+)/', $lastVoucher->voucher_number, $matches)) {
+            $sequence = (int) $matches[1] + 1;
+        } else {
+            $sequence = 1;
+        }
+        
+        return 'VCH-' . $year . $month . '-' . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+    }
+
+    // public function store(VoucherStoreUpdateRequest $request): RedirectResponse
+    // {
+    //     $data = $request->validated();
+    //     $files = $request->file('documents') ?? [];
+    //     $documentTypes = $request->input('document_types', []);
+
+    //     \Log::info('Voucher Store Request Data:', [
+    //         'data_keys' => array_keys($data),
+    //         'files_count' => count($files),
+    //         'document_types_count' => count($documentTypes),
+    //         'user_id' => auth()->id(),
+    //     ]);
+
+    //     try {
+    //         $voucher = $this->voucherService->createVoucher($data, $files, $documentTypes);
+
+    //         $this->activityLogger->log(
+    //             "Created voucher {$voucher->voucher_number}",
+    //             [
+    //                 'voucher_id' => $voucher->id,
+    //                 'voucher_number' => $voucher->voucher_number,
+    //                 'voucher_type' => $voucher->voucher_type,
+    //                 'total_amount' => $voucher->total_amount,
+    //                 'mda_id' => $voucher->mda_id,
+    //                 'status' => $voucher->status,
+    //                 'document_count' => $voucher->documents->count(),
+    //                 'schedule_id' => $voucher->schedule_id,
+    //                 'user_id' => auth()->id()
+    //             ],
+    //             'voucher'
+    //         );
+
+    //         $this->activityLogger->logAction('created', $voucher, [
+    //             'amount' => $voucher->total_amount,
+    //             'payee_name' => $voucher->payee_name,
+    //             'narration' => $voucher->narration
+    //         ]);
+
+    //         \Log::info('Voucher Created Successfully:', [
+    //             'voucher_id' => $voucher->id,
+    //             'voucher_number' => $voucher->voucher_number,
+    //             'status' => $voucher->status,
+    //             'documents_created' => $voucher->documents->count(),
+    //         ]);
+
+    //         return redirect()
+    //             ->route('vouchers.index')
+    //             ->with('success', 'Voucher ' . $voucher->voucher_number . ' created successfully.');
+    //     } catch (\Exception $e) {
+    //         \Log::error('Voucher Creation Failed: ' . $e->getMessage(), [
+    //             'trace' => $e->getTraceAsString(),
+    //             'data' => $request->except(['documents', 'document_types']),
+    //             'user_id' => auth()->id(),
+    //         ]);
+
+    //         $this->activityLogger->log(
+    //             "Failed to create voucher",
+    //             [
+    //                 'error' => $e->getMessage(),
+    //                 'data_keys' => array_keys($data),
+    //                 'attempted_by' => auth()->id()
+    //             ],
+    //             'voucher'
+    //         );
+
+    //         return back()
+    //             ->withInput()
+    //             ->with('error', 'Failed to create voucher: ' . $e->getMessage());
+    //     }
+    // }
+
+    // public function approve(Voucher $voucher, Request $request)
+    // {
+    //     if ($voucher->voucher_type !== 'prepayment') {
+    //         return back()->withErrors(['message' => 'Only prepayment vouchers can be approved for retirement.']);
+    //     }
+
+    //     if ($voucher->status !== 'Submitted') {
+    //         return back()->withErrors(['message' => 'Voucher is not in submitted status.']);
+    //     }
+
+    //     $voucher->update([
+    //         'status' => 'Approved',
+    //         'approved_by' => auth()->id(),
+    //         'approved_at' => now(),
+    //     ]);
+
+    //     activity()
+    //         ->performedOn($voucher)
+    //         ->causedBy(auth()->user())
+    //         ->withProperties(['old_status' => 'Submitted', 'new_status' => 'Approved'])
+    //         ->log('approved prepayment voucher for retirement');
+
+    //     return response()->json([
+    //         'success' => true,
+    //         'message' => 'Voucher approved successfully.',
+    //         'voucher' => $voucher->fresh(),
+    //     ]);
+    // }
+
+    // Replace the existing approve method with this one
+    public function approve(Voucher $voucher, Request $request)
+    {
+        // Validate voucher can be approved
+        if ($voucher->voucher_type !== 'prepayment') {
+            return back()->withErrors(['message' => 'Only prepayment vouchers can be approved for retirement.']);
+        }
+
+        if ($voucher->status !== 'Submitted') {
+            return back()->withErrors(['message' => 'Voucher is not in submitted status.']);
+        }
+
+        // Validate budget availability before approval
+        $budgetValidation = $this->budgetService->validateVoucherBudget($voucher);
+        
+        if (!$budgetValidation['is_valid']) {
+            $errorMessage = implode('; ', $budgetValidation['errors']);
+            return back()->withErrors(['message' => 'Budget validation failed: ' . $errorMessage]);
+        }
+
+        DB::beginTransaction();
+        
+        try {
+            // Update voucher status
+            $voucher->update([
+                'status' => 'Approved',
+                'approved_by' => auth()->id(),
+                'approved_at' => now(),
+            ]);
+            
+            // Deduct budget
+            $this->budgetService->deductBudgetForVoucher($voucher);
+
+            DB::commit();
+
+            activity()
+                ->performedOn($voucher)
+                ->causedBy(auth()->user())
+                ->withProperties([
+                    'old_status' => 'Submitted', 
+                    'new_status' => 'Approved',
+                    'budget_deducted' => true
+                ])
+                ->log('approved voucher and deducted budget');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Voucher approved and budget deducted successfully.',
+                'voucher' => $voucher->fresh(),
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Approval failed: ' . $e->getMessage());
+            return back()->withErrors(['message' => 'Failed to approve voucher: ' . $e->getMessage()]);
+        }
+    }
+
+    // Add a new method to reject voucher and release budget
+    public function reject(Voucher $voucher, Request $request)
+    {
+        if ($voucher->status !== 'Submitted') {
+            return back()->withErrors(['message' => 'Voucher is not in submitted status.']);
+        }
+
+        DB::beginTransaction();
+        
+        try {
+            $oldStatus = $voucher->status;
+            
+            $voucher->update([
+                'status' => 'Rejected',
+                'rejection_reason' => $request->input('reason'),
+                'rejected_by' => auth()->id(),
+                'rejected_at' => now(),
+            ]);
+            
+            // Release budget if it was deducted
+            $this->budgetService->releaseBudgetForVoucher($voucher);
+
+            DB::commit();
+
+            activity()
+                ->performedOn($voucher)
+                ->causedBy(auth()->user())
+                ->withProperties([
+                    'old_status' => $oldStatus, 
+                    'new_status' => 'Rejected',
+                    'budget_released' => true
+                ])
+                ->log('rejected voucher and released budget');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Voucher rejected and budget released successfully.',
+                'voucher' => $voucher->fresh(),
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Rejection failed: ' . $e->getMessage());
+            return back()->withErrors(['message' => 'Failed to reject voucher: ' . $e->getMessage()]);
+        }
+    }
+
+    // Also update the store method to validate budget on submission
     public function store(VoucherStoreUpdateRequest $request): RedirectResponse
     {
         $data = $request->validated();
         $files = $request->file('documents') ?? [];
         $documentTypes = $request->input('document_types', []);
 
-        // dd($request->all());
-
         \Log::info('Voucher Store Request Data:', [
             'data_keys' => array_keys($data),
             'files_count' => count($files),
             'document_types_count' => count($documentTypes),
-            'document_types' => $documentTypes,
-            'file_names' => array_map(function ($file) {
-                return $file->getClientOriginalName();
-            }, $files),
             'user_id' => auth()->id(),
         ]);
 
         try {
-            // Process the voucher creation
             $voucher = $this->voucherService->createVoucher($data, $files, $documentTypes);
+            
+            // If submitted for approval, validate budget
+            if ($data['status'] === 'Submitted') {
+                $budgetValidation = $this->budgetService->validateVoucherBudget($voucher);
+                
+                if (!$budgetValidation['is_valid']) {
+                    // Budget validation failed - delete the voucher
+                    $voucher->delete();
+                    $errorMessage = implode('; ', $budgetValidation['errors']);
+                    return back()
+                        ->withInput()
+                        ->with('error', 'Budget validation failed: ' . $errorMessage);
+                }
+            }
 
-            // Log voucher creation activity
             $this->activityLogger->log(
                 "Created voucher {$voucher->voucher_number}",
                 [
@@ -289,7 +542,6 @@ class VouchersController extends Controller
                 'voucher'
             );
 
-            // Log specific action for audit
             $this->activityLogger->logAction('created', $voucher, [
                 'amount' => $voucher->total_amount,
                 'payee_name' => $voucher->payee_name,
@@ -301,7 +553,6 @@ class VouchersController extends Controller
                 'voucher_number' => $voucher->voucher_number,
                 'status' => $voucher->status,
                 'documents_created' => $voucher->documents->count(),
-                'document_types_assigned' => $voucher->documents->pluck('document_type', 'file_name')
             ]);
 
             return redirect()
@@ -311,11 +562,9 @@ class VouchersController extends Controller
             \Log::error('Voucher Creation Failed: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
                 'data' => $request->except(['documents', 'document_types']),
-                'document_types' => $documentTypes,
                 'user_id' => auth()->id(),
             ]);
 
-            // Log failed creation attempt
             $this->activityLogger->log(
                 "Failed to create voucher",
                 [
@@ -334,10 +583,10 @@ class VouchersController extends Controller
 
     public function show(Voucher $voucher)
     {
-        // Load all necessary relationships
         $voucher->load([
             'items.economyCode',
             'items.economyCodeItem',
+            'items.programmeCode',
             'documents',
             'mda',
             'financialYear',
@@ -347,7 +596,6 @@ class VouchersController extends Controller
             'bankActivity',
         ]);
 
-        // Log voucher view activity
         $this->activityLogger->log(
             "Viewed voucher {$voucher->voucher_number}",
             [
@@ -360,10 +608,8 @@ class VouchersController extends Controller
             'voucher'
         );
 
-        // Convert to array with relationships
         $voucherData = $voucher->toArray();
 
-        // Add the loaded relationships manually
         $voucherData['mda'] = $voucher->mda ? [
             'id' => $voucher->mda->id,
             'name' => $voucher->mda->name,
@@ -394,6 +640,10 @@ class VouchersController extends Controller
                 'quantity' => $item->quantity,
                 'unit_price' => $item->unit_price,
                 'sub_total' => $item->sub_total,
+                'programme_code_id' => $item->programme_code_id,
+                'programme_code' => $item->programme_code,
+                'programme_name' => $item->programme_name,
+                'budget_code' => $item->budget_code,
                 'economy_code' => $item->economyCode ? [
                     'id' => $item->economyCode->id,
                     'code' => $item->economyCode->code,
@@ -403,6 +653,12 @@ class VouchersController extends Controller
                     'id' => $item->economyCodeItem->id,
                     'code' => $item->economyCodeItem->code,
                     'name' => $item->economyCodeItem->name,
+                ] : null,
+                'programme' => $item->programmeCode ? [
+                    'id' => $item->programmeCode->id,
+                    'code' => $item->programmeCode->code,
+                    'name' => $item->programmeCode->name,
+                    'budget_code' => $item->programmeCode->budget_code,
                 ] : null,
             ];
         })->toArray();
@@ -449,10 +705,11 @@ class VouchersController extends Controller
      */
     public function edit(Voucher $voucher)
     {
-        // Eager load all necessary relationships
+        // Eager load all necessary relationships - FIXED with proper programmeCode loading
         $voucher->load([
             'items.economyCode',
             'items.economyCodeItem',
+            'items.programmeCode', // This relationship must exist in VoucherItem model
             'documents',
             'mda',
             'financialYear'
@@ -477,6 +734,9 @@ class VouchersController extends Controller
                 return [
                     'value' => $code->id,
                     'label' => $code->code . ' - ' . $code->name,
+                    'code' => $code->code,
+                    'name' => $code->name,
+                    'type' => $code->type ?? 'operational',
                 ];
             })->toArray();
 
@@ -492,6 +752,41 @@ class VouchersController extends Controller
                 ];
             })->toArray();
 
+        // Get current financial year
+        $financialYearId = $voucher->year_id ?? FinancialYear::where('is_active', true)->first()?->id;
+        
+        // Fetch Programme Codes for the current financial year
+        $programmeCodes = ProgrammeCode::with('economicCode')
+            ->active()
+            ->projects()
+            ->when($financialYearId, function ($query) use ($financialYearId) {
+                $query->where('financial_year_id', $financialYearId);
+            })
+            ->orderBy('code')
+            ->get()
+            ->map(function ($programme) {
+                return [
+                    'id' => $programme->id,
+                    'code' => $programme->code,
+                    'name' => $programme->name,
+                    'description' => $programme->project_description ?: $programme->name,
+                    'budget_code' => $programme->budget_code,
+                    'remaining_budget' => (float) $programme->remaining_budget,
+                    'approved_budget' => (float) $programme->approved_budget,
+                    'economic_code_id' => $programme->economic_code_id,
+                    'economic_code' => $programme->economicCode ? [
+                        'id' => $programme->economicCode->id,
+                        'code' => $programme->economicCode->code,
+                        'name' => $programme->economicCode->name,
+                    ] : null,
+                    'mda_name' => $programme->mda_name,
+                    'sector' => $programme->sector,
+                    'label' => "{$programme->code} - {$programme->name} (₦" . number_format($programme->remaining_budget, 2) . ")",
+                    'value' => $programme->id,
+                ];
+            });
+
+        // Format voucher with programme code fields included
         $formattedVoucher = [
             'id' => $voucher->id,
             'voucher_number' => $voucher->voucher_number,
@@ -503,6 +798,7 @@ class VouchersController extends Controller
             'narration' => $voucher->narration,
             'status' => $voucher->status,
             'total_amount' => $voucher->total_amount,
+            'bank_activity_id' => $voucher->bank_activity_id,
             'items' => $voucher->items->map(function ($item) {
                 return [
                     'id' => $item->id,
@@ -512,12 +808,16 @@ class VouchersController extends Controller
                     'quantity' => $item->quantity,
                     'unit_price' => $item->unit_price,
                     'sub_total' => $item->sub_total,
+                    'programme_code_id' => $item->programme_code_id,
+                    'programme_code' => $item->programme_code,
+                    'programme_name' => $item->programme_name,
+                    'budget_code' => $item->budget_code,
                 ];
             }),
         ];
         
         $schedule = null;
-        if ($voucher->schedule) {
+        if ($voucher->schedule_id) {
             $schedule = Schedule::with(['items.economyCode', 'items.economyCodeItem', 'mda', 'financialYear', 'budgetCode'])
                 ->find($voucher->schedule_id);
         }
@@ -538,6 +838,7 @@ class VouchersController extends Controller
             }),
             'economyCodes' => $economyCodes,
             'economyCodeItems' => $economyCodeItems,
+            'programmeCodes' => $programmeCodes,
             'existingDocuments' => $voucher->documents->map(function ($document) {
                 return [
                     'id' => $document->id,
@@ -561,56 +862,13 @@ class VouchersController extends Controller
                 'amount_posted' => $schedule->vouchers->sum('total_amount'),
                 'voucher_count' => $schedule->vouchers->count(),
                 'narration' => $schedule->narration,
+                'payee_name' => $schedule->payee_name,
             ] : null,
         ]);
     }
 
-    public function approve(Voucher $voucher, Request $request)
-    {
-
-        // dd($voucher);
-        // Check if user can approve
-        // $this->authorize('approve', $voucher);
-
-        // Validate voucher can be approved
-        if ($voucher->voucher_type !== 'prepayment') {
-            return back()->withErrors(['message' => 'Only prepayment vouchers can be approved for retirement.']);
-        }
-
-        if ($voucher->status !== 'Submitted') {
-            return back()->withErrors(['message' => 'Voucher is not in submitted status.']);
-        }
-
-        // Update voucher status
-        $voucher->update([
-            'status' => 'Approved',
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
-        ]);
-
-        // Log the approval
-        activity()
-            ->performedOn($voucher)
-            ->causedBy(auth()->user())
-            ->withProperties(['old_status' => 'Submitted', 'new_status' => 'Approved'])
-            ->log('approved prepayment voucher for retirement');
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Voucher approved successfully.',
-            'voucher' => $voucher->fresh(),
-        ]);
-    }
     public function makeDraft(Voucher $voucher, Request $request)
     {
-
-        // dd($voucher);
-        // Check if user can approve
-        // $this->authorize('approve', $voucher);
-
-        // Validate voucher can be approved
-
-        // Update voucher status
         $old_status = $voucher->status;
         $voucher->update([
             'status' => 'Draft',
@@ -618,7 +876,6 @@ class VouchersController extends Controller
             'approved_at' => now(),
         ]);
 
-        // Log the approval
         activity()
             ->performedOn($voucher)
             ->causedBy(auth()->user())
@@ -632,514 +889,150 @@ class VouchersController extends Controller
         ]);
     }
 
-    
-
     /**
      * Update the specified resource in storage.
      */
-    // public function update(VoucherStoreUpdateRequest $request, string $id)
-    // {
-    //     // dd($request->all());
-    //     $voucher = Voucher::findOrFail($id);
-    //     $data = $request->validated();
-
-    //     $cleanDate = preg_replace('/\s\(.*\)$/', '', $data['voucher_date']);
-    //     $data['voucher_date'] = Carbon::parse($cleanDate)->toDateString();
-        
-    //     $files = $request->file('documents') ?? [];
-    //     $documentTypes = $request->input('document_types', []);
-
-    //     // Store original data for logging changes
-    //     $originalData = $voucher->toArray();
-    //     $changes = [];
-
-    //     \Log::info('Voucher Update Request Data:', [
-    //         'voucher_id' => $voucher->id,
-    //         'data_keys' => array_keys($data),
-    //         'files_count' => count($files),
-    //         'document_types_count' => count($documentTypes),
-    //         'document_types' => $documentTypes,
-    //         'file_names' => array_map(function ($file) {
-    //             return $file->getClientOriginalName();
-    //         }, $files),
-    //     ]);
-
-    //     try {
-    //         // Pass document_types to the service
-    //         $updatedVoucher = $this->voucherService->updateVoucher($voucher, $data, $files, $documentTypes);
-
-    //         // Determine what changed
-    //         foreach ($data as $key => $value) {
-    //             if ($originalData[$key] != $value && $key !== 'updated_at') {
-    //                 $changes[$key] = [
-    //                     'from' => $originalData[$key],
-    //                     'to' => $value
-    //                 ];
-    //             }
-    //         }
-
-    //         // Log voucher update activity
-    //         $this->activityLogger->log(
-    //             "Updated voucher {$voucher->voucher_number}",
-    //             [
-    //                 'voucher_id' => $voucher->id,
-    //                 'voucher_number' => $voucher->voucher_number,
-    //                 'changes' => $changes,
-    //                 'document_updates' => [
-    //                     'files_added' => count($files),
-    //                     'document_types' => $documentTypes
-    //                 ],
-    //                 'updated_by' => auth()->id(),
-    //                 'old_status' => $originalData['status'] ?? null,
-    //                 'new_status' => $updatedVoucher->status
-    //             ],
-    //             'voucher'
-    //         );
-
-    //         // Log specific action with detailed changes
-    //         $this->activityLogger->logAction('updated', $voucher, [
-    //             'changes' => $changes,
-    //             'document_count' => $updatedVoucher->documents->count(),
-    //             'updated_by' => auth()->id()
-    //         ]);
-
-    //         \Log::info('Voucher Updated Successfully:', [
-    //             'voucher_id' => $voucher->id,
-    //             'voucher_number' => $voucher->voucher_number,
-    //             'documents_created' => $updatedVoucher->documents->count(),
-    //             'document_types_assigned' => $updatedVoucher->documents->pluck('document_type', 'file_name')
-    //         ]);
-
-    //         return redirect()
-    //             ->route('vouchers.index')
-    //             ->with('success', 'Voucher ' . $voucher->voucher_number . ' updated successfully.');
-    //     } catch (\Exception $e) {
-    //         \Log::error('Voucher Update Failed: ' . $e->getMessage(), [
-    //             'voucher_id' => $voucher->id,
-    //             'data' => $request->except(['documents', 'document_types']),
-    //             'document_types' => $documentTypes,
-    //         ]);
-
-    //         // Log failed update attempt
-    //         $this->activityLogger->log(
-    //             "Failed to update voucher {$voucher->voucher_number}",
-    //             [
-    //                 'voucher_id' => $voucher->id,
-    //                 'voucher_number' => $voucher->voucher_number,
-    //                 'error' => $e->getMessage(),
-    //                 'attempted_by' => auth()->id()
-    //             ],
-    //             'voucher'
-    //         );
-
-    //         return back()
-    //             ->withInput()
-    //             ->with('error', 'Failed to update voucher: ' . $e->getMessage());
-    //     }
-    // }
-    /**
- * Update the specified resource in storage.
- */
-// public function update(VoucherStoreUpdateRequest $request, string $id)
-// {
-//     // dd($request->all());
-//     $voucher = Voucher::findOrFail($id);
-//     $data = $request->validated();
-
-//     $cleanDate = preg_replace('/\s\(.*\)$/', '', $data['voucher_date']);
-//     $data['voucher_date'] = Carbon::parse($cleanDate)->toDateString();
-    
-//     // FIX: Check if documents exist before accessing them
-//     $files = [];
-//     if ($request->hasFile('documents')) {
-//         $files = $request->file('documents');
-//     }
-    
-//     $documentTypes = $request->input('document_types', []);
-
-//     // Store original data for logging changes
-//     $originalData = $voucher->toArray();
-//     $changes = [];
-
-//     \Log::info('Voucher Update Request Data:', [
-//         'voucher_id' => $voucher->id,
-//         'data_keys' => array_keys($data),
-//         'files_count' => count($files),
-//         'document_types_count' => count($documentTypes),
-//         'document_types' => $documentTypes,
-//         'file_names' => $files ? array_map(function ($file) {
-//             return $file->getClientOriginalName();
-//         }, $files) : [], // FIX: Only map if files exist
-//     ]);
-
-//     try {
-//         // Pass document_types to the service - check if files exist
-//         if (!empty($files)) {
-//             $updatedVoucher = $this->voucherService->updateVoucher($voucher, $data, $files, $documentTypes);
-//         } else {
-//             // Update voucher without documents
-//             $updatedVoucher = $this->voucherService->updateVoucher($voucher, $data, [], $documentTypes);
-//         }
-
-//         // Determine what changed
-//         foreach ($data as $key => $value) {
-//             if ($originalData[$key] != $value && $key !== 'updated_at') {
-//                 $changes[$key] = [
-//                     'from' => $originalData[$key],
-//                     'to' => $value
-//                 ];
-//             }
-//         }
-
-//         // Log voucher update activity
-//         $this->activityLogger->log(
-//             "Updated voucher {$voucher->voucher_number}",
-//             [
-//                 'voucher_id' => $voucher->id,
-//                 'voucher_number' => $voucher->voucher_number,
-//                 'changes' => $changes,
-//                 'document_updates' => [
-//                     'files_added' => count($files),
-//                     'document_types' => $documentTypes
-//                 ],
-//                 'updated_by' => auth()->id(),
-//                 'old_status' => $originalData['status'] ?? null,
-//                 'new_status' => $updatedVoucher->status
-//             ],
-//             'voucher'
-//         );
-
-//         // Log specific action with detailed changes
-//         $this->activityLogger->logAction('updated', $voucher, [
-//             'changes' => $changes,
-//             'document_count' => $updatedVoucher->documents->count(),
-//             'updated_by' => auth()->id()
-//         ]);
-
-//         \Log::info('Voucher Updated Successfully:', [
-//             'voucher_id' => $voucher->id,
-//             'voucher_number' => $voucher->voucher_number,
-//             'documents_created' => $updatedVoucher->documents->count(),
-//             'document_types_assigned' => $updatedVoucher->documents->pluck('document_type', 'file_name')
-//         ]);
-
-//         return redirect()
-//             ->route('vouchers.index')
-//             ->with('success', 'Voucher ' . $voucher->voucher_number . ' updated successfully.');
-//     } catch (\Exception $e) {
-//         \Log::error('Voucher Update Failed: ' . $e->getMessage(), [
-//             'voucher_id' => $voucher->id,
-//             'data' => $request->except(['documents', 'document_types']),
-//             'document_types' => $documentTypes,
-//         ]);
-
-//         // Log failed update attempt
-//         $this->activityLogger->log(
-//             "Failed to update voucher {$voucher->voucher_number}",
-//             [
-//                 'voucher_id' => $voucher->id,
-//                 'voucher_number' => $voucher->voucher_number,
-//                 'error' => $e->getMessage(),
-//                 'attempted_by' => auth()->id()
-//             ],
-//             'voucher'
-//         );
-
-//         return back()
-//             ->withInput()
-//             ->with('error', 'Failed to update voucher: ' . $e->getMessage());
-//     }
-// }
-
-/**
- * Update the specified resource in storage.
- */
-// public function update(VoucherStoreUpdateRequest $request, string $id)
-// {
-//     // Debug: Log raw request data
-//     \Log::info('Raw Request Data:', [
-//         'all_data' => $request->all(),
-//         'has_total_amount' => $request->has('total_amount'),
-//         'total_amount_value' => $request->input('total_amount'),
-//         'files_count' => $request->hasFile('documents') ? count($request->file('documents')) : 0,
-//     ]);
-
-//     $voucher = Voucher::findOrFail($id);
-    
-//     // Get validated data
-//     $data = $request->validated();
-    
-//     // Debug: Log validated data
-//     \Log::info('Validated Data:', [
-//         'keys' => array_keys($data),
-//         'has_total_amount' => isset($data['total_amount']),
-//         'total_amount' => $data['total_amount'] ?? 'MISSING',
-//         'items_count' => isset($data['items']) ? count($data['items']) : 0,
-//     ]);
-
-//     // If total_amount is still missing, calculate it from items
-//     if (!isset($data['total_amount']) && isset($data['items'])) {
-//         $total = collect($data['items'])->sum(function ($item) {
-//             return isset($item['sub_total']) ? (float) $item['sub_total'] : 0;
-//         });
-//         $data['total_amount'] = round($total, 2);
-//         \Log::info('Calculated total_amount:', ['total_amount' => $data['total_amount']]);
-//     }
-
-//     $cleanDate = preg_replace('/\s\(.*\)$/', '', $data['voucher_date']);
-//     $data['voucher_date'] = Carbon::parse($cleanDate)->toDateString();
-    
-//     // FIX: Check if documents exist before accessing them
-//     $files = [];
-//     if ($request->hasFile('documents')) {
-//         $files = $request->file('documents');
-//     }
-    
-//     // FIX: Get document_types only if they exist and are an array
-//     $documentTypes = [];
-//     if ($request->has('document_types')) {
-//         $inputTypes = $request->input('document_types');
-//         // Ensure it's an array
-//         if (is_array($inputTypes)) {
-//             $documentTypes = $inputTypes;
-//         } elseif (is_string($inputTypes) && !empty($inputTypes)) {
-//             // Try to decode if it's a JSON string
-//             $decoded = json_decode($inputTypes, true);
-//             if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-//                 $documentTypes = $decoded;
-//             }
-//         }
-//     }
-
-//     // Store original data for logging changes
-//     $originalData = $voucher->toArray();
-//     $changes = [];
-
-//     \Log::info('Voucher Update Request Data:', [
-//         'voucher_id' => $voucher->id,
-//         'data_keys' => array_keys($data),
-//         'total_amount_in_data' => $data['total_amount'] ?? 'NOT FOUND',
-//         'files_count' => count($files),
-//         'document_types_count' => count($documentTypes),
-//     ]);
-
-//     try {
-//         // Pass data to service - ensure total_amount is included
-//         if (!isset($data['total_amount'])) {
-//             throw new \Exception('Total amount is required but not provided or calculated.');
-//         }
-
-//         $updatedVoucher = $this->voucherService->updateVoucher($voucher, $data, $files, $documentTypes);
-
-//         // Determine what changed
-//         foreach ($data as $key => $value) {
-//             // Skip comparing array values like items
-//             if (!is_array($value) && isset($originalData[$key]) && $originalData[$key] != $value && $key !== 'updated_at') {
-//                 $changes[$key] = [
-//                     'from' => $originalData[$key],
-//                     'to' => $value
-//                 ];
-//             }
-//         }
-
-//         // Log voucher update activity
-//         $this->activityLogger->log(
-//             "Updated voucher {$voucher->voucher_number}",
-//             [
-//                 'voucher_id' => $voucher->id,
-//                 'voucher_number' => $voucher->voucher_number,
-//                 'changes' => $changes,
-//                 'total_amount' => $data['total_amount'],
-//                 'document_updates' => [
-//                     'files_added' => count($files),
-//                     'document_types' => $documentTypes
-//                 ],
-//                 'updated_by' => auth()->id(),
-//                 'old_status' => $originalData['status'] ?? null,
-//                 'new_status' => $updatedVoucher->status
-//             ],
-//             'voucher'
-//         );
-
-//         // Log specific action with detailed changes
-//         $this->activityLogger->logAction('updated', $voucher, [
-//             'changes' => $changes,
-//             'document_count' => $updatedVoucher->documents->count(),
-//             'updated_by' => auth()->id()
-//         ]);
-
-//         \Log::info('Voucher Updated Successfully:', [
-//             'voucher_id' => $voucher->id,
-//             'voucher_number' => $voucher->voucher_number,
-//             'documents_created' => $updatedVoucher->documents->count(),
-//             'total_amount' => $updatedVoucher->total_amount,
-//         ]);
-
-//         return redirect()
-//             ->route('vouchers.index')
-//             ->with('success', 'Voucher ' . $voucher->voucher_number . ' updated successfully.');
-//     } catch (\Exception $e) {
-//         \Log::error('Voucher Update Failed: ' . $e->getMessage(), [
-//             'voucher_id' => $voucher->id,
-//             'data_keys' => array_keys($data),
-//             'has_total_amount' => isset($data['total_amount']),
-//             'document_types' => $documentTypes,
-//             'trace' => $e->getTraceAsString(),
-//         ]);
-
-//         // Log failed update attempt
-//         $this->activityLogger->log(
-//             "Failed to update voucher {$voucher->voucher_number}",
-//             [
-//                 'voucher_id' => $voucher->id,
-//                 'voucher_number' => $voucher->voucher_number,
-//                 'error' => $e->getMessage(),
-//                 'attempted_by' => auth()->id()
-//             ],
-//             'voucher'
-//         );
-
-//         return back()
-//             ->withInput()
-//             ->with('error', 'Failed to update voucher: ' . $e->getMessage());
-//     }
-// }
-
-/**
- * Update the specified resource in storage.
- */
-public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
-{
-    // Debug: Log what we received
-    \Log::info('Update Controller - Voucher:', [
-        'voucher_id' => $voucher->id,
-        'voucher_number' => $voucher->voucher_number,
-        'type_of_voucher' => get_class($voucher),
-    ]);
-
-    $data = $request->validated();
-    $cleanDate = preg_replace('/\s\(.*\)$/', '', $data['voucher_date']);
-    $data['voucher_date'] = Carbon::parse($cleanDate)->toDateString();
-    
-    // FIX: Check if documents exist before accessing them
-    $files = [];
-    if ($request->hasFile('documents')) {
-        $files = $request->file('documents');
-    }
-    
-    // FIX: Get document_types only if they exist and are an array
-    $documentTypes = [];
-    if ($request->has('document_types')) {
-        $inputTypes = $request->input('document_types');
-        // Ensure it's an array
-        if (is_array($inputTypes)) {
-            $documentTypes = $inputTypes;
-        } elseif (is_string($inputTypes) && !empty($inputTypes)) {
-            // Try to decode if it's a JSON string
-            $decoded = json_decode($inputTypes, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                $documentTypes = $decoded;
-            }
-        }
-    }
-
-    // Store original data for logging changes
-    $originalData = $voucher->toArray();
-    $changes = [];
-
-    \Log::info('Voucher Update Request Data:', [
-        'voucher_id' => $voucher->id,
-        'data_keys' => array_keys($data),
-        'total_amount_in_data' => $data['total_amount'] ?? 'NOT FOUND',
-        'files_count' => count($files),
-        'document_types_count' => count($documentTypes),
-    ]);
-
-    try {
-        // Pass data to service - ensure total_amount is included
-        if (!isset($data['total_amount'])) {
-            throw new \Exception('Total amount is required but not provided or calculated.');
-        }
-
-        $updatedVoucher = $this->voucherService->updateVoucher($voucher, $data, $files, $documentTypes);
-
-        // Determine what changed
-        foreach ($data as $key => $value) {
-            // Skip comparing array values like items
-            if (!is_array($value) && isset($originalData[$key]) && $originalData[$key] != $value && $key !== 'updated_at') {
-                $changes[$key] = [
-                    'from' => $originalData[$key],
-                    'to' => $value
-                ];
-            }
-        }
-
-        // Log voucher update activity
-        $this->activityLogger->log(
-            "Updated voucher {$voucher->voucher_number}",
-            [
-                'voucher_id' => $voucher->id,
-                'voucher_number' => $voucher->voucher_number,
-                'changes' => $changes,
-                'total_amount' => $data['total_amount'],
-                'document_updates' => [
-                    'files_added' => count($files),
-                    'document_types' => $documentTypes
-                ],
-                'updated_by' => auth()->id(),
-                'old_status' => $originalData['status'] ?? null,
-                'new_status' => $updatedVoucher->status
-            ],
-            'voucher'
-        );
-
-        // Log specific action with detailed changes
-        $this->activityLogger->logAction('updated', $voucher, [
-            'changes' => $changes,
-            'document_count' => $updatedVoucher->documents->count(),
-            'updated_by' => auth()->id()
-        ]);
-
-        \Log::info('Voucher Updated Successfully:', [
+    public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
+    {
+        \Log::info('Update Controller - Voucher:', [
             'voucher_id' => $voucher->id,
             'voucher_number' => $voucher->voucher_number,
-            'documents_created' => $updatedVoucher->documents->count(),
-            'total_amount' => $updatedVoucher->total_amount,
         ]);
 
-        return redirect()
-            ->route('vouchers.index')
-            ->with('success', 'Voucher ' . $voucher->voucher_number . ' updated successfully.');
-    } catch (\Exception $e) {
-        \Log::error('Voucher Update Failed: ' . $e->getMessage(), [
+        $data = $request->validated();
+        
+        // Handle voucher date
+        if (isset($data['voucher_date'])) {
+            $cleanDate = preg_replace('/\s\(.*\)$/', '', $data['voucher_date']);
+            $data['voucher_date'] = Carbon::parse($cleanDate)->toDateString();
+        }
+        
+        // Handle files
+        $files = [];
+        if ($request->hasFile('documents')) {
+            $files = $request->file('documents');
+        }
+        
+        // Handle document types
+        $documentTypes = [];
+        if ($request->has('document_types')) {
+            $inputTypes = $request->input('document_types');
+            if (is_array($inputTypes)) {
+                $documentTypes = $inputTypes;
+            } elseif (is_string($inputTypes) && !empty($inputTypes)) {
+                $decoded = json_decode($inputTypes, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $documentTypes = $decoded;
+                }
+            }
+        }
+
+        // Ensure programme code fields are properly mapped from items
+        if (isset($data['items']) && is_array($data['items'])) {
+            foreach ($data['items'] as &$item) {
+                // If programme_code_id is provided but programme_code is missing, we can fetch it
+                if (isset($item['programme_code_id']) && !isset($item['programme_code'])) {
+                    $programmeCode = ProgrammeCode::find($item['programme_code_id']);
+                    if ($programmeCode) {
+                        $item['programme_code'] = $programmeCode->code;
+                        $item['programme_name'] = $programmeCode->name;
+                        if (!isset($item['budget_code'])) {
+                            $item['budget_code'] = $programmeCode->budget_code;
+                        }
+                    }
+                }
+            }
+        }
+
+        $originalData = $voucher->toArray();
+
+        \Log::info('Voucher Update Request Data:', [
             'voucher_id' => $voucher->id,
             'data_keys' => array_keys($data),
-            'has_total_amount' => isset($data['total_amount']),
-            'document_types' => $documentTypes,
-            'trace' => $e->getTraceAsString(),
+            'total_amount_in_data' => $data['total_amount'] ?? 'NOT FOUND',
+            'files_count' => count($files),
+            'document_types_count' => count($documentTypes),
         ]);
 
-        // Log failed update attempt
-        $this->activityLogger->log(
-            "Failed to update voucher {$voucher->voucher_number}",
-            [
+        try {
+            if (!isset($data['total_amount'])) {
+                throw new \Exception('Total amount is required but not provided or calculated.');
+            }
+
+            $updatedVoucher = $this->voucherService->updateVoucher($voucher, $data, $files, $documentTypes);
+
+            // Determine what changed
+            $changes = [];
+            foreach ($data as $key => $value) {
+                if (!is_array($value) && isset($originalData[$key]) && $originalData[$key] != $value && $key !== 'updated_at') {
+                    $changes[$key] = [
+                        'from' => $originalData[$key],
+                        'to' => $value
+                    ];
+                }
+            }
+
+            $this->activityLogger->log(
+                "Updated voucher {$voucher->voucher_number}",
+                [
+                    'voucher_id' => $voucher->id,
+                    'voucher_number' => $voucher->voucher_number,
+                    'changes' => $changes,
+                    'total_amount' => $data['total_amount'],
+                    'document_updates' => [
+                        'files_added' => count($files),
+                        'document_types' => $documentTypes
+                    ],
+                    'updated_by' => auth()->id(),
+                    'old_status' => $originalData['status'] ?? null,
+                    'new_status' => $updatedVoucher->status
+                ],
+                'voucher'
+            );
+
+            $this->activityLogger->logAction('updated', $voucher, [
+                'changes' => $changes,
+                'document_count' => $updatedVoucher->documents->count(),
+                'updated_by' => auth()->id()
+            ]);
+
+            \Log::info('Voucher Updated Successfully:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
-                'error' => $e->getMessage(),
-                'attempted_by' => auth()->id()
-            ],
-            'voucher'
-        );
+                'documents_created' => $updatedVoucher->documents->count(),
+                'total_amount' => $updatedVoucher->total_amount,
+            ]);
 
-        return back()
-            ->withInput()
-            ->with('error', 'Failed to update voucher: ' . $e->getMessage());
+            return redirect()
+                ->route('vouchers.index')
+                ->with('success', 'Voucher ' . $voucher->voucher_number . ' updated successfully.');
+                
+        } catch (\Exception $e) {
+            \Log::error('Voucher Update Failed: ' . $e->getMessage(), [
+                'voucher_id' => $voucher->id,
+                'data_keys' => array_keys($data),
+                'has_total_amount' => isset($data['total_amount']),
+                'document_types' => $documentTypes,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            $this->activityLogger->log(
+                "Failed to update voucher {$voucher->voucher_number}",
+                [
+                    'voucher_id' => $voucher->id,
+                    'voucher_number' => $voucher->voucher_number,
+                    'error' => $e->getMessage(),
+                    'attempted_by' => auth()->id()
+                ],
+                'voucher'
+            );
+
+            return back()
+                ->withInput()
+                ->with('error', 'Failed to update voucher: ' . $e->getMessage());
+        }
     }
-}
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(string $id)
     {
         try {
@@ -1147,7 +1040,6 @@ public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
             $voucherNumber = $voucher->voucher_number;
             $voucherData = $voucher->toArray();
 
-            // Log before deletion
             $this->activityLogger->log(
                 "Attempting to delete voucher {$voucherNumber}",
                 [
@@ -1162,7 +1054,6 @@ public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
 
             $this->voucherService->deleteVoucher($voucher);
 
-            // Log successful deletion
             $this->activityLogger->log(
                 "Deleted voucher {$voucherNumber}",
                 [
@@ -1177,7 +1068,6 @@ public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
                 'voucher'
             );
 
-            // Log specific delete action
             $this->activityLogger->logAction('deleted', $voucher, [
                 'voucher_number' => $voucherNumber,
                 'amount' => $voucherData['total_amount'],
@@ -1187,10 +1077,10 @@ public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
             return redirect()
                 ->route('vouchers.index')
                 ->with('success', "Voucher {$voucherNumber} deleted successfully.");
+                
         } catch (\Exception $e) {
             \Log::error('Voucher Deletion Failed: ' . $e->getMessage());
 
-            // Log failed deletion
             $this->activityLogger->log(
                 "Failed to delete voucher",
                 [
@@ -1208,16 +1098,15 @@ public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
 
     public function print(Voucher $voucher)
     {
-        // Load relationships
         $voucher->load([
             'items.economyCode:id,code,name',
             'items.economyCodeItem:id,code,name',
+            'items.programmeCode:id,code,name,budget_code',
             'financialYear:id,name',
             'schedule:id,schedule_number,total_amount,schedule_date,budget_code_id',
             'schedule.budgetCode:id,code,name,type,initials',
         ]);
 
-        // Log print activity
         $this->activityLogger->log(
             "Printed voucher {$voucher->voucher_number}",
             [
@@ -1229,15 +1118,6 @@ public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
             ],
             'voucher'
         );
-
-        \Log::info('=== PRINT VOUCHER DEBUG ===', [
-            'voucher_id' => $voucher->id,
-            'voucher_number' => $voucher->voucher_number,
-            'has_schedule' => $voucher->schedule ? 'YES' : 'NO',
-            'schedule_id' => $voucher->schedule?->id,
-            'budget_code_id' => $voucher->schedule?->budget_code_id,
-            'has_budgetCode' => $voucher->schedule && $voucher->schedule->budgetCode ? 'YES' : 'NO',
-        ]);
 
         $administrativeSectorCode = null;
         $mdaName = '';
@@ -1279,6 +1159,9 @@ public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
                     'quantity' => $item->quantity,
                     'unit_price' => $item->unit_price,
                     'sub_total' => $item->sub_total,
+                    'programme_code' => $item->programme_code,
+                    'programme_name' => $item->programme_name,
+                    'budget_code' => $item->budget_code,
                     'economy_code' => $item->economyCode ? [
                         'id' => $item->economyCode->id,
                         'code' => $item->economyCode->code,
@@ -1288,6 +1171,12 @@ public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
                         'id' => $item->economyCodeItem->id,
                         'code' => $item->economyCodeItem->code,
                         'name' => $item->economyCodeItem->name,
+                    ] : null,
+                    'programme' => $item->programmeCode ? [
+                        'id' => $item->programmeCode->id,
+                        'code' => $item->programmeCode->code,
+                        'name' => $item->programmeCode->name,
+                        'budget_code' => $item->programmeCode->budget_code,
                     ] : null,
                 ];
             })->toArray(),
@@ -1320,7 +1209,6 @@ public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
     {
         $filter = $request->input('filter', '');
         
-        // Log bank activities search
         $this->activityLogger->log(
             "Searched bank activities",
             [
@@ -1339,5 +1227,157 @@ public function update(VoucherStoreUpdateRequest $request, Voucher $voucher)
         ->paginate(15);
 
         return response()->json($items);
+    }
+
+    /**
+     * Show the form for creating a final accounts voucher (direct approval)
+     */
+    public function createFinal(Request $request)
+    {
+        $schedule = null;
+
+        if ($request->has('schedule_id')) {
+            $schedule = Schedule::with(['items.economyCode', 'items.economyCodeItem', 'mda', 'financialYear', 'budgetCode'])
+                ->find($request->schedule_id);
+        }
+
+        $economyCodes = EconomyCode::select('id', 'code', 'name')
+            ->where('status', 'active')
+            ->orderBy('code')
+            ->get()
+            ->map(function ($code) {
+                return [
+                    'value' => $code->id,
+                    'label' => $code->code . ' - ' . $code->name,
+                    'code' => $code->code,
+                    'name' => $code->name,
+                    'type' => $code->type ?? 'operational',
+                ];
+            })->toArray();
+
+        $economyCodeItems = EconomyCodeItem::with('economyCode:id,code,name')
+            ->select('id', 'economy_code_id', 'code', 'name')
+            ->orderBy('code')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'value' => $item->id,
+                    'label' => $item->code . ' - ' . $item->name,
+                    'economy_code_id' => $item->economy_code_id,
+                ];
+            })->toArray();
+
+        $financialYearId = $schedule?->year_id ?? FinancialYear::where('is_active', true)->first()?->id;
+        
+        $programmeCodes = ProgrammeCode::with('economicCode')
+            ->active()
+            ->projects()
+            ->when($financialYearId, function ($query) use ($financialYearId) {
+                $query->where('financial_year_id', $financialYearId);
+            })
+            ->orderBy('code')
+            ->get()
+            ->map(function ($programme) {
+                return [
+                    'id' => $programme->id,
+                    'code' => $programme->code,
+                    'name' => $programme->name,
+                    'description' => $programme->project_description ?: $programme->name,
+                    'budget_code' => $programme->budget_code,
+                    'remaining_budget' => (float) $programme->remaining_budget,
+                    'approved_budget' => (float) $programme->approved_budget,
+                    'economic_code_id' => $programme->economic_code_id,
+                    'economic_code' => $programme->economicCode ? [
+                        'id' => $programme->economicCode->id,
+                        'code' => $programme->economicCode->code,
+                        'name' => $programme->economicCode->name,
+                    ] : null,
+                    'mda_name' => $programme->mda_name,
+                    'sector' => $programme->sector,
+                    'label' => "{$programme->code} - {$programme->name} (₦" . number_format($programme->remaining_budget, 2) . ")",
+                    'value' => $programme->id,
+                ];
+            });
+
+        return Inertia::render('admin/vouchers/create-final', [
+            'voucherType' => $request->get('type', 'standard'),
+            'schedule' => $schedule ? [
+                'id' => $schedule->id,
+                'schedule_number' => $schedule->schedule_number,
+                'year_id' => $schedule->year_id,
+                'mda_id' => $schedule->mda_id,
+                'mda' => $schedule->mda ? ['name' => $schedule->mda->name] : null,
+                'budget_code' => $schedule->budgetCode?->code,
+                'total_amount' => $schedule->total_amount,
+                'amount_posted' => $schedule->vouchers->sum('total_amount'),
+                'voucher_count' => $schedule->vouchers->count(),
+                'narration' => $schedule->narration,
+                'payee_name' => $schedule->payee_name,
+            ] : null,
+            'mdas' => Mda::all()->map(fn($mda) => [
+                'value' => $mda->id,
+                'label' => $mda->name
+            ]),
+            'financialYears' => FinancialYear::all()->map(fn($year) => [
+                'value' => $year->id,
+                'label' => $year->name
+            ]),
+            'economyCodes' => $economyCodes,
+            'economyCodeItems' => $economyCodeItems,
+            'programmeCodes' => $programmeCodes,
+            'today' => now()->format('Y-m-d'),
+            'voucherNumber' => $this->generateVoucherNumber(),
+        ]);
+    }
+
+    /**
+     * Store a final accounts voucher (direct approval, no workflow)
+     */
+    public function storeFinal(VoucherStoreUpdateRequest $request): RedirectResponse
+    {
+        $data = $request->validated();
+        $files = $request->file('documents') ?? [];
+        $documentTypes = $request->input('document_types', []);
+        
+        // Override status to Approved for final accounts
+        $data['status'] = 'Approved';
+        $data['is_final_accounts'] = true;
+
+        \Log::info('Final Accounts Voucher Store Request:', [
+            'data_keys' => array_keys($data),
+            'files_count' => count($files),
+            'user_id' => auth()->id(),
+        ]);
+
+        try {
+            // Create voucher with approved status directly
+            $voucher = $this->voucherService->createFinalAccountsVoucher($data, $files, $documentTypes);
+
+            $this->activityLogger->log(
+                "Created final accounts voucher {$voucher->voucher_number}",
+                [
+                    'voucher_id' => $voucher->id,
+                    'voucher_number' => $voucher->voucher_number,
+                    'voucher_type' => $voucher->voucher_type,
+                    'total_amount' => $voucher->total_amount,
+                    'status' => 'Approved (Final Accounts)',
+                    'user_id' => auth()->id()
+                ],
+                'voucher'
+            );
+
+            return redirect()
+                ->route('vouchers.index')
+                ->with('success', 'Final Accounts Voucher ' . $voucher->voucher_number . ' created and approved successfully.');
+        } catch (\Exception $e) {
+            \Log::error('Final Accounts Voucher Creation Failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'user_id' => auth()->id(),
+            ]);
+
+            return back()
+                ->withInput()
+                ->with('error', 'Failed to create final accounts voucher: ' . $e->getMessage());
+        }
     }
 }

@@ -1,59 +1,52 @@
 <?php
 
-use Inertia\Inertia;
-use App\Models\Payee;
-use App\Models\Voucher;
-use Laravel\Fortify\Features;
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Admin\MdaController;
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\Admin\RoleController;
-use App\Http\Controllers\Admin\UsersController;
-use App\Http\Controllers\Admin\SectorController;
-use App\Http\Controllers\Admin\ScheduleController;
-use App\Http\Controllers\Admin\VouchersController;
-use App\Http\Controllers\UserActivitiesController;
-use App\Http\Controllers\Admin\PermissionController;
+use App\Http\Controllers\Admin\AccountantGeneralController;
 use App\Http\Controllers\Admin\ActivityLogController;
 use App\Http\Controllers\Admin\ActivityStatsController;
-
+use App\Http\Controllers\Admin\AdministrativeCodeController;
+use App\Http\Controllers\Admin\AdministrativeCodeItemController;
+use App\Http\Controllers\Admin\BankActivityController;
+use App\Http\Controllers\Admin\BankController;
+use App\Http\Controllers\Admin\CashBookBalanceBfwController;
+use App\Http\Controllers\Admin\CashbookController;
+use App\Http\Controllers\Admin\CashbookFinancialYearController;
+use App\Http\Controllers\Admin\ChangePasswordController;
+use App\Http\Controllers\Admin\EconomyCodeController;
+use App\Http\Controllers\Admin\EconomyCodeItemController;
+use App\Http\Controllers\Admin\ExpenditureControlController;
 use App\Http\Controllers\Admin\FinalAccountsController;
+use App\Http\Controllers\Admin\FinancialYearController;
 use App\Http\Controllers\Admin\ImportVoucherController;
 use App\Http\Controllers\Admin\InternalAuditController;
-use App\Http\Controllers\Admin\ChangePasswordController;
-use App\Http\Controllers\Admin\AccountantGeneralController;
-use App\Http\Controllers\Admin\ExpenditureControlController;
+use App\Http\Controllers\Admin\JournalController;
+use App\Http\Controllers\Admin\MdaBankBalanceController;
+use App\Http\Controllers\Admin\MdaController;
+use App\Http\Controllers\Admin\PayeeController;
+use App\Http\Controllers\Admin\PermissionController;
+use App\Http\Controllers\Admin\ProgrammeCodeController;
+use App\Http\Controllers\Admin\ReceiptActivityController;
 use App\Http\Controllers\Admin\ReceiptController;
 use App\Http\Controllers\Admin\RemittanceController;
 use App\Http\Controllers\Admin\ReportController;
-use App\Http\Controllers\Admin\PayeeController;
-use App\Http\Controllers\Admin\AdministrativeCodeController;
-use App\Http\Controllers\Admin\CashBookBalanceBfwController;
-use App\Http\Controllers\Admin\CashbookFinancialYearController;
-
-use App\Http\Controllers\Admin\BankController;
-// use App\Http\Controllers\Admin\ActivitySummaryController;
-use App\Http\Controllers\Admin\BankActivityController;
-use App\Http\Controllers\Admin\ReceiptActivityController;
-use App\Http\Controllers\Admin\FinancialYearController;
-
-use App\Http\Controllers\Admin\CashbookController;
-use App\Http\Controllers\Admin\EconomyCodeController;
-use App\Http\Controllers\Admin\EconomyCodeItemController;
 use App\Http\Controllers\Admin\RetirementController;
-use App\Http\Controllers\Admin\AdministrativeCodeItemController;
-
-use App\Http\Controllers\Admin\JournalController;
-
-// Mara
-
-use App\Http\Controllers\Finance\FinancialReportController;
-use App\Http\Controllers\Finance\FinancialPositionController;
-use App\Http\Controllers\Finance\CashFlowController;
+use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\ScheduleController;
+use App\Http\Controllers\Admin\SectorController;
+use App\Http\Controllers\Admin\UsersController;
+use App\Http\Controllers\Admin\VouchersController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Finance\AssetsEquityController;
-use App\Http\Controllers\Finance\NoteToGpfsController;
 use App\Http\Controllers\Finance\CashAndBankBalancesController;
-use App\Http\Controllers\Admin\MdaBankBalanceController;
+use App\Http\Controllers\Finance\CashFlowController;
+use App\Http\Controllers\Finance\FinancialPositionController;
+use App\Http\Controllers\Finance\FinancialReportController;
+use App\Http\Controllers\Finance\NoteToGpfsController;
+use App\Http\Controllers\UserActivitiesController;
+use App\Models\Payee;
+use App\Models\Voucher;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
+use Laravel\Fortify\Features;
 
 
 // end Mara
@@ -108,7 +101,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::resource('receipts', ReceiptController::class);
 
-
     Route::prefix('vouchers')->name('vouchers.')->group(function () {
         // Retirement routes for vouchers (SPECIFIC ROUTES FIRST)
         Route::get('/{voucher}/retire', [RetirementController::class, 'create'])->name('retire.create');
@@ -118,6 +110,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('/{voucher}/approve', [VouchersController::class, 'approve'])->name('vouchers.approve');
         Route::put('/{voucher}/draft', [VouchersController::class, 'makeDraft'])->name('vouchers.draft');
 
+        // ADD THE REJECT ROUTE HERE
+        Route::post('/{voucher}/reject', [VouchersController::class, 'reject'])->name('vouchers.reject');
 
         // Print route
         Route::get('/{voucher}/print', [VouchersController::class, 'print'])->name('print');
@@ -126,6 +120,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('/', VouchersController::class)->parameters(['' => 'voucher']);
     });
 
+    // Final Accounts Voucher Routes (Direct Approval)
+    Route::prefix('final-accounts')->name('final-accounts.')->group(function () {
+        Route::get('/vouchers/create', [VouchersController::class, 'createFinal'])->name('vouchers.create');
+        Route::post('/vouchers', [VouchersController::class, 'storeFinal'])->name('vouchers.store');
+    });
 
     Route::prefix('retirements')->name('retirements.')->group(function () {
         // Main retirement pages
@@ -148,18 +147,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/vouchers/{voucher}/retirement-history', [RetirementController::class, 'history'])->name('vouchers.retirement-history');
     });
 
-
     // // API endpoints (for AJAX calls)
     // Route::prefix('api')->name('api.')->group(function () {
     //     Route::get('/vouchers/{voucher}/retirement-status', [RetirementController::class, 'checkRetirementStatus'])->name('vouchers.retirement-status');
     //     Route::get('/vouchers/{voucher}/retirement-history', [RetirementController::class, 'history'])->name('vouchers.retirement-history');
     // });
-
-
-
-
-
-
 
     // Economic Codes routes
     Route::get('/economy-codes', [ScheduleController::class, 'getEconomyCodes']);
@@ -167,7 +159,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/economy-code-items/{economyCodeId}', [ScheduleController::class, 'getEconomyCodeItems']);
     Route::get('/payeeList', [ScheduleController::class, 'getPayees'])->name('payeeList');
     Route::get('/bankActivityList', [VouchersController::class, 'getBankActivities'])->name('bankActivityList');
-
 
     // Internal Audit Management Routes
     // Route::resource('internal-audits', InternalAuditController::class);
@@ -179,10 +170,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('remittances', RemittanceController::class);
     Route::get('/remittances/{remittance}/print', [RemittanceController::class, 'print'])->name('remittances.print');
 
-
-
-
-
     Route::resource('expenditure-control', ExpenditureControlController::class);
     Route::resource('accountant-general', AccountantGeneralController::class);
 
@@ -192,7 +179,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Define a named route for fetching sectors
     Route::get('/mdas/{mda}/sectors', [MdaController::class, 'fetchSectors'])
         ->name('mdas.sectors.fetch');
-
 
     // Import Vouchers
     Route::post('/import', [ImportVoucherController::class, 'import'])->name('import.upload');
@@ -205,9 +191,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/importReceipts', [ImportVoucherController::class, 'importReceipt'])->name('import.receipt.upload');
     Route::get('/importReceipts', [ImportVoucherController::class, 'showReceipt'])->name('import.receipt.show');
 
-
     Route::get('/change-password', [ChangePasswordController::class, 'showForm'])->name('password2.change');
     Route::post('/change-password', [ChangePasswordController::class, 'update'])->name('password2.update');
+
+    // Programme Code Routes
+    Route::prefix('programme-codes')->group(function () {
+        Route::get('/', [ProgrammeCodeController::class, 'index']);
+        Route::get('/search', [ProgrammeCodeController::class, 'search']);
+        Route::get('/sectors', [ProgrammeCodeController::class, 'getSectors']);
+        Route::get('/{id}', [ProgrammeCodeController::class, 'show']);
+        Route::get('/{id}/budget', [ProgrammeCodeController::class, 'getBudget']);
+    });
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -232,9 +226,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/export', [ActivityLogController::class, 'export']);
     });
 });
-
-
-
 
 Route::middleware(['auth', 'verified'])->group(function () {
     // Activity statistics routes
@@ -268,7 +259,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('reports.other-bank-of-the-treasury');
 });
 
-
 Route::middleware(['auth', 'verified'])->group(function () {
     // This single line registers receipts.index, receipts.show, receipts.store, etc.
     Route::resource('receipts', ReceiptController::class);
@@ -280,6 +270,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('receipts/import', [ReceiptController::class, 'import'])->name('receipts.import');
     Route::get('arsearch', [ReceiptController::class, 'search'])->name('receipts.search.index');
 });
+
 Route::middleware(['auth', 'verified'])->group(function () {
 
     // Page 1: The Master List (cashbook_financial_years)
@@ -346,7 +337,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('cashbook.generate');
 });
 
-
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('remittances', RemittanceController::class);
     Route::get('/remittances/{remittance}/print', [RemittanceController::class, 'print'])->name('remittances.print');
@@ -371,13 +361,6 @@ Route::prefix('administrative-codes')->name('administrative-codes.')->group(func
     Route::get('/{administrative_code}', [AdministrativeCodeController::class, 'show'])->name('show');
 });
 
-// Route::prefix('administrative-codes')->name('administrative-codes.')->group(function () {
-
-//     Route::resource('administrative-code-itemss', AdministrativeCodeItemController::class);
-// });
-
-
-
 Route::prefix('receipt-activities')->name('receipt-activities.')->group(function () {
     Route::get('/', [ReceiptActivityController::class, 'index'])->name('index');
     Route::post('/', [ReceiptActivityController::class, 'store'])->name('store');
@@ -386,8 +369,6 @@ Route::prefix('receipt-activities')->name('receipt-activities.')->group(function
     Route::put('/{receipt_activity}', [ReceiptActivityController::class, 'update'])->name('update');
     Route::post('/{receipt_activity}/toggle-status', [ReceiptActivityController::class, 'toggleStatus'])->name('toggle-status');
 });
-
-
 
 Route::middleware(['auth'])->group(function () {
     // Standard CRUD resource
@@ -398,7 +379,6 @@ Route::middleware(['auth'])->group(function () {
     // Custom status toggle route
     Route::patch('/banks/{bank}/toggle-status', [BankController::class, 'toggleStatus'])->name('banks.toggle-status');
 });
-
 
 Route::middleware(['auth'])->group(function () {
     // Standard Resource Routes (excluding create/edit/show as we use a Modal)
@@ -460,10 +440,5 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/economic-code-items-by-series/{series}', [JournalController::class, 'getEconomicCodeItemsBySeries'])->name('api.economic-code-items-by-series');
     Route::get('/api/generate-journal-number', [JournalController::class, 'generateJournalNumber'])->name('api.generate-journal-number');
 });
-
-
-
-
-
 
 require __DIR__ . '/settings.php';
