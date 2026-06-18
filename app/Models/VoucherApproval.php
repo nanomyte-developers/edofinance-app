@@ -1,4 +1,5 @@
 <?php
+// app/Models/VoucherApproval.php
 
 namespace App\Models;
 
@@ -30,11 +31,36 @@ class VoucherApproval extends Model
         'approval_level' => 'integer',
     ];
 
-    // Define the possible actions
+    // Workflow Actions
+    const ACTION_SAVED = 'Saved';
+    const ACTION_SUBMITTED = 'Submitted';
     const ACTION_APPROVED = 'Approved';
     const ACTION_DECLINED = 'Declined';
     const ACTION_SENT_BACK = 'Sent Back';
     const ACTION_FORWARDED = 'Forwarded';
+    const ACTION_CLOSED = 'Closed';
+    const ACTION_FINAL_REJECTED = 'Final Rejected';
+    
+    // Workflow Roles
+    const ROLE_CREATOR = 'Creator';
+    const ROLE_DFA = 'Director of Finance';
+    const ROLE_IA = 'Internal Audit';
+    const ROLE_FA = 'Final Accounts';
+    const ROLE_EC = 'Expenditure Control';
+    const ROLE_INSPECTORATE = 'Inspectorate';
+    const ROLE_TCO = 'Treasury Cash Office';
+    const ROLE_AG = 'Accountant General';
+    const ROLE_MAS = 'Management Account Section';
+    
+    // Statuses
+    const STATUS_DRAFT = 'draft';
+    const STATUS_PENDING = 'pending';
+    const STATUS_APPROVED = 'approved';
+    const STATUS_REJECTED = 'rejected';
+    const STATUS_FORWARDED = 'forwarded';
+    const STATUS_SENT_BACK = 'sent_back';
+    const STATUS_CLOSED = 'closed';
+    const STATUS_FINAL_REJECTED = 'final_rejected';
 
     /**
      * Relationship with Voucher
@@ -45,7 +71,7 @@ class VoucherApproval extends Model
     }
 
     /**
-     * Relationship with Approver User - FIXED: Add this relationship
+     * Relationship with Approver User
      */
     public function user(): BelongsTo
     {
@@ -69,49 +95,73 @@ class VoucherApproval extends Model
     }
 
     /**
-     * Scope for pending approvals
+     * Get the workflow stage based on approval step
      */
-    public function scopePending($query)
+    public function getStageAttribute(): string
     {
-        return $query->where('status', 'pending');
+        $stages = [
+            1 => 'DFA',
+            2 => 'Internal Audit',
+            3 => 'Final Accounts',
+            4 => 'Expenditure Control',
+            5 => 'Accountant General',
+            6 => 'Management Account Section',
+        ];
+        
+        // For salary/pension/gratuity, different flow after EC
+        if ($this->voucher && $this->voucher->voucher_type === 'salary') {
+            $stages[4] = 'Inspectorate';
+            $stages[5] = 'Treasury Cash Office';
+        }
+        
+        return $stages[$this->approval_step] ?? 'Unknown';
     }
 
     /**
-     * Scope for approved records
+     * Check if this is the final approval
      */
+    public function getIsFinalAttribute(): bool
+    {
+        if ($this->voucher && $this->voucher->voucher_type === 'salary') {
+            return $this->approval_step >= 5;
+        }
+        return $this->approval_step >= 6;
+    }
+
+    /**
+     * Scopes
+     */
+    public function scopePending($query)
+    {
+        return $query->where('status', self::STATUS_PENDING);
+    }
+
     public function scopeApproved($query)
     {
         return $query->where('action', self::ACTION_APPROVED);
     }
 
-    /**
-     * Scope for declined records
-     */
     public function scopeDeclined($query)
     {
         return $query->where('action', self::ACTION_DECLINED);
     }
 
-    /**
-     * Scope for sent back records
-     */
     public function scopeSentBack($query)
     {
         return $query->where('action', self::ACTION_SENT_BACK);
     }
 
-    /**
-     * Scope for forwarded records
-     */
     public function scopeForwarded($query)
     {
         return $query->where('action', self::ACTION_FORWARDED);
     }
 
-    /**
-     * Scope for current step approvals
-     */
-    public function scopeCurrentStep($query, $step)
+    public function scopeByRole($query, $role)
+    {
+        return $query->where('approval_role', $role);
+    }
+
+    public function scopeByStep($query, $step)
     {
         return $query->where('approval_step', $step);
     }
@@ -121,7 +171,7 @@ class VoucherApproval extends Model
      */
     public function getIsPendingAttribute(): bool
     {
-        return $this->status === 'pending';
+        return $this->status === self::STATUS_PENDING;
     }
 
     /**
@@ -157,7 +207,7 @@ class VoucherApproval extends Model
     }
 
     /**
-     * Auto-set timestamps based on action
+     * Auto-set timestamps and workflow based on action
      */
     public static function boot()
     {
@@ -166,17 +216,14 @@ class VoucherApproval extends Model
         static::saving(function ($model) {
             $now = now();
             
-            // Set action_at when action changes
             if ($model->isDirty('action')) {
                 $model->action_at = $now;
             }
 
-            // Set approved_at when approved
             if ($model->isDirty('action') && $model->action === self::ACTION_APPROVED) {
                 $model->approved_at = $now;
             }
 
-            // Set rejected_at when declined
             if ($model->isDirty('action') && $model->action === self::ACTION_DECLINED) {
                 $model->rejected_at = $now;
             }
@@ -185,19 +232,22 @@ class VoucherApproval extends Model
             if ($model->isDirty('action')) {
                 switch ($model->action) {
                     case self::ACTION_APPROVED:
-                        $model->status = 'approved';
+                        $model->status = self::STATUS_APPROVED;
                         break;
                     case self::ACTION_DECLINED:
-                        $model->status = 'rejected';
+                        $model->status = self::STATUS_REJECTED;
                         break;
                     case self::ACTION_SENT_BACK:
-                        $model->status = 'sent_back';
+                        $model->status = self::STATUS_SENT_BACK;
                         break;
                     case self::ACTION_FORWARDED:
-                        $model->status = 'forwarded';
+                        $model->status = self::STATUS_FORWARDED;
+                        break;
+                    case self::ACTION_CLOSED:
+                        $model->status = self::STATUS_CLOSED;
                         break;
                     default:
-                        $model->status = 'pending';
+                        $model->status = self::STATUS_PENDING;
                         break;
                 }
             }

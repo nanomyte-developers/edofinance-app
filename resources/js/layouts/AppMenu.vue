@@ -114,6 +114,12 @@ onMounted(() => {
                             icon: 'pi pi-fw pi-check-square',
                             to: '/vouchers',
                             description: 'View and validate all vouchers'
+                        },
+                        {
+                            label: 'Internal Audit Approved Vouchers',
+                            icon: 'pi pi-fw pi-check-square',
+                            to: '/final-accounts',
+                            description: 'View and approve IA vouchers'
                         }
                     ]
                 },
@@ -140,8 +146,24 @@ onMounted(() => {
     if (usePage().props.auth.userRoles.includes('Expenditure Control')) {
         menu.push({
             label: 'Expenditure Control (EC)',
-            icon: 'pi pi-fw pi-clone',
-            to: '/expenditure-control',
+            icon: 'pi pi-fw pi-share-alt',
+            items: [
+                {
+                    label: 'Pending Vouchers',
+                    icon: 'pi pi-fw pi-clone',
+                    to: '/expenditure-control',
+                },
+                {
+                    label: 'Approved Vouchers',
+                    icon: 'pi pi-fw pi-check-square',
+                    to: '/expenditure-control/payment-status',
+                },
+                {
+                    label: 'Salary Vouchers',
+                    icon: 'pi pi-fw pi-times-circle',
+                    to: '/expenditure-control/salary',
+                }
+            ],
         });
     }
 
@@ -153,11 +175,19 @@ onMounted(() => {
         });
     }
 
+    if (usePage().props.auth.userRoles.includes('Inspectorate')) {
+        menu.push({
+            label: 'Inspectorate (I)',
+            icon: 'pi pi-fw pi-bolt',
+            to: '#',
+        });
+    }
+
     if (usePage().props.auth.userRoles.includes('Mgt. Account Section')) {
         menu.push({
-            label: 'Mgt. Account Section (MAS)',
+            label: 'Mgt. Acct. Section (MAS)',
             icon: 'pi pi-fw pi-comment',
-            to: '#',
+            to: '/management-account-section',
         });
     }
 

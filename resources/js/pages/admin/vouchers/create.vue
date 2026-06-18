@@ -33,9 +33,17 @@ const breadcrumbs: BreadcrumbItem[] = [
 let nextItemId = 1;
 
 const voucherTypes = [
+    // {
+    //     label: 'Standard',
+    //     value: 'standard',
+    // },
     {
-        label: 'Standard',
-        value: 'standard',
+        label: 'Captial',
+        value: 'capital',
+    },
+    {
+        label: 'Recurrent',
+        value: 'recurrent',
     },
     {
         label: 'Prepayment',
@@ -44,6 +52,14 @@ const voucherTypes = [
     {
         label: 'Salary',
         value: 'salary',
+    },
+    {
+        label: 'Gratuity',
+        value: 'gratuity',
+    },
+    {
+        label: 'Pension',
+        value: 'pension',
     },
 ];
 
@@ -106,7 +122,7 @@ const props = defineProps({
     voucherType: {
         type: String,
         required: true,
-        default: 'standard',
+        default: 'capital',
     },
     schedule: {
         type: Object,

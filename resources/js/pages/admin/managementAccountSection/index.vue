@@ -1,3 +1,4 @@
+<!-- resources/js/pages/admin/management-account-section/index.vue -->
 <script setup>
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
@@ -9,7 +10,6 @@ import Card from 'primevue/card';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
 import Dialog from 'primevue/dialog';
-import Dropdown from 'primevue/dropdown';
 import IconField from 'primevue/iconfield';
 import InputIcon from 'primevue/inputicon';
 import InputText from 'primevue/inputtext';
@@ -34,9 +34,6 @@ const currentVoucher = ref(null);
 const rejectionReason = ref('');
 const rejectionTouched = ref(false);
 const isProcessing = ref(false);
-const selectedBankActivity = ref(null);
-const bankActivities = ref([]);
-const bankActivitiesLoading = ref(false);
 
 // Stats
 const stats = ref({
@@ -87,29 +84,29 @@ const props = defineProps({
 // Stats cards data
 const statsData = computed(() => [
     {
-        title: 'Pending AG Review',
-        value: stats.value.pending_count || 0,
+        title: 'Pending MAS Review',
+        value: stats.value.pending_count,
         icon: 'pi pi-clock',
         color: 'text-blue-500',
         bgColor: 'bg-blue-50',
     },
     {
-        title: 'Approved Today',
-        value: stats.value.approved_today || 0,
+        title: 'Closed Today',
+        value: stats.value.approved_today,
         icon: 'pi pi-check-circle',
         color: 'text-green-500',
         bgColor: 'bg-green-50',
     },
     {
         title: 'Rejected Today',
-        value: stats.value.rejected_today || 0,
+        value: stats.value.rejected_today,
         icon: 'pi pi-times-circle',
         color: 'text-red-500',
         bgColor: 'bg-red-50',
     },
     {
         title: 'Total Processed',
-        value: stats.value.total_processed || 0,
+        value: stats.value.total_processed,
         icon: 'pi pi-chart-bar',
         color: 'text-purple-500',
         bgColor: 'bg-purple-50',
@@ -117,7 +114,7 @@ const statsData = computed(() => [
 ]);
 
 const breadcrumbs = [
-    { title: 'Accountant General', href: '/accountant-general' },
+    { title: 'Management Account Section', href: '/management-account-section' },
     { title: 'Queue', href: '#' },
 ];
 
@@ -154,9 +151,9 @@ const getVoucherTypeSeverity = (type) => {
 // Get status badge severity
 const getStatusSeverity = (status) => {
     const statuses = {
-        ec_approved: 'warning',
-        ag_approved: 'success',
-        sent_back: 'danger',
+        ag_approved: 'warning',
+        closed: 'success',
+        mas_rejected: 'danger',
     };
     return statuses[status?.toLowerCase()] || 'info';
 };
@@ -164,38 +161,36 @@ const getStatusSeverity = (status) => {
 // Get status display name
 const getStatusDisplayName = (status) => {
     const names = {
-        ec_approved: 'Forwarded from EC',
-        ag_approved: 'AG Approved',
-        sent_back: 'Sent Back',
+        ag_approved: 'Forwarded from AG',
+        closed: 'Closed',
+        mas_rejected: 'Rejected',
     };
     return names[status?.toLowerCase()] || status || 'Unknown';
 };
 
-// Fetch bank activities
-const fetchBankActivities = async (search = '') => {
-    bankActivitiesLoading.value = true;
-    try {
-        const response = await axios.get('/accountant-general/bank-activities', {
-            params: { filter: search }
-        });
-        bankActivities.value = response.data.data;
-    } catch (error) {
-        console.error('Error fetching bank activities:', error);
-        toast.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to load bank activities',
-            life: 3000,
-        });
-    } finally {
-        bankActivitiesLoading.value = false;
-    }
+// Handle search - use Inertia visit instead of axios
+const handleSearch = () => {
+    router.get('/management-account-section', 
+        { search: searchQuery.value, page: 1 },
+        { preserveScroll: true, preserveState: true, only: ['vouchers', 'stats'] }
+    );
+};
+
+// Refresh data
+const refreshData = () => {
+    searchQuery.value = '';
+    router.reload({ only: ['vouchers', 'stats'] });
+    toast.add({
+        severity: 'success',
+        summary: 'Refreshed',
+        detail: 'Data refreshed successfully',
+        life: 2000,
+    });
 };
 
 // Open approval modal
 const openApproveModal = (voucher) => {
     currentVoucher.value = voucher;
-    selectedBankActivity.value = voucher.bank_activity_id || null;
     showApprovalModal.value = true;
 };
 
@@ -207,31 +202,19 @@ const openRejectModal = (voucher) => {
     showRejectionModal.value = true;
 };
 
-// Handle approval
+// Handle approval (Close voucher)
 const handleApprove = () => {
-    if (!selectedBankActivity.value) {
-        toast.add({
-            severity: 'warn',
-            summary: 'Bank Required',
-            detail: 'Please select a destination bank before approving.',
-            life: 3000,
-        });
-        return;
-    }
-
     isProcessing.value = true;
     
-    router.post(`/accountant-general/vouchers/${currentVoucher.value.id}/approve`, {
-        bank_activity_id: selectedBankActivity.value,
-    }, {
+    router.post(`/management-account-section/vouchers/${currentVoucher.value.id}/approve`, {}, {
         preserveScroll: true,
         onSuccess: () => {
             showApprovalModal.value = false;
             isProcessing.value = false;
             toast.add({
                 severity: 'success',
-                summary: 'Approved & Forwarded',
-                detail: `Voucher ${currentVoucher.value.voucher_number} forwarded to Management Account Section.`,
+                summary: 'Voucher Closed',
+                detail: `Voucher ${currentVoucher.value.voucher_number} has been closed successfully.`,
                 life: 5000,
             });
             refreshData();
@@ -242,7 +225,7 @@ const handleApprove = () => {
             toast.add({
                 severity: 'error',
                 summary: 'Error',
-                detail: errors.message || 'Failed to process voucher.',
+                detail: errors.message || 'Failed to close voucher.',
                 life: 5000,
             });
         },
@@ -263,7 +246,7 @@ const handleReject = () => {
 
     isProcessing.value = true;
 
-    router.post(`/accountant-general/vouchers/${currentVoucher.value.id}/reject`, {
+    router.post(`/management-account-section/vouchers/${currentVoucher.value.id}/reject`, {
         reason: rejectionReason.value,
     }, {
         preserveScroll: true,
@@ -271,7 +254,7 @@ const handleReject = () => {
             toast.add({
                 severity: 'info',
                 summary: 'Rejected',
-                detail: `Voucher ${currentVoucher.value.voucher_number} returned to DFA.`,
+                detail: `Voucher ${currentVoucher.value.voucher_number} has been rejected.`,
                 life: 4000,
             });
             showRejectionModal.value = false;
@@ -293,7 +276,7 @@ const handleReject = () => {
 
 // View voucher details
 const viewVoucherDetails = (voucher) => {
-    router.visit(`/accountant-general/vouchers/${voucher.id}`);
+    router.visit(`/management-account-section/vouchers/${voucher.id}`);
 };
 
 // Print voucher
@@ -302,140 +285,55 @@ const printVoucher = (voucher) => {
     window.open(printUrl, '_blank');
 };
 
-// Search and pagination functions
-const searchVouchers = async () => {
-    loading.value = true;
-    try {
-        const response = await axios.get('/accountant-general/search', {
-            params: {
-                per_page: lazyParams.value.rows,
-                page: lazyParams.value.page,
-                search: searchQuery.value,
-            },
-        });
-        vouchers.value = response.data.vouchers.data || [];
-        totalRecords.value = response.data.paginator.total || 0;
-        
-        const statsResponse = await axios.get('/accountant-general/stats');
-        stats.value = statsResponse.data;
-    } catch (error) {
-        console.error('Error searching vouchers:', error);
-        toast.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to search data',
-            life: 3000,
-        });
-    } finally {
-        loading.value = false;
-    }
-};
-
-const loadVouchers = async () => {
-    loading.value = true;
-    try {
-        router.visit('/accountant-general', {
-            method: 'get',
-            preserveScroll: true,
-            preserveState: true,
-            only: ['vouchers', 'stats'],
-            onSuccess: (page) => {
-                if (page.props.vouchers) {
-                    vouchers.value = page.props.vouchers.data || [];
-                    totalRecords.value = page.props.vouchers.total || 0;
-                }
-                if (page.props.stats) {
-                    stats.value = page.props.stats;
-                }
-                loading.value = false;
-            },
-            onError: (errors) => {
-                console.error('Error loading vouchers:', errors);
-                toast.add({
-                    severity: 'error',
-                    summary: 'Error',
-                    detail: 'Failed to load data',
-                    life: 3000,
-                });
-                loading.value = false;
-            },
-        });
-    } catch (error) {
-        console.error('Error loading vouchers:', error);
-        toast.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to load data',
-            life: 3000,
-        });
-        loading.value = false;
-    }
-};
-
-const refreshData = () => {
+// Pagination
+const onPage = (event) => {
+    const page = event.page + 1;
+    const params = { page, per_page: event.rows };
     if (searchQuery.value) {
-        searchVouchers();
-    } else {
-        loadVouchers();
+        params.search = searchQuery.value;
     }
-    toast.add({
-        severity: 'success',
-        summary: 'Refreshed',
-        detail: 'Data refreshed successfully',
-        life: 2000,
+    router.get('/management-account-section', params, {
+        preserveScroll: true,
+        preserveState: true,
+        only: ['vouchers', 'stats'],
     });
 };
 
-const onPage = (event) => {
-    lazyParams.value.page = event.page + 1;
-    lazyParams.value.first = event.first;
-    lazyParams.value.rows = event.rows;
-    if (searchQuery.value) {
-        searchVouchers();
-    } else {
-        loadVouchers();
-    }
-};
-
+// Watch for search with debounce
 watch(searchQuery, () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-        lazyParams.value.page = 1;
-        searchVouchers();
-    }, 2000);
+        handleSearch();
+    }, 500);
 });
 
-// Initialize
+// Initialize - use props data directly (NO API CALLS)
 onMounted(() => {
-    if (props.vouchers) {
-        vouchers.value = props.vouchers.data || [];
+    if (props.vouchers && props.vouchers.data) {
+        vouchers.value = props.vouchers.data;
         totalRecords.value = props.vouchers.total || 0;
     }
     if (props.stats) {
         stats.value = props.stats;
     }
-    if (!vouchers.value.length) {
-        loadVouchers();
-    }
-    fetchBankActivities();
 });
 </script>
 
 <template>
     <AppLayout :breadcrumbs="breadcrumbs">
-        <Head title="Accountant General Queue" />
+        <Head title="Management Account Section Queue" />
         <Toast />
 
         <!-- Workflow Info Banner -->
         <div class="mb-4">
-            <Message severity="info" :closable="false" class="workflow-banner">
+            <Message severity="success" :closable="false" class="workflow-banner">
                 <div class="flex align-items-center gap-3 flex-wrap">
-                    <i class="pi pi-share-alt text-xl"></i>
+                    <i class="pi pi-check-circle text-xl"></i>
                     <div>
-                        <strong>Accountant General (AG) - Step 5 of 6</strong>
+                        <strong>Management Account Section (MAS) - Step 6 of 6 (Final Stage)</strong>
                         <div class="text-sm mt-1">
-                            Vouchers approved by Expenditure Control are reviewed here.
-                            Once approved, they go to <strong>Management Account Section (MAS)</strong> for final processing.
+                            Vouchers approved by Accountant General are reviewed here for final closure.
+                            Once approved, the voucher will be <strong>closed</strong> and the process is complete.
                         </div>
                     </div>
                 </div>
@@ -467,7 +365,7 @@ onMounted(() => {
                 <div class="flex align-items-center justify-content-between flex-wrap gap-3">
                     <div class="flex align-items-center gap-2">
                         <i class="pi pi-list text-primary"></i>
-                        <span>Accountant General Queue</span>
+                        <span>Management Account Section Queue</span>
                         <Badge :value="totalRecords" severity="info" />
                     </div>
                     <div class="flex gap-2">
@@ -492,7 +390,7 @@ onMounted(() => {
                         stripedRows
                         responsiveLayout="scroll"
                         class="p-datatable-sm"
-                        :emptyMessage="'No vouchers pending Accountant General review.'"
+                        :emptyMessage="'No vouchers pending Management Account Section review.'"
                         :paginator="true"
                         :rowsPerPageOptions="[5, 10, 20, 50, 100]"
                         :loading="loading"
@@ -521,10 +419,10 @@ onMounted(() => {
                         </template>
 
                         <!-- Voucher Number Column -->
-                        <Column field="voucher_number" header="Voucher #" headerStyle="width: 12%" :sortable="true">
+                        <Column field="voucher_number" header="Voucher #" headerStyle="width: 10%" :sortable="true">
                             <template #body="slotProps">
                                 <Link 
-                                    :href="`/accountant-general/vouchers/${slotProps.data.id}`" 
+                                    :href="`/management-account-section/vouchers/${slotProps.data.id}`" 
                                     class="font-medium text-primary hover:underline"
                                 >
                                     {{ slotProps.data.voucher_number || 'N/A' }}
@@ -540,7 +438,7 @@ onMounted(() => {
                         </Column>
 
                         <!-- MDA Column -->
-                        <Column field="mda.name" header="MDA" headerStyle="width: 18%">
+                        <Column field="mda.name" header="MDA" headerStyle="width: 15%">
                             <template #body="slotProps">
                                 <div>
                                     <div class="font-medium">{{ slotProps.data.mda?.name || 'N/A' }}</div>
@@ -550,7 +448,7 @@ onMounted(() => {
                         </Column>
 
                         <!-- Payee Column -->
-                        <Column field="payee_name" header="Payee" headerStyle="width: 15%">
+                        <Column field="payee_name" header="Payee" headerStyle="width: 12%">
                             <template #body="slotProps">
                                 <span class="text-600">{{ slotProps.data.payee_name || 'N/A' }}</span>
                             </template>
@@ -574,8 +472,20 @@ onMounted(() => {
                             </template>
                         </Column>
 
+                        <!-- Bank Column - NEW -->
+                        <Column field="bank_activity" header="Destination Bank" headerStyle="width: 18%">
+                            <template #body="slotProps">
+                                <div v-if="slotProps.data.bank_activity">
+                                    <div class="font-medium">{{ slotProps.data.bank_activity.bank_name }}</div>
+                                    <div class="text-500 text-xs">{{ slotProps.data.bank_activity.account_number }}</div>
+                                    <div class="text-500 text-xs">{{ slotProps.data.bank_activity.tag }}</div>
+                                </div>
+                                <span v-else class="text-500">Not Assigned</span>
+                            </template>
+                        </Column>
+
                         <!-- Status Column -->
-                        <Column field="status" header="Status" headerStyle="width: 10%">
+                        <Column field="status" header="Status" headerStyle="width: 8%">
                             <template #body="slotProps">
                                 <Tag 
                                     :value="getStatusDisplayName(slotProps.data.status)" 
@@ -586,7 +496,7 @@ onMounted(() => {
                         </Column>
 
                         <!-- Actions Column -->
-                        <Column header="Actions" headerStyle="width: 13%" bodyClass="text-center">
+                        <Column header="Actions" headerStyle="width: 12%" bodyClass="text-center">
                             <template #body="slotProps">
                                 <div class="flex gap-1 justify-content-center">
                                     <Button
@@ -613,7 +523,7 @@ onMounted(() => {
                                         text
                                         rounded
                                         size="small"
-                                        v-tooltip.top="'Approve & Forward'"
+                                        v-tooltip.top="'Close Voucher'"
                                         @click="openApproveModal(slotProps.data)"
                                     />
                                     <Button
@@ -622,7 +532,7 @@ onMounted(() => {
                                         text
                                         rounded
                                         size="small"
-                                        v-tooltip.top="'Reject & Return'"
+                                        v-tooltip.top="'Reject Voucher'"
                                         @click="openRejectModal(slotProps.data)"
                                     />
                                 </div>
@@ -633,18 +543,18 @@ onMounted(() => {
             </template>
         </Card>
 
-        <!-- Approval Modal with Bank Selection -->
+        <!-- Approval Modal (Close Voucher) -->
         <Dialog
             v-model:visible="showApprovalModal"
             :style="{ width: '550px' }"
-            header="Accountant General Approval"
+            header="Close Voucher"
             :modal="true"
             class="approval-dialog"
             :closable="!isProcessing"
         >
             <div class="flex flex-column gap-3">
-                <div class="flex align-items-center gap-3 p-3 bg-blue-50 border-round">
-                    <i class="pi pi-info-circle text-blue-500 text-xl"></i>
+                <div class="flex align-items-center gap-3 p-3 bg-green-50 border-round">
+                    <i class="pi pi-info-circle text-green-500 text-xl"></i>
                     <div>
                         <div class="font-semibold">Voucher: {{ currentVoucher?.voucher_number }}</div>
                         <div class="text-sm">Amount: {{ formatCurrency(currentVoucher?.total_amount) }}</div>
@@ -652,46 +562,42 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <!-- Bank Selection Dropdown -->
-                <div class="field">
-                    <label class="font-semibold block mb-2">
-                        Select Destination Bank <span class="text-red-500">*</span>
-                    </label>
-                    <Dropdown
-                        v-model="selectedBankActivity"
-                        :options="bankActivities"
-                        optionLabel="label"
-                        optionValue="value"
-                        placeholder="Search and select destination bank..."
-                        :loading="bankActivitiesLoading"
-                        :filter="true"
-                        filterPlaceholder="Search by bank name or account number..."
-                        class="w-full"
-                        :class="{ 'p-invalid': !selectedBankActivity }"
-                    />
-                    <small class="text-500 mt-1 block">
-                        <i class="pi pi-info-circle mr-1"></i>
-                        This bank will be used for final payment by Management Account Section
-                    </small>
+                <!-- Bank Information Display -->
+                <div v-if="currentVoucher?.bank_activity" class="border-round bg-blue-50 p-3">
+                    <div class="flex align-items-center gap-2 mb-2">
+                        <i class="pi pi-building text-blue-600"></i>
+                        <span class="font-semibold">Payment Bank Details:</span>
+                    </div>
+                    <div class="text-sm">
+                        <div><strong>Bank:</strong> {{ currentVoucher.bank_activity.bank_name }}</div>
+                        <div><strong>Account:</strong> {{ currentVoucher.bank_activity.account_number }}</div>
+                        <div><strong>Tag:</strong> {{ currentVoucher.bank_activity.tag }}</div>
+                    </div>
+                </div>
+                <div v-else class="border-round bg-red-50 p-3">
+                    <div class="flex align-items-center gap-2">
+                        <i class="pi pi-exclamation-triangle text-red-600"></i>
+                        <span class="text-sm">No bank assigned. Please contact Accountant General.</span>
+                    </div>
                 </div>
 
                 <div class="border-round bg-yellow-50 p-3">
                     <div class="flex align-items-center gap-2 mb-2">
-                        <i class="pi pi-arrow-right text-yellow-600"></i>
-                        <span class="font-semibold">Next Stage:</span>
-                        <Tag value="Management Account Section (MAS)" severity="info" />
+                        <i class="pi pi-flag-checkered text-yellow-600"></i>
+                        <span class="font-semibold">Final Stage:</span>
+                        <Tag value="Close Voucher" severity="success" />
                     </div>
                     <div class="text-sm text-600">
-                        This voucher will be forwarded to Management Account Section for final processing.
+                        This is the final approval stage. Closing the voucher will complete the workflow.
                         <strong>Action cannot be undone.</strong>
                     </div>
                 </div>
 
-                <div class="border-round bg-green-50 p-3">
+                <div class="border-round bg-blue-50 p-3">
                     <div class="flex align-items-center gap-2">
-                        <i class="pi pi-check-circle text-green-600"></i>
+                        <i class="pi pi-check-circle text-blue-600"></i>
                         <span class="font-semibold">Confirmation:</span>
-                        <span class="text-sm">I confirm that this voucher is ready for final processing.</span>
+                        <span class="text-sm">I confirm that this voucher is ready to be closed.</span>
                     </div>
                 </div>
 
@@ -703,7 +609,7 @@ onMounted(() => {
 
             <template #footer>
                 <Button label="Cancel" icon="pi pi-times" @click="showApprovalModal = false" text :disabled="isProcessing" />
-                <Button label="Approve & Forward" icon="pi pi-send" severity="success" @click="handleApprove" :loading="isProcessing" />
+                <Button label="Close Voucher" icon="pi pi-check-circle" severity="success" @click="handleApprove" :loading="isProcessing" />
             </template>
         </Dialog>
 
@@ -721,7 +627,7 @@ onMounted(() => {
                     <i class="pi pi-exclamation-triangle text-red-500 text-xl"></i>
                     <div>
                         <div class="font-semibold">Voucher: {{ currentVoucher?.voucher_number }}</div>
-                        <div class="text-sm">This action will return the voucher to DFA for correction.</div>
+                        <div class="text-sm">This action will reject the voucher at the final stage.</div>
                     </div>
                 </div>
 
@@ -732,7 +638,7 @@ onMounted(() => {
                     <Textarea
                         v-model="rejectionReason"
                         rows="4"
-                        placeholder="Provide detailed reason for rejection. This will be visible to the DFA officer."
+                        placeholder="Provide detailed reason for rejection. This will be recorded in the audit log."
                         :class="{ 'p-invalid': !rejectionReason && rejectionTouched }"
                         @blur="rejectionTouched = true"
                         class="w-full"
@@ -756,7 +662,7 @@ onMounted(() => {
                 <div class="border-round bg-gray-50 p-3">
                     <div class="flex align-items-center gap-2">
                         <i class="pi pi-info-circle text-gray-600"></i>
-                        <span class="text-sm">The DFA will be notified and can resubmit after corrections.</span>
+                        <span class="text-sm">This action will be recorded in the audit trail.</span>
                     </div>
                 </div>
 
@@ -817,7 +723,7 @@ onMounted(() => {
 }
 
 .workflow-banner :deep(.p-message) {
-    background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
     border: none;
     border-radius: 0.75rem;
 }

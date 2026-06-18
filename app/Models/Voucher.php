@@ -43,7 +43,17 @@ class Voucher extends Model
 
     const TYPE_STANDARD = 'standard';
 
+    const TYPE_CAPITAL = 'capital';
+
+    const TYPE_RECURRENT = 'recurrent';
+
     const TYPE_PREPAYMENT = 'prepayment';
+
+    const TYPE_SALARY = 'salary';
+
+    const TYPE_GRATUITY = 'gratuity';
+
+    const TYPE_PENSION = 'pension';
 
     protected $fillable = [
         'voucher_number',
@@ -62,6 +72,25 @@ class Voucher extends Model
         'retirement_voucher_id',
         'payee_name',
         'bank_activity_id',
+        'final_approved_at',
+        'final_approved_by',
+        'is_final_accounts',
+        'ec_approved_by',
+        'ec_approved_at',
+        'ag_approved_by',
+        'ag_approved_at',
+        'mas_approved_by',
+        'mas_approved_at',
+        'closed_at',
+        'payment_reference',
+        'payment_comment',
+        'payment_date',
+        'forwarded_to_inspectorate_at',
+        'forwarded_to_inspectorate_by',
+        'i_approved_at', //inspectorate approval timestamp
+        'i_approved_by', //inspectorate approval user id
+        'tco_approved_at',
+        'tco_approved_by',
     ];
 
     protected $casts = [
@@ -69,6 +98,16 @@ class Voucher extends Model
         'total_amount' => 'decimal:2',
         'requires_retirement' => 'boolean',
         'retired_at' => 'datetime',
+        'is_final_accounts' => 'boolean',
+        'final_approved_at' => 'datetime',
+        'ec_approved_at' => 'datetime',
+        'ag_approved_at' => 'datetime',
+        'mas_approved_at' => 'datetime',
+        'closed_at' => 'datetime',
+        'payment_date' => 'datetime',
+        'forwarded_to_inspectorate_at' =>'datetime',
+        'i_approved_at' => 'datetime',
+        'tco_approved_at' => 'datetime',
     ];
 
     protected $logAttributes = [
@@ -324,5 +363,138 @@ class Voucher extends Model
     public function bankActivity(): HasOne
     {
         return $this->hasOne(BankActivity::class, 'id', 'bank_activity_id');
+    }
+
+    /**
+     * Get the current workflow stage based on approvals
+     */
+    public function getCurrentWorkflowStageAttribute(): string
+    {
+        $maxStep = $this->approvals()->max('approval_step') ?? 0;
+        
+        $stages = [
+            0 => 'Draft',
+            1 => 'DFA Review',
+            2 => 'Internal Audit',
+            3 => 'Final Accounts',
+            4 => 'Expenditure Control',
+            5 => 'Accountant General',
+            6 => 'Management Account Section',
+        ];
+        
+        if ($this->voucher_type === 'salary') {
+            $stages[4] = 'Inspectorate';
+            $stages[5] = 'Treasury Cash Office';
+        }
+        
+        return $stages[$maxStep] ?? 'Unknown';
+    }
+
+    /**
+     * Get next approval role based on current step and voucher type
+     */
+    public function getNextApprovalRole(): ?string
+    {
+        $currentStep = $this->approvals()->max('approval_step') ?? 0;
+        $nextStep = $currentStep + 1;
+        
+        $workflow = [
+            1 => VoucherApproval::ROLE_DFA,
+            2 => VoucherApproval::ROLE_IA,
+            3 => VoucherApproval::ROLE_FA,
+        ];
+        
+        if ($this->voucher_type === 'salary') {
+            $workflow[4] = VoucherApproval::ROLE_INSPECTORATE;
+            $workflow[5] = VoucherApproval::ROLE_TCO;
+        } else {
+            $workflow[4] = VoucherApproval::ROLE_EC;
+            $workflow[5] = VoucherApproval::ROLE_AG;
+            $workflow[6] = VoucherApproval::ROLE_MAS;
+        }
+        
+        return $workflow[$nextStep] ?? null;
+    }
+
+    /**
+     * Check if voucher is ready for Final Accounts
+     */
+    public function getIsReadyForFinalAccountsAttribute(): bool
+    {
+        // Voucher must be approved by Internal Audit (step 2)
+        $iaApproval = $this->approvals()
+            ->where('approval_step', 2)
+            ->where('action', VoucherApproval::ACTION_APPROVED)
+            ->exists();
+        
+        return $iaApproval && $this->status === 'audit_approved' && !$this->is_final_accounts;
+    }
+
+    /**
+     * Check if voucher is a salary payment
+     */
+    public function getIsSalaryPaymentAttribute(): bool
+    {
+        return $this->voucher_type === 'salary';
+    }
+
+    /**
+     * Check if voucher is a capital/DAT/recurrent payment
+     */
+    public function getIsOtherPaymentAttribute(): bool
+    {
+        return in_array($this->voucher_type, ['standard', 'prepayment']);
+    }
+
+    // Add relationship for final approver
+    public function finalApprover(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'final_approved_by');
+    }
+
+    // Add relationships for expenditure control approver
+    public function ecApprover(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'ec_approved_by');
+    }
+
+    // Add relationships for Accountant General approver
+    public function agApprover(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'ag_approved_by');
+    }
+
+    // Add relationships for Management Account Section approver
+    public function masApprover(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'mas_approved_by');
+    }
+
+    // Add relationship for Inspectorate approver
+    public function inspectorateApprover(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'inspectorate_approved_by');
+    }
+
+    // Add relationship for TCO approver
+    public function tcoApprover(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'tco_approved_by');
+    }
+
+    /**
+     * Get the user this voucher is assigned to
+     */
+    public function assignedTo()
+    {
+        return $this->belongsTo(User::class, 'assigned_to_user_id');
+    }
+
+    /**
+     * Get the user who assigned this voucher
+     */
+    public function assignedBy()
+    {
+        return $this->belongsTo(User::class, 'assigned_by');
     }
 }

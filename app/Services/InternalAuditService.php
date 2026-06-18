@@ -177,10 +177,10 @@ class InternalAuditService
     public function getRequiredDocuments(): array
     {
         return [
-            'invoice',
-            'receipt', 
-            'delivery_note',
-            'approval_form'
+            // 'invoice',
+            // 'receipt', 
+            // 'delivery_note',
+            'approval_form',
         ];
     }
 
@@ -191,9 +191,9 @@ class InternalAuditService
     {
         $labels = [
             'approval_form' => 'Approval Form',
-            'invoice' => 'Invoice',
-            'receipt' => 'Receipt',
-            'delivery_note' => 'Delivery Note',
+            // 'invoice' => 'Invoice',
+            // 'receipt' => 'Receipt',
+            // 'delivery_note' => 'Delivery Note',
         ];
 
         return $labels[$type] ?? $type;

@@ -40,7 +40,7 @@ class VoucherStoreUpdateRequest extends FormRequest
             'voucher_date' => 'required|date',
             'voucher_number' => 'required|string|max:100|unique:vouchers,voucher_number,' . $voucherId,
             'narration' => 'required|string|max:500',
-            'voucher_type' => 'required|in:standard,prepayment,Standard,Prepayment,Salary,salary',
+            'voucher_type' => 'required|in:standard,prepayment,Standard,Prepayment,Salary,salary,Capital,capital,Recurrent,recurrent,Gratuity,gratuity,Pension,pension',
             'status' => 'sometimes|in:Pending,Submitted,Approved,Rejected,Draft',
             'total_amount' => 'required|numeric|min:0',
             'payee_name' => 'required|string|max:255',

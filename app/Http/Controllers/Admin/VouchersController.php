@@ -2,28 +2,29 @@
 
 namespace App\Http\Controllers\Admin;
 
-use Carbon\Carbon;
-use App\Models\Mda;
-use Inertia\Inertia;
-use App\Models\Voucher;
-use App\Models\Schedule;
-use App\Models\EconomyCode;
-use App\Models\BankActivity;
-use Illuminate\Http\Request;
-use App\Models\FinancialYear;
 use App\Helpers\NumberToWords;
-use App\Models\EconomyCodeItem;
-use App\Models\ProgrammeCode;
-use App\Services\ActivityLogger;
-use App\Services\VoucherService;
-use App\Models\AdministrativeCode;
-use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
-use Illuminate\Http\RedirectResponse;
-use App\Http\Resources\VoucherResource;
-use Illuminate\Support\Facades\Storage;
 use App\Http\Requests\VoucherStoreUpdateRequest;
+use App\Http\Resources\VoucherResource;
+use App\Models\AdministrativeCode;
+use App\Models\BankActivity;
+use App\Models\EconomyCode;
+use App\Models\EconomyCodeItem;
+use App\Models\FinancialYear;
+use App\Models\Mda;
+use App\Models\ProgrammeCode;
+use App\Models\Schedule;
+use App\Models\Voucher;
+use App\Services\ActivityLogger;
 use App\Services\BudgetService;
+use App\Services\VoucherService;
+use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Inertia\Inertia;
+use Log;
 
 class VouchersController extends Controller
 {
@@ -1343,7 +1344,7 @@ class VouchersController extends Controller
         $data['status'] = 'Approved';
         $data['is_final_accounts'] = true;
 
-        \Log::info('Final Accounts Voucher Store Request:', [
+        Log::info('Final Accounts Voucher Store Request:', [
             'data_keys' => array_keys($data),
             'files_count' => count($files),
             'user_id' => auth()->id(),

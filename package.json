@@ -47,6 +47,8 @@
         "html2pdf.js": "^0.14.0",
         "inertia": "^0.0.7",
         "inertiajs": "^0.0.0",
+        "jspdf": "^4.2.1",
+        "jspdf-autotable": "^5.0.8",
         "lucide-vue-next": "^0.468.0",
         "moment": "^2.30.1",
         "primeflex": "^4.0.0",
