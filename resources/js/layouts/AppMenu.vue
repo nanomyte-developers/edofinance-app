@@ -154,15 +154,15 @@ onMounted(() => {
                     to: '/expenditure-control',
                 },
                 {
-                    label: 'Approved Vouchers',
+                    label: 'Assigned Vouchers',
                     icon: 'pi pi-fw pi-check-square',
-                    to: '/expenditure-control/payment-status',
+                    to: '/expenditure-control/assigned',
                 },
-                {
-                    label: 'Salary Vouchers',
-                    icon: 'pi pi-fw pi-times-circle',
-                    to: '/expenditure-control/salary',
-                }
+                // {
+                //     label: 'Salary Vouchers',
+                //     icon: 'pi pi-fw pi-times-circle',
+                //     to: '/expenditure-control/salary',
+                // }
             ],
         });
     }
@@ -187,7 +187,23 @@ onMounted(() => {
         menu.push({
             label: 'Mgt. Acct. Section (MAS)',
             icon: 'pi pi-fw pi-comment',
-            to: '/management-account-section',
+            items: [
+                {
+                    label: 'Pending Vouchers',
+                    icon: 'pi pi-fw pi-clone',
+                    to: '/management-account-section',
+                },
+                {
+                    label: 'Assigned Vouchers',
+                    icon: 'pi pi-fw pi-check-square',
+                    to: '/management-account-section/assigned',
+                },
+                // {
+                //     label: 'Salary Vouchers',
+                //     icon: 'pi pi-fw pi-times-circle',
+                //     to: '/expenditure-control/salary',
+                // }
+            ],
         });
     }
 

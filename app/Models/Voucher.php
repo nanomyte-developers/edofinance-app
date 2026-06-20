@@ -91,6 +91,9 @@ class Voucher extends Model
         'i_approved_by', //inspectorate approval user id
         'tco_approved_at',
         'tco_approved_by',
+        'assigned_to_user_id',
+        'assigned_at',
+        'assigned_by',
     ];
 
     protected $casts = [
@@ -108,6 +111,7 @@ class Voucher extends Model
         'forwarded_to_inspectorate_at' =>'datetime',
         'i_approved_at' => 'datetime',
         'tco_approved_at' => 'datetime',
+        'assigned_at' => 'datetime',
     ];
 
     protected $logAttributes = [

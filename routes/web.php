@@ -186,6 +186,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/vouchers/{voucher}/forward', [ExpenditureControlController::class, 'forward'])->name('forward');
 
 
+        Route::get('/assigned', [ExpenditureControlController::class, 'assignedIndex'])->name('expenditure-control.assigned');
+        Route::get('/assigned/search', [ExpenditureControlController::class, 'searchAssigned'])->name('expenditure-control.assigned.search');
+
+
         // Payment status routes
         Route::get('/payment-status', [ExpenditureControlController::class, 'paymentStatus'])->name('payment-status');
         Route::get('/payment-status/search', [ExpenditureControlController::class, 'searchPaymentStatus'])->name('payment-status.search');
@@ -204,6 +208,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 
     // ==================== ACCOUNTANT GENERAL ROUTES (Step 5) ====================
+    // Route::prefix('accountant-general')->name('accountant-general.')->middleware(['auth'])->group(function () {
+    //     Route::get('/', [AccountantGeneralController::class, 'index'])->name('index');
+    //     Route::get('/search', [AccountantGeneralController::class, 'search'])->name('search');
+    //     Route::get('/stats', [AccountantGeneralController::class, 'stats'])->name('stats');
+    //     Route::get('/vouchers/{id}', [AccountantGeneralController::class, 'show'])->name('show');
+    //     Route::post('/vouchers/{voucher}/approve', [AccountantGeneralController::class, 'approve'])->name('approve');
+    //     Route::post('/vouchers/{voucher}/reject', [AccountantGeneralController::class, 'reject'])->name('reject');
+    // });
+    // Route::get('/accountant-general/bank-activities', [AccountantGeneralController::class, 'getBankActivities'])->name('accountant-general.bank-activities');
+
     Route::prefix('accountant-general')->name('accountant-general.')->middleware(['auth'])->group(function () {
         Route::get('/', [AccountantGeneralController::class, 'index'])->name('index');
         Route::get('/search', [AccountantGeneralController::class, 'search'])->name('search');
@@ -215,14 +229,35 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/accountant-general/bank-activities', [AccountantGeneralController::class, 'getBankActivities'])->name('accountant-general.bank-activities');
 
     // Management Account Section Routes (Step 6 - Final)
+    // Route::prefix('management-account-section')->name('management-account-section.')->middleware(['auth'])->group(function () {
+    //     Route::get('/', [ManagementAccountSectionController::class, 'index'])->name('index');
+    //     Route::get('/search', [ManagementAccountSectionController::class, 'search'])->name('search');
+    //     Route::get('/stats', [ManagementAccountSectionController::class, 'stats'])->name('stats');
+    //     Route::get('/vouchers/{id}', [ManagementAccountSectionController::class, 'show'])->name('show');
+    //     Route::post('/vouchers/{voucher}/approve', [ManagementAccountSectionController::class, 'approve'])->name('approve');
+    //     Route::post('/vouchers/{voucher}/reject', [ManagementAccountSectionController::class, 'reject'])->name('reject');
+    // });
+
+    // ==================== MANAGEMENT ACCOUNT SECTION ROUTES (Step 6 - Final) ====================
     Route::prefix('management-account-section')->name('management-account-section.')->middleware(['auth'])->group(function () {
         Route::get('/', [ManagementAccountSectionController::class, 'index'])->name('index');
         Route::get('/search', [ManagementAccountSectionController::class, 'search'])->name('search');
         Route::get('/stats', [ManagementAccountSectionController::class, 'stats'])->name('stats');
         Route::get('/vouchers/{id}', [ManagementAccountSectionController::class, 'show'])->name('show');
-        Route::post('/vouchers/{voucher}/approve', [ManagementAccountSectionController::class, 'approve'])->name('approve');
+        Route::post('/vouchers/{voucher}/close', [ManagementAccountSectionController::class, 'close'])->name('close');
         Route::post('/vouchers/{voucher}/reject', [ManagementAccountSectionController::class, 'reject'])->name('reject');
+        Route::post('/vouchers/{voucher}/bank', [ManagementAccountSectionController::class, 'assignBank'])->name('bank');
+        Route::post('/vouchers/{voucher}/assign', [ManagementAccountSectionController::class, 'assign'])->name('assign');
+
+        // Assigned routes
+    Route::get('/assigned', [ManagementAccountSectionController::class, 'assignedIndex'])->name('assigned');
+    Route::get('/assigned/search', [ManagementAccountSectionController::class, 'searchAssigned'])->name('assigned.search');
+    Route::post('/assigned/{voucher}/close', [ManagementAccountSectionController::class, 'closeAssigned'])->name('assigned.close');
+    Route::post('/assigned/{voucher}/reject', [ManagementAccountSectionController::class, 'rejectAssigned'])->name('assigned.reject');
     });
+
+    // Also add bank activities endpoint if needed
+    Route::get('/management-account-section/bank-activities', [ManagementAccountSectionController::class, 'getBankActivities'])->name('management-account-section.bank-activities');
 
     Route::prefix('retirements')->name('retirements.')->group(function () {
         // Main retirement pages

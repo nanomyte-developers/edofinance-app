@@ -834,6 +834,201 @@ class ExpenditureControlController extends Controller
     /**
      * Search for vouchers (API endpoint for AJAX calls)
      */
+    // public function search(Request $request)
+    // {
+    //     try {
+    //         $perPage = (int) $request->input('per_page', 15);
+    //         $page = (int) $request->input('page', 1);
+    //         $search = $request->input('search', '');
+    //         $voucherType = $request->input('voucher_type', '');
+    //         $status = $request->input('status', '');
+    //         $paymentStatus = $request->input('payment_status', '');
+    //         $dateFrom = $request->input('date_from', '');
+    //         $dateTo = $request->input('date_to', '');
+            
+    //         // Check if the assigned_to_user_id column exists
+    //         $hasAssignment = Schema::hasColumn('vouchers', 'assigned_to_user_id');
+            
+    //         // Build query with conditional eager loading
+    //         $query = Voucher::with(['mda', 'bankActivity', 'items', 'creator', 'approvals']);
+            
+    //         // Only load assignedTo relationship if the column exists and relationship is defined
+    //         if ($hasAssignment && method_exists(Voucher::class, 'assignedTo')) {
+    //             $query->with('assignedTo');
+    //         }
+            
+    //         $query->where('status', 'forwarded')
+    //               ->where('is_final_accounts', 1)
+    //               ->orderBy('created_at', 'desc');
+            
+    //         // Apply search filter
+    //         if ($search) {
+    //             $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+    //             foreach ($words as $word) {
+    //                 $query->where(function ($q) use ($word) {
+    //                     $q->where('voucher_number', 'like', "%{$word}%")
+    //                       ->orWhere('narration', 'like', "%{$word}%")
+    //                       ->orWhere('payee_name', 'like', "%{$word}%")
+    //                       ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+    //                           $mdaQuery->where('name', 'like', "%{$word}%");
+    //                       });
+    //                 });
+    //             }
+    //         }
+            
+    //         // Apply voucher type filter
+    //         if ($voucherType) {
+    //             $query->where('voucher_type', $voucherType);
+    //         }
+            
+    //         // Apply status filter
+    //         if ($status) {
+    //             $query->where('status', $status);
+    //         }
+            
+    //         // Apply payment status filter
+    //         if ($paymentStatus) {
+    //             if ($paymentStatus === 'paid') {
+    //                 $query->where('status', 'closed')->whereNotNull('mas_approved_at');
+    //             } elseif ($paymentStatus === 'awaiting_mas') {
+    //                 $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
+    //             } elseif ($paymentStatus === 'awaiting_ag') {
+    //                 $query->where('status', 'ec_approved')->whereNull('ag_approved_at');
+    //             }
+    //         }
+            
+    //         // Apply date range filter
+    //         if ($dateFrom) {
+    //             $query->whereDate('voucher_date', '>=', $dateFrom);
+    //         }
+    //         if ($dateTo) {
+    //             $query->whereDate('voucher_date', '<=', $dateTo);
+    //         }
+            
+    //         $vouchers = $query->paginate($perPage, ['*'], 'page', $page);
+            
+    //         // Transform the data for the frontend
+    //         $transformedVouchers = $vouchers->map(function ($voucher) use ($hasAssignment) {
+    //             // Determine payment status
+    //             $paymentStatus = 'unknown';
+    //             if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
+    //                 $paymentStatus = 'paid';
+    //             } elseif ($voucher->status === 'ag_approved') {
+    //                 $paymentStatus = 'awaiting_mas';
+    //             } elseif ($voucher->status === 'ec_approved') {
+    //                 $paymentStatus = 'awaiting_ag';
+    //             }
+                
+    //             $data = [
+    //                 'id' => $voucher->id,
+    //                 'voucher_number' => $voucher->voucher_number,
+    //                 'voucher_date' => $voucher->voucher_date?->toDateString(),
+    //                 'narration' => $voucher->narration,
+    //                 'total_amount' => (float) $voucher->total_amount,
+    //                 'payee_name' => $voucher->payee_name,
+    //                 'status' => $voucher->status,
+    //                 'voucher_type' => $voucher->voucher_type,
+    //                 'created_at' => $voucher->created_at?->toDateTimeString(),
+    //                 'payment_status' => $paymentStatus,
+    //                 'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+    //                 'mda' => $voucher->mda ? [
+    //                     'id' => $voucher->mda->id,
+    //                     'name' => $voucher->mda->name,
+    //                     'code' => $voucher->mda->code,
+    //                 ] : null,
+    //                 'bank_activity' => $voucher->bankActivity ? [
+    //                     'id' => $voucher->bankActivity->id,
+    //                     'bank_name' => $voucher->bankActivity->bank_name,
+    //                     'account_number' => $voucher->bankActivity->account_number,
+    //                     'tag' => $voucher->bankActivity->tag,
+    //                 ] : null,
+    //                 'items' => $voucher->items->map(function ($item) {
+    //                     return [
+    //                         'id' => $item->id,
+    //                         'description' => $item->description,
+    //                         'quantity' => (float) $item->quantity,
+    //                         'unit_price' => (float) $item->unit_price,
+    //                         'sub_total' => (float) $item->sub_total,
+    //                     ];
+    //                 }),
+    //             ];
+                
+    //             // Only add assigned_to if the column exists and relationship is loaded
+    //             if ($hasAssignment && method_exists(Voucher::class, 'assignedTo') && $voucher->relationLoaded('assignedTo') && $voucher->assignedTo) {
+    //                 $data['assigned_to'] = [
+    //                     'id' => $voucher->assignedTo->id,
+    //                     'name' => $voucher->assignedTo->name,
+    //                 ];
+    //             } else {
+    //                 $data['assigned_to'] = null;
+    //             }
+                
+    //             return $data;
+    //         })->values()->toArray();
+            
+    //         // Get statistics
+    //         $stats = [
+    //             'pending_count' => Voucher::where('status', 'forwarded')->where('is_final_accounts', 1)->count(),
+    //             'approved_today' => Voucher::where('status', 'ec_approved')->whereDate('updated_at', today())->count(),
+    //             'rejected_today' => Voucher::where('status', 'sent_back')->whereDate('updated_at', today())->count(),
+    //             'total_processed' => Voucher::whereIn('status', ['ec_approved', 'ec_rejected'])->count(),
+    //             'paid_count' => Voucher::where('status', 'closed')->whereNotNull('mas_approved_at')->count(),
+    //             'pending_mas_count' => Voucher::where('status', 'ag_approved')->whereNull('mas_approved_at')->count(),
+    //             'pending_ag_count' => Voucher::where('status', 'ec_approved')->whereNull('ag_approved_at')->count(),
+    //             'total_amount_paid' => (float) Voucher::where('status', 'closed')->whereNotNull('mas_approved_at')->sum('total_amount'),
+    //             'total_amount_pending' => (float) Voucher::whereIn('status', ['ec_approved', 'ag_approved'])->sum('total_amount'),
+    //         ];
+            
+    //         // Get users for assignment - FIX: Use Spatie roles
+    //         $users = $this->getUsersForAssignment();
+            
+    //         return response()->json([
+    //             'success' => true,
+    //             'vouchers' => [
+    //                 'data' => $transformedVouchers,
+    //                 'total' => $vouchers->total(),
+    //                 'per_page' => $vouchers->perPage(),
+    //                 'current_page' => $vouchers->currentPage(),
+    //                 'last_page' => $vouchers->lastPage(),
+    //                 'from' => $vouchers->firstItem(),
+    //                 'to' => $vouchers->lastItem(),
+    //             ],
+    //             'stats' => $stats,
+    //             'users' => $users,
+    //         ]);
+            
+    //     } catch (\Exception $e) {
+    //         Log::error('Expenditure Control Search Error: ' . $e->getMessage(), [
+    //             'trace' => $e->getTraceAsString()
+    //         ]);
+            
+    //         return response()->json([
+    //             'success' => false,
+    //             'error' => $e->getMessage(),
+    //             'vouchers' => [
+    //                 'data' => [],
+    //                 'total' => 0,
+    //                 'per_page' => 15,
+    //                 'current_page' => 1,
+    //                 'last_page' => 1,
+    //                 'from' => 0,
+    //                 'to' => 0,
+    //             ],
+    //             'stats' => [
+    //                 'pending_count' => 0,
+    //                 'approved_today' => 0,
+    //                 'rejected_today' => 0,
+    //                 'total_processed' => 0,
+    //                 'paid_count' => 0,
+    //                 'pending_mas_count' => 0,
+    //                 'pending_ag_count' => 0,
+    //                 'total_amount_paid' => 0,
+    //                 'total_amount_pending' => 0,
+    //             ],
+    //             'users' => [],
+    //         ]);
+    //     }
+    // }
     public function search(Request $request)
     {
         try {
@@ -845,6 +1040,7 @@ class ExpenditureControlController extends Controller
             $paymentStatus = $request->input('payment_status', '');
             $dateFrom = $request->input('date_from', '');
             $dateTo = $request->input('date_to', '');
+            $tab = $request->input('tab', 'all'); // <-- ADD THIS LINE HERE
             
             // Check if the assigned_to_user_id column exists
             $hasAssignment = Schema::hasColumn('vouchers', 'assigned_to_user_id');
@@ -858,8 +1054,15 @@ class ExpenditureControlController extends Controller
             }
             
             $query->where('status', 'forwarded')
-                  ->where('is_final_accounts', 1)
-                  ->orderBy('created_at', 'desc');
+                ->where('is_final_accounts', 1)
+                ->orderBy('created_at', 'desc');
+            
+            // =============================================
+            // ADD THE TAB FILTER HERE - AFTER THE WHERE CLAUSES
+            // =============================================
+            if ($tab === 'liability') {
+                $query->whereDate('final_approved_at', today());
+            }
             
             // Apply search filter
             if ($search) {
@@ -867,11 +1070,11 @@ class ExpenditureControlController extends Controller
                 foreach ($words as $word) {
                     $query->where(function ($q) use ($word) {
                         $q->where('voucher_number', 'like', "%{$word}%")
-                          ->orWhere('narration', 'like', "%{$word}%")
-                          ->orWhere('payee_name', 'like', "%{$word}%")
-                          ->orWhereHas('mda', function ($mdaQuery) use ($word) {
-                              $mdaQuery->where('name', 'like', "%{$word}%");
-                          });
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
                     });
                 }
             }
@@ -923,6 +1126,7 @@ class ExpenditureControlController extends Controller
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
                     'voucher_date' => $voucher->voucher_date?->toDateString(),
+                    'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(), // <-- ADD THIS FOR LIABILITY CHECK
                     'narration' => $voucher->narration,
                     'total_amount' => (float) $voucher->total_amount,
                     'payee_name' => $voucher->payee_name,
@@ -977,6 +1181,13 @@ class ExpenditureControlController extends Controller
                 'pending_ag_count' => Voucher::where('status', 'ec_approved')->whereNull('ag_approved_at')->count(),
                 'total_amount_paid' => (float) Voucher::where('status', 'closed')->whereNotNull('mas_approved_at')->sum('total_amount'),
                 'total_amount_pending' => (float) Voucher::whereIn('status', ['ec_approved', 'ag_approved'])->sum('total_amount'),
+                // =============================================
+                // ADD LIABILITY COUNT TO STATS HERE
+                // =============================================
+                'liability_count' => Voucher::where('status', 'forwarded')
+                    ->where('is_final_accounts', 1)
+                    ->whereDate('final_approved_at', today())
+                    ->count(),
             ];
             
             // Get users for assignment - FIX: Use Spatie roles
@@ -1024,6 +1235,7 @@ class ExpenditureControlController extends Controller
                     'pending_ag_count' => 0,
                     'total_amount_paid' => 0,
                     'total_amount_pending' => 0,
+                    'liability_count' => 0, // <-- ADD THIS TO ERROR RESPONSE TOO
                 ],
                 'users' => [],
             ]);
@@ -3205,22 +3417,22 @@ class ExpenditureControlController extends Controller
                 'ag' => [
                     'role' => VoucherApproval::ROLE_AG,
                     'display' => 'Accountant General (AG)',
-                    'status' => 'ag_approved'
+                    'status' => 'ec_approved'
                 ],
                 'mas' => [
                     'role' => VoucherApproval::ROLE_MAS,
                     'display' => 'Management Account Section (MAS)',
-                    'status' => 'mas_approved'
+                    'status' => 'ec_approved'
                 ],
                 'inspectorate' => [
                     'role' => VoucherApproval::ROLE_INSPECTORATE,
                     'display' => 'Inspectorate',
-                    'status' => 'inspectorate_pending'
+                    'status' => 'ec_approved'
                 ],
                 'tco' => [
                     'role' => VoucherApproval::ROLE_TCO,
                     'display' => 'Treasury Cash Office (TCO)',
-                    'status' => 'tco_pending'
+                    'status' => 'ec_approved'
                 ],
             ];
 
@@ -3379,6 +3591,414 @@ class ExpenditureControlController extends Controller
             
             return redirect()->route('expenditure-control.index')
                 ->with('error', 'Failed to forward voucher: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Display assigned vouchers for staff (non-admin users)
+     * Shows only vouchers assigned to the current user
+     */
+    public function assignedIndex(Request $request)
+    {
+        try {
+            $perPage = $request->input('per_page', 15);
+            $search = $request->input('search', '');
+            $voucherType = $request->input('voucher_type', '');
+            $status = $request->input('status', '');
+            $paymentStatus = $request->input('payment_status', '');
+            $dateFrom = $request->input('date_from', '');
+            $dateTo = $request->input('date_to', '');
+            $tab = $request->input('tab', 'all');
+            
+            $userId = auth()->id();
+            
+            // Build query - only vouchers assigned to current user
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals'])
+                ->where('assigned_to_user_id', $userId)
+                ->where('is_final_accounts', 1)
+                ->orderBy('created_at', 'desc');
+            
+            // Apply tab filter
+            if ($tab === 'pending') {
+                $query->where('status', 'forwarded');
+            } elseif ($tab === 'approved') {
+                $query->where('status', 'ec_approved');
+            } elseif ($tab === 'rejected') {
+                $query->where('status', 'sent_back');
+            } elseif ($tab === 'forwarded') {
+                $query->where('status', 'forwarded')->whereNotNull('assigned_to_user_id');
+            }
+            
+            // Apply search filter
+            if ($search) {
+                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $query->where(function ($q) use ($word) {
+                        $q->where('voucher_number', 'like', "%{$word}%")
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
+                    });
+                }
+            }
+            
+            // Apply voucher type filter
+            if ($voucherType) {
+                $query->where('voucher_type', $voucherType);
+            }
+            
+            // Apply status filter
+            if ($status) {
+                $query->where('status', $status);
+            }
+            
+            // Apply payment status filter
+            if ($paymentStatus) {
+                if ($paymentStatus === 'paid') {
+                    $query->where('status', 'closed')->whereNotNull('mas_approved_at');
+                } elseif ($paymentStatus === 'awaiting_mas') {
+                    $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
+                } elseif ($paymentStatus === 'awaiting_ag') {
+                    $query->where('status', 'ec_approved')->whereNull('ag_approved_at');
+                }
+            }
+            
+            // Apply date range filter
+            if ($dateFrom) {
+                $query->whereDate('voucher_date', '>=', $dateFrom);
+            }
+            if ($dateTo) {
+                $query->whereDate('voucher_date', '<=', $dateTo);
+            }
+            
+            $vouchers = $query->paginate($perPage);
+            
+            // Transform the data for the frontend
+            $transformedVouchers = $vouchers->through(function ($voucher) {
+                // Get approval records for display
+                $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+                $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+                
+                // Determine payment status
+                $paymentStatus = 'unknown';
+                if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
+                    $paymentStatus = 'paid';
+                } elseif ($voucher->status === 'ag_approved') {
+                    $paymentStatus = 'awaiting_mas';
+                } elseif ($voucher->status === 'ec_approved') {
+                    $paymentStatus = 'awaiting_ag';
+                }
+                
+                return [
+                    'id' => $voucher->id,
+                    'voucher_number' => $voucher->voucher_number,
+                    'voucher_date' => $voucher->voucher_date?->toDateString(),
+                    'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(),
+                    'narration' => $voucher->narration,
+                    'total_amount' => (float) $voucher->total_amount,
+                    'payee_name' => $voucher->payee_name,
+                    'status' => $voucher->status,
+                    'voucher_type' => $voucher->voucher_type,
+                    'created_at' => $voucher->created_at?->toDateTimeString(),
+                    'payment_status' => $paymentStatus,
+                    'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
+                    ] : null,
+                    'bank_activity' => $voucher->bankActivity ? [
+                        'id' => $voucher->bankActivity->id,
+                        'bank_name' => $voucher->bankActivity->bank_name,
+                        'account_number' => $voucher->bankActivity->account_number,
+                        'tag' => $voucher->bankActivity->tag,
+                        'title' => $voucher->bankActivity->title,
+                    ] : null,
+                    'assigned_to' => $voucher->assignedTo ? [
+                        'id' => $voucher->assignedTo->id,
+                        'name' => $voucher->assignedTo->name,
+                    ] : null,
+                    'items' => $voucher->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'description' => $item->description,
+                            'quantity' => (float) $item->quantity,
+                            'unit_price' => (float) $item->unit_price,
+                            'sub_total' => (float) $item->sub_total,
+                            'programme_code' => $item->programme_code,
+                            'programme_name' => $item->programme_name,
+                        ];
+                    }),
+                    'available_destinations' => $this->getAvailableDestinations($voucher),
+                    'workflow' => $this->getVoucherWorkflow($voucher),
+                ];
+            });
+            
+            // Get statistics specific to assigned vouchers
+            $stats = [
+                'total_assigned' => Voucher::where('assigned_to_user_id', $userId)
+                    ->where('is_final_accounts', 1)
+                    ->count(),
+                'pending_review' => Voucher::where('assigned_to_user_id', $userId)
+                    ->where('status', 'forwarded')
+                    ->where('is_final_accounts', 1)
+                    ->count(),
+                'approved_count' => Voucher::where('assigned_to_user_id', $userId)
+                    ->where('status', 'ec_approved')
+                    ->where('is_final_accounts', 1)
+                    ->count(),
+                'rejected_count' => Voucher::where('assigned_to_user_id', $userId)
+                    ->where('status', 'sent_back')
+                    ->where('is_final_accounts', 1)
+                    ->count(),
+                'forwarded_count' => Voucher::where('assigned_to_user_id', $userId)
+                    ->where('status', 'forwarded')
+                    ->whereNotNull('assigned_to_user_id')
+                    ->where('is_final_accounts', 1)
+                    ->count(),
+                'total_amount' => (float) Voucher::where('assigned_to_user_id', $userId)
+                    ->where('is_final_accounts', 1)
+                    ->sum('total_amount'),
+            ];
+            
+            return Inertia::render('admin/expenditureControl/assigned', [
+                'vouchers' => [
+                    'data' => $transformedVouchers,
+                    'total' => $vouchers->total(),
+                    'per_page' => $vouchers->perPage(),
+                    'current_page' => $vouchers->currentPage(),
+                    'from' => $vouchers->firstItem(),
+                    'to' => $vouchers->lastItem(),
+                ],
+                'stats' => $stats,
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Assigned Index Error: ' . $e->getMessage());
+            return Inertia::render('admin/expenditureControl/assigned', [
+                'vouchers' => [
+                    'data' => [],
+                    'total' => 0,
+                    'per_page' => 15,
+                    'current_page' => 1,
+                    'from' => 0,
+                    'to' => 0,
+                ],
+                'stats' => [
+                    'total_assigned' => 0,
+                    'pending_review' => 0,
+                    'approved_count' => 0,
+                    'rejected_count' => 0,
+                    'forwarded_count' => 0,
+                    'total_amount' => 0,
+                ],
+            ]);
+        }
+    }
+
+    /**
+     * Search assigned vouchers (API endpoint for AJAX calls)
+     */
+    public function searchAssigned(Request $request)
+    {
+        try {
+            $perPage = (int) $request->input('per_page', 15);
+            $page = (int) $request->input('page', 1);
+            $search = $request->input('search', '');
+            $voucherType = $request->input('voucher_type', '');
+            $status = $request->input('status', '');
+            $paymentStatus = $request->input('payment_status', '');
+            $dateFrom = $request->input('date_from', '');
+            $dateTo = $request->input('date_to', '');
+            $tab = $request->input('tab', 'all');
+            
+            $userId = auth()->id();
+            
+            // Build query - only vouchers assigned to current user
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'creator', 'approvals'])
+                ->where('assigned_to_user_id', $userId)
+                ->where('is_final_accounts', 1)
+                ->orderBy('created_at', 'desc');
+            
+            // Apply tab filter
+            if ($tab === 'pending') {
+                $query->where('status', 'forwarded');
+            } elseif ($tab === 'approved') {
+                $query->where('status', 'ec_approved');
+            } elseif ($tab === 'rejected') {
+                $query->where('status', 'sent_back');
+            } elseif ($tab === 'forwarded') {
+                $query->where('status', 'forwarded')->whereNotNull('assigned_to_user_id');
+            }
+            
+            // Apply search filter
+            if ($search) {
+                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $query->where(function ($q) use ($word) {
+                        $q->where('voucher_number', 'like', "%{$word}%")
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
+                    });
+                }
+            }
+            
+            // Apply voucher type filter
+            if ($voucherType) {
+                $query->where('voucher_type', $voucherType);
+            }
+            
+            // Apply status filter
+            if ($status) {
+                $query->where('status', $status);
+            }
+            
+            // Apply payment status filter
+            if ($paymentStatus) {
+                if ($paymentStatus === 'paid') {
+                    $query->where('status', 'closed')->whereNotNull('mas_approved_at');
+                } elseif ($paymentStatus === 'awaiting_mas') {
+                    $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
+                } elseif ($paymentStatus === 'awaiting_ag') {
+                    $query->where('status', 'ec_approved')->whereNull('ag_approved_at');
+                }
+            }
+            
+            // Apply date range filter
+            if ($dateFrom) {
+                $query->whereDate('voucher_date', '>=', $dateFrom);
+            }
+            if ($dateTo) {
+                $query->whereDate('voucher_date', '<=', $dateTo);
+            }
+            
+            $vouchers = $query->paginate($perPage, ['*'], 'page', $page);
+            
+            // Transform the data for the frontend
+            $transformedVouchers = $vouchers->map(function ($voucher) {
+                // Determine payment status
+                $paymentStatus = 'unknown';
+                if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
+                    $paymentStatus = 'paid';
+                } elseif ($voucher->status === 'ag_approved') {
+                    $paymentStatus = 'awaiting_mas';
+                } elseif ($voucher->status === 'ec_approved') {
+                    $paymentStatus = 'awaiting_ag';
+                }
+                
+                return [
+                    'id' => $voucher->id,
+                    'voucher_number' => $voucher->voucher_number,
+                    'voucher_date' => $voucher->voucher_date?->toDateString(),
+                    'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(),
+                    'narration' => $voucher->narration,
+                    'total_amount' => (float) $voucher->total_amount,
+                    'payee_name' => $voucher->payee_name,
+                    'status' => $voucher->status,
+                    'voucher_type' => $voucher->voucher_type,
+                    'created_at' => $voucher->created_at?->toDateTimeString(),
+                    'payment_status' => $paymentStatus,
+                    'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
+                    ] : null,
+                    'bank_activity' => $voucher->bankActivity ? [
+                        'id' => $voucher->bankActivity->id,
+                        'bank_name' => $voucher->bankActivity->bank_name,
+                        'account_number' => $voucher->bankActivity->account_number,
+                        'tag' => $voucher->bankActivity->tag,
+                    ] : null,
+                    'assigned_to' => $voucher->assignedTo ? [
+                        'id' => $voucher->assignedTo->id,
+                        'name' => $voucher->assignedTo->name,
+                    ] : null,
+                    'items' => $voucher->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'description' => $item->description,
+                            'quantity' => (float) $item->quantity,
+                            'unit_price' => (float) $item->unit_price,
+                            'sub_total' => (float) $item->sub_total,
+                        ];
+                    }),
+                ];
+            })->values()->toArray();
+            
+            // Get statistics specific to assigned vouchers
+            $stats = [
+                'total_assigned' => Voucher::where('assigned_to_user_id', $userId)
+                    ->where('is_final_accounts', 1)
+                    ->count(),
+                'pending_review' => Voucher::where('assigned_to_user_id', $userId)
+                    ->where('status', 'forwarded')
+                    ->where('is_final_accounts', 1)
+                    ->count(),
+                'approved_count' => Voucher::where('assigned_to_user_id', $userId)
+                    ->where('status', 'ec_approved')
+                    ->where('is_final_accounts', 1)
+                    ->count(),
+                'rejected_count' => Voucher::where('assigned_to_user_id', $userId)
+                    ->where('status', 'sent_back')
+                    ->where('is_final_accounts', 1)
+                    ->count(),
+                'forwarded_count' => Voucher::where('assigned_to_user_id', $userId)
+                    ->where('status', 'forwarded')
+                    ->whereNotNull('assigned_to_user_id')
+                    ->where('is_final_accounts', 1)
+                    ->count(),
+                'total_amount' => (float) Voucher::where('assigned_to_user_id', $userId)
+                    ->where('is_final_accounts', 1)
+                    ->sum('total_amount'),
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'vouchers' => [
+                    'data' => $transformedVouchers,
+                    'total' => $vouchers->total(),
+                    'per_page' => $vouchers->perPage(),
+                    'current_page' => $vouchers->currentPage(),
+                    'last_page' => $vouchers->lastPage(),
+                    'from' => $vouchers->firstItem(),
+                    'to' => $vouchers->lastItem(),
+                ],
+                'stats' => $stats,
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Assigned Search Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'vouchers' => [
+                    'data' => [],
+                    'total' => 0,
+                    'per_page' => 15,
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'from' => 0,
+                    'to' => 0,
+                ],
+                'stats' => [
+                    'total_assigned' => 0,
+                    'pending_review' => 0,
+                    'approved_count' => 0,
+                    'rejected_count' => 0,
+                    'forwarded_count' => 0,
+                    'total_amount' => 0,
+                ],
+            ]);
         }
     }
 }

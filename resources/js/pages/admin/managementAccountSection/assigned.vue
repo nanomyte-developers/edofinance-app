@@ -1,4 +1,4 @@
-<!-- resources/js/pages/admin/management-account-section/index.vue -->
+<!-- resources/js/pages/admin/management-account-section/assigned.vue -->
 <script setup>
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
@@ -20,7 +20,6 @@ import Toast from 'primevue/toast';
 import ProgressSpinner from 'primevue/progressspinner';
 import Dropdown from 'primevue/dropdown';
 import Calendar from 'primevue/calendar';
-import RadioButton from 'primevue/radiobutton';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 import * as XLSX from 'xlsx';
@@ -43,23 +42,13 @@ const props = defineProps({
     stats: {
         type: Object,
         default: () => ({
-            pending_ag_count: 0,
-            pending_mas_count: 0,
-            closed_today: 0,
-            rejected_today: 0,
-            total_processed: 0,
-            total_amount_pending: 0,
-            total_amount_closed: 0,
-            liability_count: 0,
+            total_assigned: 0,
+            pending_review: 0,
+            closed_count: 0,
+            rejected_count: 0,
+            forwarded_count: 0,
+            total_amount: 0,
         }),
-    },
-    users: {
-        type: Array,
-        default: () => [],
-    },
-    bankActivities: {
-        type: Array,
-        default: () => [],
     },
 });
 
@@ -85,13 +74,12 @@ const showWorkflowModal = ref(false);
 const showDocumentViewer = ref(false);
 const showSuccessModal = ref(false);
 const showErrorModal = ref(false);
-const showAssignModal = ref(false);
-const showBankModal = ref(false);
-const showPaymentModal = ref(false);
 
 const currentVoucher = ref(null);
 const rejectionReason = ref('');
 const rejectionTouched = ref(false);
+const paymentReference = ref('');
+const paymentComment = ref('');
 const workflowHistory = ref([]);
 const documentUrl = ref('');
 const currentDocument = ref(null);
@@ -100,21 +88,15 @@ const successMessage = ref('');
 const successDetails = ref(null);
 const errorTitle = ref('');
 const errorMessage = ref('');
-const selectedUser = ref(null);
-const selectedBank = ref(null);
-const paymentReference = ref('');
-const paymentComment = ref('');
 
 // Stats
 const stats = ref({
-    pending_ag_count: 0,
-    pending_mas_count: 0,
-    closed_today: 0,
-    rejected_today: 0,
-    total_processed: 0,
-    total_amount_pending: 0,
-    total_amount_closed: 0,
-    liability_count: 0,
+    total_assigned: 0,
+    pending_review: 0,
+    closed_count: 0,
+    rejected_count: 0,
+    forwarded_count: 0,
+    total_amount: 0,
 });
 
 const filters = ref({
@@ -149,8 +131,7 @@ const voucherTypes = [
 
 const statusOptions = [
     { label: 'All Status', value: '' },
-    { label: 'Pending AG', value: 'ag_approved' },
-    { label: 'Pending MAS', value: 'ag_approved' },
+    { label: 'Pending Review', value: 'ag_approved' },
     { label: 'Closed', value: 'closed' },
     { label: 'Rejected', value: 'mas_rejected' },
 ];
@@ -164,29 +145,29 @@ const paymentStatusOptions = [
 // Stats cards data
 const statsData = computed(() => [
     {
-        title: 'Pending AG Review',
-        value: stats.value.pending_ag_count,
-        icon: 'pi pi-clock',
+        title: 'Total Assigned',
+        value: stats.value.total_assigned,
+        icon: 'pi pi-users',
         color: 'text-blue-500',
         bgColor: 'bg-blue-50',
     },
     {
-        title: 'Pending MAS Review',
-        value: stats.value.pending_mas_count,
-        icon: 'pi pi-hourglass',
+        title: 'Pending Review',
+        value: stats.value.pending_review,
+        icon: 'pi pi-clock',
         color: 'text-orange-500',
         bgColor: 'bg-orange-50',
     },
     {
-        title: 'Closed Today',
-        value: stats.value.closed_today,
+        title: 'Closed',
+        value: stats.value.closed_count,
         icon: 'pi pi-check-circle',
         color: 'text-green-500',
         bgColor: 'bg-green-50',
     },
     {
-        title: 'Rejected Today',
-        value: stats.value.rejected_today,
+        title: 'Rejected',
+        value: stats.value.rejected_count,
         icon: 'pi pi-times-circle',
         color: 'text-red-500',
         bgColor: 'bg-red-50',
@@ -195,32 +176,18 @@ const statsData = computed(() => [
 
 const financialStatsData = computed(() => [
     {
-        title: 'Total Amount Pending',
-        value: formatCurrency(stats.value.total_amount_pending),
-        icon: 'pi pi-clock',
-        color: 'text-orange-500',
-        bgColor: 'bg-orange-50',
-    },
-    {
-        title: 'Total Amount Closed',
-        value: formatCurrency(stats.value.total_amount_closed),
-        icon: 'pi pi-check-circle',
+        title: 'Total Amount Assigned',
+        value: formatCurrency(stats.value.total_amount),
+        icon: 'pi pi-money-bill',
         color: 'text-green-500',
         bgColor: 'bg-green-50',
     },
     {
-        title: 'Total Processed',
-        value: stats.value.total_processed,
-        icon: 'pi pi-chart-bar',
+        title: 'Forwarded',
+        value: stats.value.forwarded_count,
+        icon: 'pi pi-send',
         color: 'text-purple-500',
         bgColor: 'bg-purple-50',
-    },
-    {
-        title: 'Liability Vouchers',
-        value: stats.value.liability_count,
-        icon: 'pi pi-calendar',
-        color: 'text-yellow-500',
-        bgColor: 'bg-yellow-50',
     },
 ]);
 
@@ -242,7 +209,7 @@ const filteredCount = computed(() => {
 
 const breadcrumbs = [
     { title: 'Management Account Section', href: '/management-account-section' },
-    { title: 'Queue', href: '#' },
+    { title: 'Assigned Vouchers', href: '#' },
 ];
 
 // Format functions
@@ -358,7 +325,7 @@ const getPaymentStatusLabel = (status) => {
 
 // Check if voucher is ready for MAS approval (AG approved)
 const isReadyForApproval = (voucher) => {
-    return voucher.status?.toLowerCase() === 'ag_approved';
+    return voucher.status?.toLowerCase() === 'ag_approved' && !voucher.bank_activity;
 };
 
 // Load vouchers
@@ -390,7 +357,7 @@ const loadVouchers = async () => {
             }
         }
 
-        const response = await axios.get('/management-account-section/search', { params });
+        const response = await axios.get('/management-account-section/assigned/search', { params });
         
         if (response.data && response.data.success !== false) {
             const voucherData = response.data.vouchers;
@@ -399,14 +366,12 @@ const loadVouchers = async () => {
             
             if (response.data.stats) {
                 stats.value = {
-                    pending_ag_count: response.data.stats.pending_ag_count || 0,
-                    pending_mas_count: response.data.stats.pending_mas_count || 0,
-                    closed_today: response.data.stats.closed_today || 0,
-                    rejected_today: response.data.stats.rejected_today || 0,
-                    total_processed: response.data.stats.total_processed || 0,
-                    total_amount_pending: response.data.stats.total_amount_pending || 0,
-                    total_amount_closed: response.data.stats.total_amount_closed || 0,
-                    liability_count: response.data.stats.liability_count || 0,
+                    total_assigned: response.data.stats.total_assigned || 0,
+                    pending_review: response.data.stats.pending_review || 0,
+                    closed_count: response.data.stats.closed_count || 0,
+                    rejected_count: response.data.stats.rejected_count || 0,
+                    forwarded_count: response.data.stats.forwarded_count || 0,
+                    total_amount: response.data.stats.total_amount || 0,
                 };
             }
         } else {
@@ -414,7 +379,7 @@ const loadVouchers = async () => {
             totalRecords.value = 0;
         }
     } catch (error) {
-        console.error('Error loading vouchers:', error);
+        console.error('Error loading assigned vouchers:', error);
         toast.add({
             severity: "error",
             summary: "Error",
@@ -487,8 +452,8 @@ const exportToExcel = () => {
 
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'MAS_Vouchers');
-        XLSX.writeFile(wb, `MAS_Review_Vouchers_${new Date().toISOString().split('T')[0]}.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, 'MAS_Assigned_Vouchers');
+        XLSX.writeFile(wb, `MAS_Assigned_Vouchers_${new Date().toISOString().split('T')[0]}.xlsx`);
         
         toast.add({
             severity: 'success',
@@ -528,7 +493,7 @@ const exportToPDF = () => {
 
         doc.setFontSize(18);
         doc.setTextColor(33, 37, 41);
-        doc.text('MAS Review - Vouchers', pageWidth / 2, 15, { align: 'center' });
+        doc.text('MAS Assigned Vouchers', pageWidth / 2, 15, { align: 'center' });
         
         doc.setFontSize(10);
         doc.setTextColor(108, 117, 125);
@@ -584,7 +549,7 @@ const exportToPDF = () => {
             }
         });
 
-        doc.save(`MAS_Review_Vouchers_${new Date().toISOString().split('T')[0]}.pdf`);
+        doc.save(`MAS_Assigned_Vouchers_${new Date().toISOString().split('T')[0]}.pdf`);
         
         toast.add({
             severity: 'success',
@@ -608,8 +573,13 @@ const exportToPDF = () => {
 // Modal functions
 const openApproveModal = (voucher) => {
     if (!isReadyForApproval(voucher)) {
-        errorTitle.value = 'Cannot Close Voucher';
-        errorMessage.value = `This voucher has status "${getStatusDisplayName(voucher.status)}" and must be "Pending MAS Review" before you can close it.`;
+        if (!voucher.bank_activity) {
+            errorTitle.value = 'Cannot Close Voucher';
+            errorMessage.value = 'This voucher does not have a bank account assigned. Please assign a bank account first.';
+        } else {
+            errorTitle.value = 'Cannot Close Voucher';
+            errorMessage.value = `This voucher has status "${getStatusDisplayName(voucher.status)}" and must be "Pending MAS Review" before you can close it.`;
+        }
         showErrorModal.value = true;
         return;
     }
@@ -628,18 +598,6 @@ const openRejectModal = (voucher) => {
     rejectionReason.value = '';
     rejectionTouched.value = false;
     showRejectionModal.value = true;
-};
-
-const openAssignModal = (voucher) => {
-    currentVoucher.value = voucher;
-    selectedUser.value = null;
-    showAssignModal.value = true;
-};
-
-const openBankModal = (voucher) => {
-    currentVoucher.value = voucher;
-    selectedBank.value = voucher.bank_activity_id || null;
-    showBankModal.value = true;
 };
 
 const openWorkflowModal = async (voucher) => {
@@ -689,7 +647,7 @@ const closeDocumentViewer = () => {
 const handleApprove = () => {
     isProcessing.value = true;
 
-    router.post(`/management-account-section/vouchers/${currentVoucher.value.id}/close`, {}, {
+    router.post(`/management-account-section/assigned/${currentVoucher.value.id}/close`, {}, {
         preserveScroll: true,
         onSuccess: (response) => {
             showApprovalModal.value = false;
@@ -743,7 +701,7 @@ const handleReject = () => {
 
     isProcessing.value = true;
 
-    router.post(`/management-account-section/vouchers/${currentVoucher.value.id}/reject`, {
+    router.post(`/management-account-section/assigned/${currentVoucher.value.id}/reject`, {
         reason: rejectionReason.value,
     }, {
         preserveScroll: true,
@@ -785,176 +743,11 @@ const handleReject = () => {
     });
 };
 
-// Handle assign to user
-const handleAssign = () => {
-    if (!selectedUser.value) {
-        toast.add({
-            severity: 'warn',
-            summary: 'Required',
-            detail: 'Please select a staff member to assign this voucher.',
-            life: 3000,
-        });
-        return;
-    }
-
-    const userId = selectedUser.value.id || selectedUser.value;
-    
-    if (!userId) {
-        toast.add({
-            severity: 'warn',
-            summary: 'Error',
-            detail: 'Invalid user selection. Please try again.',
-            life: 3000,
-        });
-        return;
-    }
-
-    isProcessing.value = true;
-
-    router.post(`/management-account-section/vouchers/${currentVoucher.value.id}/assign`, {
-        user_id: userId,
-    }, {
-        preserveScroll: true,
-        onSuccess: () => {
-            showAssignModal.value = false;
-            isProcessing.value = false;
-            toast.add({
-                severity: 'success',
-                summary: 'Assigned',
-                detail: `Voucher ${currentVoucher.value.voucher_number} assigned to ${selectedUser.value.name || 'staff member'}.`,
-                life: 5000,
-            });
-            currentVoucher.value = null;
-            selectedUser.value = null;
-            loadVouchers();
-        },
-        onError: (errors) => {
-            isProcessing.value = false;
-            console.error('Assignment error:', errors);
-            toast.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: errors.response?.data?.message || errors.message || 'Failed to assign voucher.',
-                life: 5000,
-            });
-        },
-    });
-};
-
-// Handle bank selection
-// const handleBankSelect = () => {
-//     if (!selectedBank.value) {
-//         toast.add({
-//             severity: 'warn',
-//             summary: 'Required',
-//             detail: 'Please select a bank account.',
-//             life: 3000,
-//         });
-//         return;
-//     }
-
-//     isProcessing.value = true;
-
-//     router.post(`/management-account-section/vouchers/${currentVoucher.value.id}/bank`, {
-//         bank_activity_id: selectedBank.value,
-//     }, {
-//         preserveScroll: true,
-//         onSuccess: () => {
-//             showBankModal.value = false;
-//             isProcessing.value = false;
-//             toast.add({
-//                 severity: 'success',
-//                 summary: 'Bank Assigned',
-//                 detail: `Bank account assigned to voucher ${currentVoucher.value.voucher_number}.`,
-//                 life: 5000,
-//             });
-//             currentVoucher.value = null;
-//             selectedBank.value = null;
-//             loadVouchers();
-//         },
-//         onError: (errors) => {
-//             isProcessing.value = false;
-//             console.error('Bank selection error:', errors);
-//             toast.add({
-//                 severity: 'error',
-//                 summary: 'Error',
-//                 detail: errors.response?.data?.message || errors.message || 'Failed to assign bank.',
-//                 life: 5000,
-//             });
-//         },
-//     });
-// };
-
-// In management-account-section/index.vue
-// Fix the handleBankSelect function
-
-const handleBankSelect = () => {
-    // Check if bank is selected
-    if (!selectedBank.value) {
-        toast.add({
-            severity: 'warn',
-            summary: 'Required',
-            detail: 'Please select a bank account.',
-            life: 3000,
-        });
-        return;
-    }
-
-    // Get the bank ID - handle both object and direct ID
-    let bankId = selectedBank.value;
-    
-    // If it's an object, extract the id
-    if (typeof selectedBank.value === 'object' && selectedBank.value !== null) {
-        bankId = selectedBank.value.id || selectedBank.value.value;
-    }
-    
-    if (!bankId) {
-        toast.add({
-            severity: 'warn',
-            summary: 'Error',
-            detail: 'Invalid bank selection. Please try again.',
-            life: 3000,
-        });
-        return;
-    }
-
-    isProcessing.value = true;
-
-    router.post(`/management-account-section/vouchers/${currentVoucher.value.id}/bank`, {
-        bank_activity_id: bankId, // Send only the ID
-    }, {
-        preserveScroll: true,
-        onSuccess: () => {
-            showBankModal.value = false;
-            isProcessing.value = false;
-            toast.add({
-                severity: 'success',
-                summary: 'Bank Assigned',
-                detail: `Bank account assigned to voucher ${currentVoucher.value.voucher_number}.`,
-                life: 5000,
-            });
-            currentVoucher.value = null;
-            selectedBank.value = null;
-            loadVouchers();
-        },
-        onError: (errors) => {
-            isProcessing.value = false;
-            console.error('Bank selection error:', errors);
-            toast.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: errors.response?.data?.message || errors.message || 'Failed to assign bank.',
-                life: 5000,
-            });
-        },
-    });
-};
-
 // Close success modal and redirect
 const closeSuccessModal = () => {
     showSuccessModal.value = false;
     setTimeout(() => {
-        router.visit('/management-account-section');
+        router.visit('/management-account-section/assigned');
     }, 300);
 };
 
@@ -990,18 +783,6 @@ const closeApprovalModal = () => {
     currentVoucher.value = null;
 };
 
-const closeAssignModal = () => {
-    showAssignModal.value = false;
-    currentVoucher.value = null;
-    selectedUser.value = null;
-};
-
-const closeBankModal = () => {
-    showBankModal.value = false;
-    currentVoucher.value = null;
-    selectedBank.value = null;
-};
-
 const closeWorkflowModal = () => {
     showWorkflowModal.value = false;
     currentVoucher.value = null;
@@ -1021,14 +802,12 @@ watch([selectedVoucherType, selectedStatus, selectedPaymentStatus, dateRange, se
 onMounted(() => {
     if (props.stats) {
         stats.value = {
-            pending_ag_count: props.stats.pending_ag_count || 0,
-            pending_mas_count: props.stats.pending_mas_count || 0,
-            closed_today: props.stats.closed_today || 0,
-            rejected_today: props.stats.rejected_today || 0,
-            total_processed: props.stats.total_processed || 0,
-            total_amount_pending: props.stats.total_amount_pending || 0,
-            total_amount_closed: props.stats.total_amount_closed || 0,
-            liability_count: props.stats.liability_count || 0,
+            total_assigned: props.stats.total_assigned || 0,
+            pending_review: props.stats.pending_review || 0,
+            closed_count: props.stats.closed_count || 0,
+            rejected_count: props.stats.rejected_count || 0,
+            forwarded_count: props.stats.forwarded_count || 0,
+            total_amount: props.stats.total_amount || 0,
         };
     }
     
@@ -1043,19 +822,19 @@ onMounted(() => {
 
 <template>
     <AppLayout :breadcrumbs="breadcrumbs">
-        <Head title="Management Account Section" />
+        <Head title="MAS Assigned Vouchers" />
         <Toast />
 
         <!-- Workflow Info Banner -->
         <div class="mb-4">
-            <Message severity="success" :closable="false" class="workflow-banner">
+            <Message severity="info" :closable="false" class="workflow-banner">
                 <div class="flex align-items-center gap-3 flex-wrap">
-                    <i class="pi pi-flag-checkered text-xl"></i>
+                    <i class="pi pi-user text-xl"></i>
                     <div>
-                        <strong>Management Account Section (MAS) - Step 6 of 6 (Final Stage)</strong>
+                        <strong>MAS Assigned Vouchers</strong>
                         <div class="text-sm mt-1">
-                            Review vouchers approved by Accountant General (AG).
-                            Once closed, the voucher workflow is complete.
+                            These are vouchers assigned to you by Management Account Section Admin.
+                            You can review, close, or reject them.
                         </div>
                     </div>
                 </div>
@@ -1108,44 +887,18 @@ onMounted(() => {
             </div>
         </div>
 
-        <!-- PROMINENT LIABILITY AS AT BANNER -->
-        <div v-if="activeTab === 'liability'" class="mb-4">
-            <Message severity="warn" :closable="false" class="liability-banner">
-                <template #messageicon>
-                    <i class="pi pi-calendar text-2xl"></i>
-                </template>
-                <div class="flex align-items-center justify-content-between w-full flex-wrap">
-                    <div class="flex align-items-center gap-3">
-                        <div class="bg-orange-500 text-white font-bold px-4 py-2 border-round text-lg">
-                            LIABILITY AS AT {{ new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() }}
-                        </div>
-                        <div class="flex align-items-center gap-2">
-                            <Badge :value="`${stats.liability_count || 0} vouchers`" severity="warn" size="large" />
-                            <span class="text-sm text-600">
-                                <i class="pi pi-info-circle mr-1"></i>
-                                Vouchers approved by Final Accounts today
-                            </span>
-                        </div>
-                    </div>
-                    <div class="text-sm font-semibold text-orange-700">
-                        Total Liability: {{ formatCurrency(stats.total_amount_pending || 0) }}
-                    </div>
-                </div>
-            </Message>
-        </div>
-
         <!-- Tab Navigation -->
         <div class="mb-4">
             <div class="flex align-items-center gap-3 flex-wrap">
                 <Button
-                    :label="`All AG Vouchers (${stats.pending_ag_count || 0})`"
+                    :label="`All Assigned (${totalRecords || 0})`"
                     :severity="activeTab === 'all' ? 'primary' : 'secondary'"
                     :outlined="activeTab !== 'all'"
                     @click="switchTab('all')"
                     size="small"
                 />
                 <Button
-                    :label="`MAS Pending Review (${stats.pending_mas_count || 0})`"
+                    :label="`Pending Review (${stats.pending_review || 0})`"
                     :severity="activeTab === 'pending' ? 'primary' : 'secondary'"
                     :outlined="activeTab !== 'pending'"
                     @click="switchTab('pending')"
@@ -1156,18 +909,7 @@ onMounted(() => {
                     </template>
                 </Button>
                 <Button
-                    :label="`Today's Liability (${stats.liability_count || 0})`"
-                    :severity="activeTab === 'liability' ? 'primary' : 'secondary'"
-                    :outlined="activeTab !== 'liability'"
-                    @click="switchTab('liability')"
-                    size="small"
-                >
-                    <template #icon>
-                        <i class="pi pi-calendar"></i>
-                    </template>
-                </Button>
-                <Button
-                    :label="`Closed (${stats.closed_today || 0})`"
+                    :label="`Closed (${stats.closed_count || 0})`"
                     :severity="activeTab === 'closed' ? 'primary' : 'secondary'"
                     :outlined="activeTab !== 'closed'"
                     @click="switchTab('closed')"
@@ -1175,6 +917,17 @@ onMounted(() => {
                 >
                     <template #icon>
                         <i class="pi pi-check-circle"></i>
+                    </template>
+                </Button>
+                <Button
+                    :label="`Rejected (${stats.rejected_count || 0})`"
+                    :severity="activeTab === 'rejected' ? 'primary' : 'secondary'"
+                    :outlined="activeTab !== 'rejected'"
+                    @click="switchTab('rejected')"
+                    size="small"
+                >
+                    <template #icon>
+                        <i class="pi pi-times-circle"></i>
                     </template>
                 </Button>
             </div>
@@ -1186,9 +939,8 @@ onMounted(() => {
                 <div class="flex align-items-center justify-content-between flex-wrap gap-3">
                     <div class="flex align-items-center gap-2">
                         <i class="pi pi-list text-primary"></i>
-                        <span>{{ activeTab === 'liability' ? 'Liability Vouchers' : activeTab === 'pending' ? 'MAS Pending Review' : activeTab === 'closed' ? 'Closed Vouchers' : 'All AG Vouchers' }}</span>
+                        <span>MAS Assigned Vouchers</span>
                         <Badge :value="totalRecords" severity="info" />
-                        <Tag v-if="activeTab === 'liability'" value="Today's Liabilities" severity="warning" size="small" />
                     </div>
                     <div class="flex gap-2 flex-wrap">
                         <Button 
@@ -1309,10 +1061,6 @@ onMounted(() => {
                             <i class="pi pi-info-circle mr-1"></i>
                             {{ totalRecords }} record(s) found
                         </span>
-                        <span v-if="activeTab === 'liability'" class="text-sm text-orange-500 font-medium">
-                            <i class="pi pi-calendar mr-1"></i>
-                            Showing only vouchers approved by Final Accounts today ({{ new Date().toLocaleDateString() }})
-                        </span>
                     </div>
                 </div>
 
@@ -1323,7 +1071,7 @@ onMounted(() => {
                     stripedRows
                     responsiveLayout="scroll"
                     class="p-datatable-sm"
-                    :emptyMessage="activeTab === 'pending' ? 'No vouchers pending MAS review.' : activeTab === 'liability' ? 'No liability vouchers found.' : activeTab === 'closed' ? 'No closed vouchers found.' : 'No vouchers found.'"
+                    :emptyMessage="activeTab === 'pending' ? 'No pending vouchers assigned to you.' : activeTab === 'closed' ? 'No closed vouchers.' : activeTab === 'rejected' ? 'No rejected vouchers.' : 'No vouchers assigned to you.'"
                     :paginator="true"
                     :rowsPerPageOptions="[5, 10, 20, 50, 100]"
                     :loading="loading"
@@ -1414,9 +1162,8 @@ onMounted(() => {
                             <div v-if="slotProps.data.bank_activity">
                                 <div class="font-medium">{{ slotProps.data.bank_activity.bank_name }}</div>
                                 <div class="text-500 text-xs">{{ slotProps.data.bank_activity.account_number }}</div>
-                                <div class="text-500 text-xs">{{ slotProps.data.bank_activity.tag }}</div>
                             </div>
-                            <span v-else class="text-500">Not Assigned</span>
+                            <span v-else class="text-500 text-red-500 font-medium">Not Assigned</span>
                         </template>
                     </Column>
 
@@ -1442,25 +1189,11 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- Liability Badge -->
-                    <Column header="Liability" headerStyle="width: 6%">
-                        <template #body="slotProps">
-                            <Tag 
-                                v-if="isLiabilityVoucher(slotProps.data)"
-                                value="Today" 
-                                severity="warning" 
-                                size="small"
-                                icon="pi pi-calendar"
-                            />
-                            <span v-else class="text-500 text-sm">-</span>
-                        </template>
-                    </Column>
-
-                    <!-- Actions - 4 buttons in row 1, 2 buttons in row 2 -->
-                    <Column header="Actions" headerStyle="width: 14%" bodyClass="text-center">
+                    <!-- Actions - 3 up, 3 down layout (NO ASSIGN BUTTON) -->
+                    <Column header="Actions" headerStyle="width: 12%" bodyClass="text-center">
                         <template #body="slotProps">
                             <div class="flex flex-column gap-1 align-items-center">
-                                <!-- Row 1: 4 buttons -->
+                                <!-- Row 1: 3 buttons -->
                                 <div class="flex gap-1 justify-content-center">
                                     <Button
                                         icon="pi pi-print"
@@ -1489,20 +1222,11 @@ onMounted(() => {
                                         v-tooltip.top="'View Workflow'"
                                         @click="openWorkflowModal(slotProps.data)"
                                     />
-                                    <Button
-                                        icon="pi pi-user-plus"
-                                        severity="primary"
-                                        text
-                                        rounded
-                                        size="small"
-                                        v-tooltip.top="'Assign to Staff'"
-                                        @click="openAssignModal(slotProps.data)"
-                                    />
                                 </div>
-                                <!-- Row 2: 3 buttons -->
+                                <!-- Row 2: 3 buttons (No Assign button) -->
                                 <div class="flex gap-1 justify-content-center">
                                     <Button
-                                        v-if="slotProps.data.status === 'ag_approved'"
+                                        v-if="slotProps.data.status === 'ag_approved' && slotProps.data.bank_activity"
                                         icon="pi pi-check-circle"
                                         severity="success"
                                         text
@@ -1510,6 +1234,16 @@ onMounted(() => {
                                         size="small"
                                         v-tooltip.top="'Close Voucher'"
                                         @click="openApproveModal(slotProps.data)"
+                                    />
+                                    <Button
+                                        v-else-if="slotProps.data.status === 'ag_approved' && !slotProps.data.bank_activity"
+                                        icon="pi pi-check-circle"
+                                        severity="warning"
+                                        text
+                                        rounded
+                                        size="small"
+                                        disabled
+                                        v-tooltip.top="'Bank not assigned'"
                                     />
                                     <Button
                                         v-else
@@ -1541,26 +1275,8 @@ onMounted(() => {
                                         disabled
                                         v-tooltip.top="'Cannot reject'"
                                     />
-                                    <Button
-                                        v-if="!slotProps.data.bank_activity"
-                                        icon="pi pi-building"
-                                        severity="info"
-                                        text
-                                        rounded
-                                        size="small"
-                                        v-tooltip.top="'Select Bank'"
-                                        @click="openBankModal(slotProps.data)"
-                                    />
-                                    <Button
-                                        v-else
-                                        icon="pi pi-building"
-                                        severity="info"
-                                        text
-                                        rounded
-                                        size="small"
-                                        disabled
-                                        v-tooltip.top="'Bank Already Assigned'"
-                                    />
+                                    <!-- Placeholder for alignment - empty space where assign button would be -->
+                                    <div style="width: 2rem;"></div>
                                 </div>
                             </div>
                         </template>
@@ -1665,7 +1381,7 @@ onMounted(() => {
                 <div v-else class="border-round bg-red-50 p-3">
                     <div class="flex align-items-center gap-2">
                         <i class="pi pi-exclamation-triangle text-red-600"></i>
-                        <span class="text-sm">No bank assigned. Please assign a bank before closing.</span>
+                        <span class="text-sm">No bank assigned. Please contact MAS Admin to assign a bank.</span>
                     </div>
                 </div>
 
@@ -1799,205 +1515,6 @@ onMounted(() => {
             </template>
         </Dialog>
 
-        <!-- Assign to Staff Modal -->
-        <Dialog
-            v-model:visible="showAssignModal"
-            :style="{ width: '500px' }"
-            header="Assign Voucher to Staff"
-            :modal="true"
-            class="assign-dialog"
-            :closable="!isProcessing"
-            @hide="closeAssignModal"
-        >
-            <div class="flex flex-column gap-3">
-                <div class="flex align-items-center gap-3 p-3 bg-primary-50 border-round">
-                    <i class="pi pi-user-plus text-primary-500 text-xl"></i>
-                    <div>
-                        <div class="font-semibold">Voucher: {{ currentVoucher?.voucher_number }}</div>
-                        <div class="text-sm">Amount: {{ formatCurrency(currentVoucher?.total_amount) }}</div>
-                        <div class="text-sm">Type: {{ currentVoucher?.voucher_type?.toUpperCase() }}</div>
-                    </div>
-                </div>
-
-                <div class="field">
-                    <label class="font-semibold block mb-2">
-                        Select Staff <span class="text-red-500">*</span>
-                    </label>
-                    <Dropdown
-                        v-model="selectedUser"
-                        :options="users"
-                        optionLabel="name"
-                        placeholder="Search and select a staff member..."
-                        class="w-full"
-                        :showClear="true"
-                        :filter="true"
-                        filterPlaceholder="Search by name or email..."
-                        :virtualScroll="true"
-                        :virtualScrollItemSize="50"
-                    >
-                        <template #option="slotProps">
-                            <div class="flex flex-column">
-                                <span class="font-medium">{{ slotProps.option.name }}</span>
-                                <span class="text-500 text-xs">{{ slotProps.option.email }}</span>
-                            </div>
-                        </template>
-                        <template #emptyfilter>
-                            <div class="p-3 text-center text-500">
-                                <i class="pi pi-search text-2xl block mb-2"></i>
-                                <span>No staff members found matching your search.</span>
-                            </div>
-                        </template>
-                        <template #empty>
-                            <div class="p-3 text-center text-500">
-                                <i class="pi pi-users text-2xl block mb-2"></i>
-                                <span>No staff members available for assignment.</span>
-                            </div>
-                        </template>
-                    </Dropdown>
-                    <small class="text-500 mt-1 block">
-                        <i class="pi pi-info-circle mr-1"></i>
-                        Type to search by name or email
-                    </small>
-                </div>
-
-                <!-- Selected User Preview -->
-                <div v-if="selectedUser" class="border-round bg-green-50 p-3">
-                    <div class="flex align-items-center gap-2">
-                        <i class="pi pi-check-circle text-green-600"></i>
-                        <div>
-                            <span class="text-sm font-semibold">Selected Staff:</span>
-                            <span class="text-sm ml-2">{{ selectedUser.name }}</span>
-                            <span class="text-500 text-xs ml-2">({{ selectedUser.email }})</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="border-round bg-blue-50 p-3">
-                    <div class="flex align-items-center gap-2">
-                        <i class="pi pi-info-circle text-blue-600"></i>
-                        <span class="text-sm">This will assign the voucher to the selected staff member for action.</span>
-                    </div>
-                </div>
-
-                <div v-if="isProcessing" class="flex align-items-center justify-content-center gap-2 p-2">
-                    <ProgressSpinner style="width: 30px; height: 30px" strokeWidth="4" />
-                    <span>Processing...</span>
-                </div>
-            </div>
-
-            <template #footer>
-                <Button label="Cancel" icon="pi pi-times" @click="closeAssignModal" text :disabled="isProcessing" />
-                <Button 
-                    label="Assign" 
-                    icon="pi pi-user-plus" 
-                    severity="primary" 
-                    @click="handleAssign" 
-                    :loading="isProcessing"
-                    :disabled="!selectedUser || isProcessing"
-                />
-            </template>
-        </Dialog>
-
-        <!-- Bank Selection Modal -->
-        
-
-        <!-- In the Bank Modal template -->
-        <Dialog
-            v-model:visible="showBankModal"
-            :style="{ width: '550px' }"
-            header="Select Bank Account"
-            :modal="true"
-            class="bank-dialog"
-            :closable="!isProcessing"
-            @hide="closeBankModal"
-        >
-            <div class="flex flex-column gap-3">
-                <div class="flex align-items-center gap-3 p-3 bg-blue-50 border-round">
-                    <i class="pi pi-building text-blue-500 text-xl"></i>
-                    <div>
-                        <div class="font-semibold">Voucher: {{ currentVoucher?.voucher_number }}</div>
-                        <div class="text-sm">Amount: {{ formatCurrency(currentVoucher?.total_amount) }}</div>
-                        <div class="text-sm">Type: {{ currentVoucher?.voucher_type?.toUpperCase() }}</div>
-                    </div>
-                </div>
-
-                <div class="field">
-                    <label class="font-semibold block mb-2">
-                        Select Bank Account <span class="text-red-500">*</span>
-                    </label>
-                    <Dropdown
-                        v-model="selectedBank"
-                        :options="bankActivities"
-                        optionLabel="label"
-                        placeholder="Search and select a bank account..."
-                        class="w-full"
-                        :showClear="true"
-                        :filter="true"
-                        filterPlaceholder="Search by bank name, account number, or tag..."
-                    >
-                        <template #option="slotProps">
-                            <div class="flex flex-column">
-                                <span class="font-medium">{{ slotProps.option.bank_name }}</span>
-                                <span class="text-500 text-xs">Account: {{ slotProps.option.account_number }} | Tag: {{ slotProps.option.tag }}</span>
-                            </div>
-                        </template>
-                        <template #emptyfilter>
-                            <div class="p-3 text-center text-500">
-                                <i class="pi pi-search text-2xl block mb-2"></i>
-                                <span>No bank accounts found matching your search.</span>
-                            </div>
-                        </template>
-                        <template #empty>
-                            <div class="p-3 text-center text-500">
-                                <i class="pi pi-building text-2xl block mb-2"></i>
-                                <span>No bank accounts available.</span>
-                            </div>
-                        </template>
-                    </Dropdown>
-                    <small class="text-500 mt-1 block">
-                        <i class="pi pi-info-circle mr-1"></i>
-                        Select the bank account where this payment should be made.
-                    </small>
-                </div>
-
-                <!-- Selected Bank Preview -->
-                <div v-if="selectedBank && typeof selectedBank === 'object'" class="border-round bg-green-50 p-3">
-                    <div class="flex align-items-center gap-2">
-                        <i class="pi pi-check-circle text-green-600"></i>
-                        <div>
-                            <span class="text-sm font-semibold">Selected Bank:</span>
-                            <span class="text-sm ml-2">{{ selectedBank.bank_name }}</span>
-                            <span class="text-500 text-xs ml-2">({{ selectedBank.account_number }} - {{ selectedBank.tag }})</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="border-round bg-yellow-50 p-3">
-                    <div class="flex align-items-center gap-2">
-                        <i class="pi pi-info-circle text-yellow-600"></i>
-                        <span class="text-sm">This bank account will be assigned to this voucher for payment processing.</span>
-                    </div>
-                </div>
-
-                <div v-if="isProcessing" class="flex align-items-center justify-content-center gap-2 p-2">
-                    <ProgressSpinner style="width: 30px; height: 30px" strokeWidth="4" />
-                    <span>Processing...</span>
-                </div>
-            </div>
-
-            <template #footer>
-                <Button label="Cancel" icon="pi pi-times" @click="closeBankModal" text :disabled="isProcessing" />
-                <Button 
-                    label="Assign Bank" 
-                    icon="pi pi-building" 
-                    severity="info" 
-                    @click="handleBankSelect" 
-                    :loading="isProcessing"
-                    :disabled="!selectedBank || isProcessing"
-                />
-            </template>
-        </Dialog>
-
         <!-- Workflow Timeline Modal -->
         <Dialog
             v-model:visible="showWorkflowModal"
@@ -2118,22 +1635,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Liability Banner - PROMINENT */
-.liability-banner :deep(.p-message) {
-    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
-    border: 3px solid #f97316;
-    border-radius: 0.75rem;
-    padding: 1rem 1.5rem;
-}
-
-.liability-banner :deep(.p-message-icon) {
-    color: #f97316;
-}
-
-.liability-banner :deep(.p-message-text) {
-    width: 100%;
-}
-
 /* Stat Cards */
 .stat-card :deep(.p-card) {
     border-radius: 1rem;
@@ -2154,7 +1655,7 @@ onMounted(() => {
 }
 
 .workflow-banner :deep(.p-message) {
-    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+    background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
     border: none;
     border-radius: 0.75rem;
 }
@@ -2201,12 +1702,11 @@ onMounted(() => {
     margin-left: 1rem;
 }
 
+/* Dialogs */
 .approval-dialog :deep(.p-dialog-header),
 .rejection-dialog :deep(.p-dialog-header),
 .error-dialog :deep(.p-dialog-header),
-.success-dialog :deep(.p-dialog-header),
-.assign-dialog :deep(.p-dialog-header),
-.bank-dialog :deep(.p-dialog-header) {
+.success-dialog :deep(.p-dialog-header) {
     background: #f8fafc;
     border-bottom: 1px solid #e2e8f0;
 }

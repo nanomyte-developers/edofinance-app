@@ -17,6 +17,7 @@ import Textarea from 'primevue/textarea';
 import Timeline from 'primevue/timeline';
 import Toast from 'primevue/toast';
 import ProgressSpinner from 'primevue/progressspinner';
+import RadioButton from 'primevue/radiobutton';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 
@@ -39,6 +40,8 @@ const successMessage = ref('');
 const successTitle = ref('');
 const successDetails = ref(null);
 const isProcessing = ref(false);
+const selectedDestination = ref('');
+const forwardComment = ref('');
 
 // Props from Laravel controller
 const props = defineProps({
@@ -47,6 +50,14 @@ const props = defineProps({
         required: true,
     },
 });
+
+// Destination options
+const destinationOptions = [
+    { label: 'Accountant General (AG)', value: 'ag', icon: 'pi pi-user' },
+    { label: 'Management Account Section (MAS)', value: 'mas', icon: 'pi pi-money-bill' },
+    { label: 'Inspectorate', value: 'inspectorate', icon: 'pi pi-search' },
+    { label: 'Treasury Cash Office (TCO)', value: 'tco', icon: 'pi pi-building' },
+];
 
 const breadcrumbs = [
     { title: 'Expenditure Control', href: '/expenditure-control' },
@@ -91,6 +102,10 @@ const getVoucherTypeSeverity = (type) => {
         standard: 'info',
         prepayment: 'warning',
         salary: 'success',
+        capital: 'danger',
+        recurrent: 'info',
+        gratuity: 'warning',
+        pension: 'secondary',
     };
     return types[type?.toLowerCase()] || 'info';
 };
@@ -101,6 +116,11 @@ const getStatusSeverity = (status) => {
         forwarded: 'warning',
         ec_approved: 'success',
         sent_back: 'danger',
+        rejected: 'danger',
+        approved: 'success',
+        paid: 'success',
+        awaiting_mas: 'warning',
+        awaiting_ag: 'info',
     };
     return statuses[status?.toLowerCase()] || 'info';
 };
@@ -111,8 +131,19 @@ const getStatusDisplayName = (status) => {
         forwarded: 'Forwarded from FA',
         ec_approved: 'EC Approved',
         sent_back: 'Sent Back',
+        rejected: 'Rejected',
+        approved: 'Approved',
+        paid: 'Paid',
+        awaiting_mas: 'Pending MAS',
+        awaiting_ag: 'Pending AG',
     };
     return names[status?.toLowerCase()] || status || 'Unknown';
+};
+
+// Get destination label
+const getDestinationLabel = (value) => {
+    const option = destinationOptions.find(d => d.value === value);
+    return option ? option.label : value;
 };
 
 // Check if voucher is ready for EC approval
@@ -128,6 +159,8 @@ const openApproveModal = () => {
         showErrorModal.value = true;
         return;
     }
+    selectedDestination.value = '';
+    forwardComment.value = '';
     showApprovalModal.value = true;
 };
 
@@ -146,20 +179,43 @@ const openRejectModal = () => {
 
 // Handle approval
 const handleApprove = () => {
+    // Validate destination selection
+    if (!selectedDestination.value) {
+        toast.add({
+            severity: 'warn',
+            summary: 'Required',
+            detail: 'Please select a destination for this voucher.',
+            life: 3000,
+        });
+        return;
+    }
+
     isProcessing.value = true;
     
-    router.post(`/expenditure-control/vouchers/${props.voucher.id}/approve`, {}, {
+    const destinationMap = {
+        'ag': 'Accountant General (AG)',
+        'mas': 'Management Account Section (MAS)',
+        'inspectorate': 'Inspectorate',
+        'tco': 'Treasury Cash Office (TCO)'
+    };
+
+    const destinationName = destinationMap[selectedDestination.value] || selectedDestination.value;
+
+    router.post(`/expenditure-control/vouchers/${props.voucher.id}/forward`, {
+        destination: selectedDestination.value,
+        comment: forwardComment.value || `Forwarded to ${destinationName}`,
+    }, {
         preserveScroll: true,
         onSuccess: (response) => {
             showApprovalModal.value = false;
             isProcessing.value = false;
             
-            successTitle.value = 'Voucher Approved & Forwarded!';
-            successMessage.value = response.message || `Voucher has been successfully forwarded to Accountant General.`;
+            successTitle.value = 'Voucher Forwarded Successfully!';
+            successMessage.value = response.message || `Voucher has been successfully forwarded to ${destinationName}.`;
             successDetails.value = {
                 voucher_number: props.voucher.voucher_number,
                 amount: formatCurrency(props.voucher.total_amount),
-                forwarded_to: 'Accountant General (AG)',
+                forwarded_to: destinationName,
                 status: 'EC Approved',
                 approved_at: new Date().toLocaleString()
             };
@@ -167,21 +223,21 @@ const handleApprove = () => {
         },
         onError: (errors) => {
             isProcessing.value = false;
-            console.error('Approval error:', errors);
+            console.error('Forward error:', errors);
             
             if (errors.response?.data?.message) {
-                errorTitle.value = 'Approval Failed';
+                errorTitle.value = 'Forward Failed';
                 errorMessage.value = errors.response.data.message;
                 showErrorModal.value = true;
             } else if (errors.message) {
-                errorTitle.value = 'Approval Failed';
+                errorTitle.value = 'Forward Failed';
                 errorMessage.value = errors.message;
                 showErrorModal.value = true;
             } else {
                 toast.add({
                     severity: 'error',
                     summary: 'Error',
-                    detail: 'Failed to process voucher approval.',
+                    detail: 'Failed to forward voucher.',
                     life: 5000,
                 });
             }
@@ -380,7 +436,7 @@ onMounted(() => {
                         <strong>Expenditure Control (EC) - Step 4 of 6</strong>
                         <div class="text-sm mt-1">
                             Reviewing voucher <strong>{{ voucher.voucher_number }}</strong>. 
-                            Once approved, this voucher will go to <strong>Accountant General (AG)</strong> for further review.
+                            Select where to forward this voucher after approval.
                         </div>
                     </div>
                 </div>
@@ -450,7 +506,7 @@ onMounted(() => {
                                 </div>
                             </div>
 
-                            <!-- Bank Information Display - NEW -->
+                            <!-- Bank Information Display -->
                             <div class="col-12">
                                 <div class="field mb-3">
                                     <label class="text-500 text-sm font-semibold block mb-1">Destination Bank</label>
@@ -617,11 +673,6 @@ onMounted(() => {
                             </div>
                             <Divider />
                             <div class="flex justify-content-between align-items-center">
-                                <span class="text-500">Next Stage:</span>
-                                <Tag value="Accountant General (AG)" severity="info" icon="pi pi-arrow-right" />
-                            </div>
-                            <Divider />
-                            <div class="flex justify-content-between align-items-center">
                                 <span class="text-500">Payment Bank:</span>
                                 <div v-if="voucher.bank_activity">
                                     <Tag :value="voucher.bank_activity.bank_name" severity="info" size="small" />
@@ -776,11 +827,11 @@ onMounted(() => {
             </template>
         </Dialog>
 
-        <!-- Approval Modal -->
+        <!-- Approval Modal - WITH RADIO BUTTONS FOR DESTINATION -->
         <Dialog
             v-model:visible="showApprovalModal"
-            :style="{ width: '500px' }"
-            header="Expenditure Control Approval"
+            :style="{ width: '550px' }"
+            header="Forward Voucher to Destination"
             :modal="true"
             class="approval-dialog"
             :closable="!isProcessing"
@@ -814,14 +865,57 @@ onMounted(() => {
                     </div>
                 </div>
 
+                <!-- SELECT DESTINATION - RADIO BUTTONS -->
+                <div class="field">
+                    <label class="font-semibold block mb-2">
+                        Select Destination <span class="text-red-500">*</span>
+                    </label>
+                    <div class="flex flex-column gap-2">
+                        <div 
+                            v-for="option in destinationOptions" 
+                            :key="option.value" 
+                            class="flex align-items-center p-2 border-round hover:bg-gray-50 cursor-pointer" 
+                            @click="selectedDestination = option.value"
+                        >
+                            <RadioButton
+                                :value="option.value"
+                                v-model="selectedDestination"
+                                :id="'dest-' + option.value"
+                            />
+                            <label :for="'dest-' + option.value" class="ml-2 flex align-items-center gap-2 cursor-pointer">
+                                <i :class="[option.icon, 'text-primary']"></i>
+                                {{ option.label }}
+                            </label>
+                        </div>
+                    </div>
+                    <small class="text-500 mt-1 block">
+                        <i class="pi pi-info-circle mr-1"></i>
+                        Choose where you want this voucher to be forwarded
+                    </small>
+                </div>
+
+                <!-- Comment Field -->
+                <div class="field">
+                    <label class="font-semibold block mb-2">
+                        Comment (Optional)
+                    </label>
+                    <Textarea
+                        v-model="forwardComment"
+                        rows="2"
+                        placeholder="Add any additional notes about this forwarding..."
+                        class="w-full"
+                        autoResize
+                    />
+                </div>
+
                 <div class="border-round bg-yellow-50 p-3">
                     <div class="flex align-items-center gap-2 mb-2">
                         <i class="pi pi-arrow-right text-yellow-600"></i>
                         <span class="font-semibold">Next Stage:</span>
-                        <Tag value="Accountant General (AG)" severity="info" />
+                        <Tag :value="selectedDestination ? getDestinationLabel(selectedDestination) : 'Select a destination'" severity="info" />
                     </div>
                     <div class="text-sm text-600">
-                        This voucher will be forwarded to the Accountant General for further processing.
+                        This voucher will be forwarded to the selected destination for further processing.
                         <strong>Action cannot be undone.</strong>
                     </div>
                 </div>
@@ -842,7 +936,14 @@ onMounted(() => {
 
             <template #footer>
                 <Button label="Cancel" icon="pi pi-times" @click="showApprovalModal = false" text :disabled="isProcessing" />
-                <Button label="Approve & Forward" icon="pi pi-send" severity="success" @click="handleApprove" :loading="isProcessing" />
+                <Button 
+                    label="Forward" 
+                    icon="pi pi-send" 
+                    severity="success" 
+                    @click="handleApprove" 
+                    :loading="isProcessing"
+                    :disabled="!selectedDestination || isProcessing"
+                />
             </template>
         </Dialog>
 
