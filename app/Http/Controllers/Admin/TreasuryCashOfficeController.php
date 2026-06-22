@@ -1,5 +1,5 @@
 <?php
-// app/Http/Controllers/Admin/ManagementAccountSectionController.php
+// app/Http/Controllers/Admin/TreasuryCashOfficeController.php
 
 namespace App\Http\Controllers\Admin;
 
@@ -14,12 +14,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
-class ManagementAccountSectionController extends Controller
+class TreasuryCashOfficeController extends Controller
 {
     protected $activityLogger;
 
-    // Voucher types that go through AG → MAS flow
-    const MAS_VOUCHER_TYPES = ['capital', 'recurrent', 'gratuity', 'standard'];
+    // Voucher types that go through TCO (Salary and Pension)
+    const TCO_VOUCHER_TYPES = ['salary', 'pension'];
 
     public function __construct(ActivityLogger $activityLogger)
     {
@@ -27,7 +27,8 @@ class ManagementAccountSectionController extends Controller
     }
 
     /**
-     * Display list of vouchers for Management Account Section review
+     * Display list of vouchers for Treasury Cash Office review
+     * Only Salary and Pension vouchers go to TCO (after Inspectorate)
      */
     public function index(Request $request)
     {
@@ -42,44 +43,22 @@ class ManagementAccountSectionController extends Controller
             $tab = $request->input('tab', 'all');
 
             $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals', 'assignedTo'])
-                ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                 ->orderBy('created_at', 'desc');
 
-            // // Tab filtering
-            // if ($tab === 'all') {
-            //     // Show all vouchers approved by AG (status ag_approved) AND those already closed
-            //     $query->whereIn('status', ['ag_approved', 'closed']);
-            // } elseif ($tab === 'pending') {
-            //     // Pending MAS review (AG approved, not yet closed)
-            //     $query->where('status', 'ag_approved')->whereNotNull('ag_approved_at');
-            // } elseif ($tab === 'liability') {
-            //     // Liability vouchers (approved by FA today)
-            //     $query->whereIn('status', ['ag_approved', 'closed'])
-            //         ->whereDate('ag_approved_at', today());
-            // } elseif ($tab === 'closed') {
-            //     // Closed vouchers
-            //     $query->where('status', 'closed')->whereNotNull('mas_approved_at');
-            // }
-
-            // =============================================
-            // FIXED TAB FILTERING - Replace your existing tab filtering block
-            // =============================================
             // Tab filtering
             if ($tab === 'all') {
-                // Show all vouchers that have reached MAS (AG approved or closed)
-                $query->whereIn('status', ['ag_approved', 'closed']);
+                // Show all vouchers approved by Inspectorate
+                $query->where('status', 'inspectorate_approved');
             } elseif ($tab === 'pending') {
-                // Pending MAS review (AG approved, not yet closed)
-                // This shows vouchers approved by AG but not yet closed by MAS
-                $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
-            } elseif ($tab === 'liability') {
-                // Liability vouchers - approved by AG today (ag_approved_at = today)
-                // These should also appear in the pending tab if not closed
-                $query->whereIn('status', ['ag_approved', 'closed'])
-                    ->whereDate('ag_approved_at', today());
-            } elseif ($tab === 'closed') {
-                // Closed vouchers
-                $query->where('status', 'closed')->whereNotNull('mas_approved_at');
+                // Pending TCO review (Inspectorate approved, not yet paid)
+                $query->where('status', 'inspectorate_approved')->whereNull('tco_approved_at');
+            } elseif ($tab === 'approved') {
+                // TCO approved today (paid)
+                $query->where('status', 'closed')->whereDate('tco_approved_at', today());
+            } elseif ($tab === 'rejected') {
+                // TCO rejected
+                $query->where('status', 'tco_rejected');
             }
 
             // Apply search filter
@@ -110,9 +89,9 @@ class ManagementAccountSectionController extends Controller
             // Apply payment status filter
             if ($paymentStatus) {
                 if ($paymentStatus === 'paid') {
-                    $query->where('status', 'closed')->whereNotNull('mas_approved_at');
-                } elseif ($paymentStatus === 'awaiting_mas') {
-                    $query->where('status', 'ag_approved')->whereNotNull('ag_approved_at');
+                    $query->where('status', 'closed')->whereNotNull('tco_approved_at');
+                } elseif ($paymentStatus === 'awaiting_tco') {
+                    $query->where('status', 'inspectorate_approved')->whereNull('tco_approved_at');
                 }
             }
 
@@ -130,15 +109,15 @@ class ManagementAccountSectionController extends Controller
                 // Get approval records
                 $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
                 $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
-                $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
-                $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+                $inspectorateApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_INSPECTORATE)->first();
+                $tcoApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_TCO)->first();
 
                 // Determine payment status
                 $paymentStatus = 'unknown';
-                if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
+                if ($voucher->status === 'closed' && $voucher->tco_approved_at) {
                     $paymentStatus = 'paid';
-                } elseif ($voucher->status === 'ag_approved') {
-                    $paymentStatus = 'awaiting_mas';
+                } elseif ($voucher->status === 'inspectorate_approved') {
+                    $paymentStatus = 'awaiting_tco';
                 }
 
                 return [
@@ -147,8 +126,8 @@ class ManagementAccountSectionController extends Controller
                     'voucher_date' => $voucher->voucher_date?->toDateString(),
                     'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(),
                     'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
-                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
-                    'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                    'i_approved_at' => $inspectorateApproval?->approved_at?->toDateTimeString(),
+                    'tco_approved_at' => $tcoApproval?->approved_at?->toDateTimeString(),
                     'narration' => $voucher->narration,
                     'total_amount' => (float) $voucher->total_amount,
                     'payee_name' => $voucher->payee_name,
@@ -187,110 +166,34 @@ class ManagementAccountSectionController extends Controller
                 ];
             });
 
-            // =============================================
-            // FIXED STATISTICS
-            // =============================================
-            // $stats = [
-            //     // All vouchers approved by AG (including those already closed)
-            //     'pending_ag_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'ag_approved')
-            //         ->count(),
-                
-            //     // Vouchers pending MAS review (AG approved but not closed)
-            //     'pending_mas_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'ag_approved')
-            //         // ->whereNull('mas_approved_at')
-            //         ->count(),
-                
-            //     // Vouchers closed today
-            //     'closed_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'closed')
-            //         ->whereDate('mas_approved_at', today())
-            //         ->count(),
-                
-            //     // Vouchers rejected by MAS today
-            //     'rejected_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'mas_rejected')
-            //         // ->whereDate('rejected_at', today())
-            //         ->count(),
-                
-            //     // Total processed (closed + rejected by MAS)
-            //     'total_processed' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->whereIn('status', ['closed', 'mas_rejected'])
-            //         ->count(),
-                
-            //     // Total amount pending MAS review
-            //     'total_amount_pending' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'ag_approved')
-            //         // ->whereNull('mas_approved_at')
-            //         ->sum('total_amount'),
-                
-            //     // Total amount closed
-            //     'total_amount_closed' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'closed')
-            //         ->sum('total_amount'),
-                
-            //     // Liability count - vouchers approved by FA today (liability as at current day)
-            //     // These are vouchers where final_approved_at is today, regardless of current status
-            //     'liability_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->whereDate('ag_approved_at', today())
-            //         ->count(),
-            // ];
-
-            // =============================================
-            // FIXED STATISTICS - Replace your stats array
-            // =============================================
+            // Get statistics
             $stats = [
-                // All vouchers approved by AG (including those already closed)
-                'pending_ag_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'ag_approved')
+                'pending_inspectorate_count' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
                     ->count(),
-                
-                // Vouchers pending MAS review (AG approved but not closed)
-                'pending_mas_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'ag_approved')
-                    ->whereNull('mas_approved_at')
+                'pending_tco_count' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
+                    ->whereNull('tco_approved_at')
                     ->count(),
-                
-                // Vouchers closed today
-                'closed_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                'approved_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
-                    ->whereDate('mas_approved_at', today())
+                    ->whereDate('tco_approved_at', today())
                     ->count(),
-                
-                // Vouchers rejected by MAS today
-                'rejected_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'mas_rejected')
-                    // ->whereDate('rejected_at', today())
+                'rejected_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'tco_rejected')
+                    ->whereDate('rejected_at', today())
                     ->count(),
-                
-                // Total processed (closed + rejected by MAS)
-                'total_processed' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->whereIn('status', ['closed', 'mas_rejected'])
+                'total_processed' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->whereIn('status', ['closed', 'tco_rejected'])
                     ->count(),
-                
-                // Total amount pending MAS review
-                'total_amount_pending' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'ag_approved')
-                    ->whereNull('mas_approved_at')
+                'total_amount_pending' => (float) Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
+                    ->whereNull('tco_approved_at')
                     ->sum('total_amount'),
-                
-                // Total amount closed
-                'total_amount_closed' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                'total_amount_paid' => (float) Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
                     ->sum('total_amount'),
-                
-                // Liability count - vouchers approved by AG today (ag_approved_at = today)
-                // These are vouchers that became liabilities when AG approved them today
-                'liability_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->whereDate('ag_approved_at', today())
-                    ->count(),
             ];
-
-            // Get users for assignment
-            $users = User::whereHas('roles', function ($query) {
-                $query->whereIn('name', ['staff', 'MAS Staff', 'admin']);
-            })->get(['id', 'name', 'email']);
 
             // Get bank activities
             $bankActivities = BankActivity::orderBy('bank_name')->get()->map(function ($bank) {
@@ -304,7 +207,12 @@ class ManagementAccountSectionController extends Controller
                 ];
             });
 
-            return Inertia::render('admin/managementAccountSection/index', [
+            // Get users for assignment
+            $users = User::whereHas('roles', function ($query) {
+                $query->whereIn('name', ['staff', 'TCO Staff', 'admin', 'TCO Admin']);
+            })->get(['id', 'name', 'email']);
+
+            return Inertia::render('admin/treasuryCashOffice/index', [
                 'vouchers' => [
                     'data' => $transformedVouchers,
                     'total' => $vouchers->total(),
@@ -319,8 +227,8 @@ class ManagementAccountSectionController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('MAS Index Error: ' . $e->getMessage());
-            return Inertia::render('admin/managementAccountSection/index', [
+            Log::error('TCO Index Error: ' . $e->getMessage());
+            return Inertia::render('admin/treasuryCashOffice/index', [
                 'vouchers' => [
                     'data' => [],
                     'total' => 0,
@@ -330,17 +238,15 @@ class ManagementAccountSectionController extends Controller
                     'to' => 0,
                 ],
                 'stats' => [
-                    'pending_ag_count' => 0,
-                    'pending_mas_count' => 0,
-                    'closed_today' => 0,
+                    'pending_inspectorate_count' => 0,
+                    'pending_tco_count' => 0,
+                    'approved_today' => 0,
                     'rejected_today' => 0,
                     'total_processed' => 0,
                     'total_amount_pending' => 0,
-                    'total_amount_closed' => 0,
-                    'liability_count' => 0,
+                    'total_amount_paid' => 0,
                 ],
                 'users' => [],
-                'bankActivities' => [],
             ]);
         }
     }
@@ -362,34 +268,18 @@ class ManagementAccountSectionController extends Controller
             $tab = $request->input('tab', 'all');
 
             $query = Voucher::with(['mda', 'bankActivity', 'items', 'creator', 'approvals', 'assignedTo'])
-                ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                 ->orderBy('created_at', 'desc');
 
             // Tab filtering
-            // if ($tab === 'all') {
-            //     $query->whereIn('status', ['ag_approved', 'closed']);
-            // } elseif ($tab === 'pending') {
-            //     $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
-            // } elseif ($tab === 'liability') {
-            //     $query->whereIn('status', ['ag_approved', 'closed'])
-            //         ->whereDate('final_approved_at', today());
-            // } elseif ($tab === 'closed') {
-            //     $query->where('status', 'closed')->whereNotNull('mas_approved_at');
-            // }
-
-            // =============================================
-            // FIXED SEARCH TAB FILTERING - Replace your search tab filtering
-            // =============================================
-            // Tab filtering
             if ($tab === 'all') {
-                $query->whereIn('status', ['ag_approved', 'closed']);
+                $query->where('status', 'inspectorate_approved');
             } elseif ($tab === 'pending') {
-                $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
-            } elseif ($tab === 'liability') {
-                $query->whereIn('status', ['ag_approved', 'closed'])
-                    ->whereDate('ag_approved_at', today());
-            } elseif ($tab === 'closed') {
-                $query->where('status', 'closed')->whereNotNull('mas_approved_at');
+                $query->where('status', 'inspectorate_approved')->whereNull('tco_approved_at');
+            } elseif ($tab === 'approved') {
+                $query->where('status', 'closed')->whereDate('tco_approved_at', today());
+            } elseif ($tab === 'rejected') {
+                $query->where('status', 'tco_rejected');
             }
 
             // Apply search filter
@@ -420,9 +310,9 @@ class ManagementAccountSectionController extends Controller
             // Apply payment status filter
             if ($paymentStatus) {
                 if ($paymentStatus === 'paid') {
-                    $query->where('status', 'closed')->whereNotNull('mas_approved_at');
-                } elseif ($paymentStatus === 'awaiting_mas') {
-                    $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
+                    $query->where('status', 'closed')->whereNotNull('tco_approved_at');
+                } elseif ($paymentStatus === 'awaiting_tco') {
+                    $query->where('status', 'inspectorate_approved')->whereNull('tco_approved_at');
                 }
             }
 
@@ -440,15 +330,15 @@ class ManagementAccountSectionController extends Controller
                 // Get approval records
                 $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
                 $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
-                $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
-                $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+                $inspectorateApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_INSPECTORATE)->first();
+                $tcoApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_TCO)->first();
 
                 // Determine payment status
                 $paymentStatus = 'unknown';
-                if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
+                if ($voucher->status === 'closed' && $voucher->tco_approved_at) {
                     $paymentStatus = 'paid';
-                } elseif ($voucher->status === 'ag_approved') {
-                    $paymentStatus = 'awaiting_mas';
+                } elseif ($voucher->status === 'inspectorate_approved') {
+                    $paymentStatus = 'awaiting_tco';
                 }
 
                 return [
@@ -457,8 +347,8 @@ class ManagementAccountSectionController extends Controller
                     'voucher_date' => $voucher->voucher_date?->toDateString(),
                     'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(),
                     'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
-                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
-                    'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                    'i_approved_at' => $inspectorateApproval?->approved_at?->toDateTimeString(),
+                    'tco_approved_at' => $tcoApproval?->approved_at?->toDateTimeString(),
                     'narration' => $voucher->narration,
                     'total_amount' => (float) $voucher->total_amount,
                     'payee_name' => $voucher->payee_name,
@@ -493,73 +383,39 @@ class ManagementAccountSectionController extends Controller
                 ];
             })->values()->toArray();
 
-            // =============================================
-            // FIXED STATISTICS FOR SEARCH
-            // =============================================
-            // $stats = [
-            //     'pending_ag_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'ag_approved')
-            //         ->count(),
-            //     'pending_mas_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'ag_approved')
-            //         ->whereNull('mas_approved_at')
-            //         ->count(),
-            //     'closed_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'closed')
-            //         ->whereDate('mas_approved_at', today())
-            //         ->count(),
-            //     'rejected_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'mas_rejected')
-            //         // ->whereDate('rejected_at', today())
-            //         ->count(),
-            //     'total_processed' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->whereIn('status', ['closed', 'mas_rejected'])
-            //         ->count(),
-            //     'total_amount_pending' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'ag_approved')
-            //         ->whereNull('mas_approved_at')
-            //         ->sum('total_amount'),
-            //     'total_amount_closed' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'closed')
-            //         ->sum('total_amount'),
-            //     'liability_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->whereDate('final_approved_at', today())
-            //         ->count(),
-            // ];
-
-            // =============================================
-            // FIXED SEARCH STATISTICS - Replace your search stats
-            // =============================================
+            // Get statistics
             $stats = [
-                'pending_ag_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'ag_approved')
+                'pending_inspectorate_count' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
                     ->count(),
-                'pending_mas_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'ag_approved')
-                    ->whereNull('mas_approved_at')
+                'pending_tco_count' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
+                    ->whereNull('tco_approved_at')
                     ->count(),
-                'closed_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                'approved_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
-                    ->whereDate('mas_approved_at', today())
+                    ->whereDate('tco_approved_at', today())
                     ->count(),
-                'rejected_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'mas_rejected')
-                    // ->whereDate('rejected_at', today())
+                'rejected_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'tco_rejected')
+                    ->whereDate('rejected_at', today())
                     ->count(),
-                'total_processed' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->whereIn('status', ['closed', 'mas_rejected'])
+                'total_processed' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->whereIn('status', ['closed', 'tco_rejected'])
                     ->count(),
-                'total_amount_pending' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'ag_approved')
-                    ->whereNull('mas_approved_at')
+                'total_amount_pending' => (float) Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
+                    ->whereNull('tco_approved_at')
                     ->sum('total_amount'),
-                'total_amount_closed' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                'total_amount_paid' => (float) Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
                     ->sum('total_amount'),
-                'liability_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->whereDate('ag_approved_at', today())
-                    ->count(),
             ];
+
+            // Get users for assignment
+            $users = User::whereHas('roles', function ($query) {
+                $query->whereIn('name', ['staff', 'TCO Staff', 'admin', 'TCO Admin']);
+            })->get(['id', 'name', 'email']);
 
             return response()->json([
                 'success' => true,
@@ -573,10 +429,11 @@ class ManagementAccountSectionController extends Controller
                     'to' => $vouchers->lastItem(),
                 ],
                 'stats' => $stats,
+                'users' => $users,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('MAS Search Error: ' . $e->getMessage(), [
+            Log::error('TCO Search Error: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
             ]);
 
@@ -593,203 +450,25 @@ class ManagementAccountSectionController extends Controller
                     'to' => 0,
                 ],
                 'stats' => [
-                    'pending_ag_count' => 0,
-                    'pending_mas_count' => 0,
-                    'closed_today' => 0,
+                    'pending_inspectorate_count' => 0,
+                    'pending_tco_count' => 0,
+                    'approved_today' => 0,
                     'rejected_today' => 0,
                     'total_processed' => 0,
                     'total_amount_pending' => 0,
-                    'total_amount_closed' => 0,
-                    'liability_count' => 0,
+                    'total_amount_paid' => 0,
                 ],
+                'users' => [],
             ]);
         }
     }
-
-    /**
-     * Close voucher from Management Account Section (Final Stage)
-     */
-    public function close(Voucher $voucher, Request $request)
-    {
-        Log::info('MAS Close Request:', [
-            'voucher_id' => $voucher->id,
-            'voucher_number' => $voucher->voucher_number,
-            'voucher_type' => $voucher->voucher_type,
-            'user_id' => auth()->id(),
-        ]);
-
-        // Check if voucher type should go to MAS
-        if (!in_array($voucher->voucher_type, self::MAS_VOUCHER_TYPES)) {
-            return redirect()->route('management-account-section.index')
-                ->with('error', "Voucher type '{$voucher->voucher_type}' does not go through MAS.");
-        }
-
-        DB::beginTransaction();
-
-        try {
-            // Check if voucher is in correct state
-            if ($voucher->status !== 'ag_approved') {
-                DB::rollBack();
-                return redirect()->route('management-account-section.index')
-                    ->with('error', "Voucher {$voucher->voucher_number} must be approved by AG first. Current status: " . ($voucher->status ?? 'unknown'));
-            }
-
-            // Check if bank is assigned
-            if (!$voucher->bank_activity_id) {
-                DB::rollBack();
-                return redirect()->route('management-account-section.index')
-                    ->with('error', "Voucher {$voucher->voucher_number} must have a bank account assigned before closing.");
-            }
-
-            // Get the current maximum approval step
-            $maxStep = $voucher->approvals()->max('approval_step') ?? 0;
-            $masStep = $maxStep + 1;
-
-            // Create MAS approval record
-            VoucherApproval::create([
-                'voucher_id' => $voucher->id,
-                'user_id' => auth()->id(),
-                'approval_role' => VoucherApproval::ROLE_MAS,
-                'approval_step' => $masStep,
-                'approval_level' => $masStep,
-                'action' => VoucherApproval::ACTION_APPROVED,
-                'status' => VoucherApproval::STATUS_APPROVED,
-                'comment' => $request->input('comment', 'Voucher closed by Management Account Section'),
-                'action_at' => now(),
-                'approved_at' => now(),
-            ]);
-
-            // Update voucher status to closed
-            $voucher->update([
-                'status' => 'closed',
-                'mas_approved_by' => auth()->id(),
-                'mas_approved_at' => now(),
-                'closed_at' => now(),
-                'closed_by' => auth()->id(),
-            ]);
-
-            // Log activity
-            if ($this->activityLogger) {
-                $this->activityLogger->log(
-                    "Management Account Section closed voucher {$voucher->voucher_number}",
-                    [
-                        'voucher_id' => $voucher->id,
-                        'voucher_number' => $voucher->voucher_number,
-                        'voucher_type' => $voucher->voucher_type,
-                        'mas_step' => $masStep,
-                        'closed_by' => auth()->id(),
-                    ],
-                    'voucher'
-                );
-            }
-
-            DB::commit();
-
-            Log::info('MAS Close Successful:', [
-                'voucher_id' => $voucher->id,
-                'voucher_number' => $voucher->voucher_number,
-                'voucher_type' => $voucher->voucher_type,
-            ]);
-
-            return redirect()->route('management-account-section.index')
-                ->with('success', "Voucher {$voucher->voucher_number} has been closed successfully.");
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('MAS Close Failed:', [
-                'voucher_id' => $voucher->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return redirect()->route('management-account-section.index')
-                ->with('error', 'Failed to close voucher: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Assign bank account to voucher
-     */
-    // public function assignBank(Voucher $voucher, Request $request)
-    // {
-    //     Log::info('MAS Assign Bank Request:', [
-    //         'voucher_id' => $voucher->id,
-    //         'voucher_number' => $voucher->voucher_number,
-    //         'bank_activity_id' => $request->input('bank_activity_id'),
-    //         'user_id' => auth()->id(),
-    //     ]);
-
-    //     DB::beginTransaction();
-
-    //     try {
-    //         $bankActivityId = $request->input('bank_activity_id');
-
-    //         if (!$bankActivityId) {
-    //             DB::rollBack();
-    //             return redirect()->route('management-account-section.index')
-    //                 ->with('error', 'Please select a bank account.');
-    //         }
-
-    //         // Check if bank exists
-    //         $bank = BankActivity::find($bankActivityId);
-    //         if (!$bank) {
-    //             DB::rollBack();
-    //             return redirect()->route('management-account-section.index')
-    //                 ->with('error', 'Selected bank account not found.');
-    //         }
-
-    //         // Update voucher with bank
-    //         $voucher->update([
-    //             'bank_activity_id' => $bankActivityId,
-    //             // 'bank_assigned_by' => auth()->id(),
-    //             // 'bank_assigned_at' => now(),
-    //         ]);
-
-    //         // Log activity
-    //         if ($this->activityLogger) {
-    //             $this->activityLogger->log(
-    //                 "Bank account assigned to voucher {$voucher->voucher_number}",
-    //                 [
-    //                     'voucher_id' => $voucher->id,
-    //                     'voucher_number' => $voucher->voucher_number,
-    //                     'bank_name' => $bank->bank_name,
-    //                     'bank_account' => $bank->account_number,
-    //                     'assigned_by' => auth()->id(),
-    //                 ],
-    //                 'voucher'
-    //             );
-    //         }
-
-    //         DB::commit();
-
-    //         Log::info('MAS Assign Bank Successful:', [
-    //             'voucher_id' => $voucher->id,
-    //             'voucher_number' => $voucher->voucher_number,
-    //             'bank_activity_id' => $bankActivityId,
-    //         ]);
-
-    //         return redirect()->route('management-account-section.index')
-    //             ->with('success', "Bank account assigned to voucher {$voucher->voucher_number} successfully.");
-
-    //     } catch (\Exception $e) {
-    //         DB::rollBack();
-    //         Log::error('MAS Assign Bank Failed:', [
-    //             'voucher_id' => $voucher->id,
-    //             'error' => $e->getMessage(),
-    //             'trace' => $e->getTraceAsString()
-    //         ]);
-
-    //         return redirect()->route('management-account-section.index')
-    //             ->with('error', 'Failed to assign bank: ' . $e->getMessage());
-    //     }
-    // }
 
     /**
      * Assign bank account to voucher
      */
     public function assignBank(Voucher $voucher, Request $request)
     {
-        Log::info('MAS Assign Bank Request:', [
+        Log::info('TCO Assign Bank Request:', [
             'voucher_id' => $voucher->id,
             'voucher_number' => $voucher->voucher_number,
             'bank_activity_id' => $request->input('bank_activity_id'),
@@ -810,7 +489,7 @@ class ManagementAccountSectionController extends Controller
 
             if (!$bankActivityId) {
                 DB::rollBack();
-                return redirect()->route('management-account-section.index')
+                return redirect()->route('treasury-cash-office.index')
                     ->with('error', 'Please select a bank account.');
             }
 
@@ -818,7 +497,7 @@ class ManagementAccountSectionController extends Controller
             $bank = BankActivity::find($bankActivityId);
             if (!$bank) {
                 DB::rollBack();
-                return redirect()->route('management-account-section.index')
+                return redirect()->route('treasury-cash-office.index')
                     ->with('error', 'Selected bank account not found.');
             }
 
@@ -846,61 +525,127 @@ class ManagementAccountSectionController extends Controller
 
             DB::commit();
 
-            Log::info('MAS Assign Bank Successful:', [
+            Log::info('TCO Assign Bank Successful:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
                 'bank_activity_id' => $bankActivityId,
             ]);
 
-            return redirect()->route('management-account-section.index')
+            return redirect()->route('treasury-cash-office.index')
                 ->with('success', "Bank account assigned to voucher {$voucher->voucher_number} successfully.");
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('MAS Assign Bank Failed:', [
+            Log::error('TCO Assign Bank Failed:', [
                 'voucher_id' => $voucher->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
-            return redirect()->route('management-account-section.index')
+            return redirect()->route('treasury-cash-office.index')
                 ->with('error', 'Failed to assign bank: ' . $e->getMessage());
         }
     }
 
     /**
-     * Assign voucher to staff member
+     * Assign voucher to a staff member
      */
     public function assign(Voucher $voucher, Request $request)
     {
-        Log::info('MAS Assign to Staff Request:', [
+        Log::info('TCO Assign Request:', [
             'voucher_id' => $voucher->id,
             'voucher_number' => $voucher->voucher_number,
-            'user_id' => $request->input('user_id'),
+            'voucher_type' => $voucher->voucher_type,
+            'user_id' => auth()->id(),
+            'assign_to_user_id' => $request->input('user_id'),
         ]);
+
+        // Check if voucher type should go to TCO
+        if (!in_array($voucher->voucher_type, self::TCO_VOUCHER_TYPES)) {
+            return redirect()->route('treasury-cash-office.index')
+                ->with('error', "Voucher type '{$voucher->voucher_type}' does not go to TCO.");
+        }
 
         DB::beginTransaction();
 
         try {
             $userId = $request->input('user_id');
 
-            if (!$userId) {
+            if (empty($userId)) {
+                Log::warning('CHECK FAILED: User ID is required');
                 DB::rollBack();
-                return redirect()->route('management-account-section.index')
-                    ->with('error', 'Please select a staff member.');
+                return redirect()->route('treasury-cash-office.index')
+                    ->with('error', 'Please select a staff member to assign this voucher.');
             }
 
+            // Check if user exists
             $user = User::find($userId);
             if (!$user) {
+                Log::warning('CHECK FAILED: User not found', ['user_id' => $userId]);
                 DB::rollBack();
-                return redirect()->route('management-account-section.index')
+                return redirect()->route('treasury-cash-office.index')
                     ->with('error', 'Selected staff member not found.');
             }
 
-            $voucher->update([
-                'assigned_to_user_id' => $userId,
-                'assigned_at' => now(),
-                'assigned_by' => auth()->id(),
+            // Check if the column exists before updating
+            $hasAssignedToColumn = \Illuminate\Support\Facades\Schema::hasColumn('vouchers', 'assigned_to_user_id');
+            $hasAssignedAtColumn = \Illuminate\Support\Facades\Schema::hasColumn('vouchers', 'assigned_at');
+            $hasAssignedByColumn = \Illuminate\Support\Facades\Schema::hasColumn('vouchers', 'assigned_by');
+
+            // Prepare update data
+            $updateData = [];
+
+            if ($hasAssignedToColumn) {
+                $updateData['assigned_to_user_id'] = $userId;
+            }
+
+            if ($hasAssignedAtColumn) {
+                $updateData['assigned_at'] = now();
+            }
+
+            if ($hasAssignedByColumn) {
+                $updateData['assigned_by'] = auth()->id();
+            }
+
+            // If no columns exist, log warning and still process
+            if (empty($updateData)) {
+                Log::warning('No assignment columns found in vouchers table. Please run migration.');
+                if ($this->activityLogger) {
+                    $this->activityLogger->log(
+                        "Voucher {$voucher->voucher_number} assigned to {$user->name} (columns not available)",
+                        [
+                            'voucher_id' => $voucher->id,
+                            'voucher_number' => $voucher->voucher_number,
+                            'voucher_type' => $voucher->voucher_type,
+                            'assigned_to' => $userId,
+                            'assigned_to_name' => $user->name,
+                            'assigned_by' => auth()->id(),
+                            'assigned_by_name' => auth()->user()?->name,
+                        ],
+                        'voucher'
+                    );
+                }
+
+                DB::commit();
+
+                return redirect()->route('treasury-cash-office.index')
+                    ->with('warning', "Voucher {$voucher->voucher_number} assignment logged but database columns are missing. Please run migration.");
+            }
+
+            // Update voucher with assigned user
+            $updated = $voucher->update($updateData);
+
+            if (!$updated) {
+                Log::error('Voucher update failed', [
+                    'voucher_id' => $voucher->id,
+                    'update_data' => $updateData
+                ]);
+                throw new \Exception('Failed to update voucher record');
+            }
+
+            Log::info('Voucher updated successfully', [
+                'voucher_id' => $voucher->id,
+                'update_data' => $updateData
             ]);
 
             // Log activity
@@ -910,9 +655,12 @@ class ManagementAccountSectionController extends Controller
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
+                        'voucher_type' => $voucher->voucher_type,
                         'assigned_to' => $userId,
                         'assigned_to_name' => $user->name,
                         'assigned_by' => auth()->id(),
+                        'assigned_by_name' => auth()->user()?->name,
+                        'assigned_at' => now()->toDateTimeString(),
                     ],
                     'voucher'
                 );
@@ -920,38 +668,138 @@ class ManagementAccountSectionController extends Controller
 
             DB::commit();
 
-            Log::info('MAS Assign to Staff Successful:', [
-                'voucher_id' => $voucher->id,
-                'voucher_number' => $voucher->voucher_number,
-                'assigned_to' => $userId,
-            ]);
+            Log::info('TCO Assign - Completed Successfully');
 
-            return redirect()->route('management-account-section.index')
+            return redirect()->route('treasury-cash-office.index')
                 ->with('success', "Voucher {$voucher->voucher_number} assigned to {$user->name} successfully.");
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('MAS Assign to Staff Failed:', [
+
+            Log::error('TCO Assign - Failed', [
                 'voucher_id' => $voucher->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'voucher_number' => $voucher->voucher_number,
+                'error_message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
-            return redirect()->route('management-account-section.index')
+            return redirect()->route('treasury-cash-office.index')
                 ->with('error', 'Failed to assign voucher: ' . $e->getMessage());
         }
     }
 
     /**
-     * Reject voucher from Management Account Section
+     * Approve voucher from TCO - mark as paid (Final Stage)
+     */
+    public function approve(Voucher $voucher, Request $request)
+    {
+        Log::info('TCO Approval Request:', [
+            'voucher_id' => $voucher->id,
+            'voucher_number' => $voucher->voucher_number,
+            'voucher_type' => $voucher->voucher_type,
+            'user_id' => auth()->id(),
+        ]);
+
+        // Check if voucher type should go to TCO
+        if (!in_array($voucher->voucher_type, self::TCO_VOUCHER_TYPES)) {
+            return redirect()->route('treasury-cash-office.index')
+                ->with('error', "Voucher type '{$voucher->voucher_type}' does not go to TCO.");
+        }
+
+        DB::beginTransaction();
+
+        try {
+            // Check if voucher is in correct state
+            if ($voucher->status !== 'inspectorate_approved') {
+                DB::rollBack();
+                return redirect()->route('treasury-cash-office.index')
+                    ->with('error', "Voucher {$voucher->voucher_number} must be approved by Inspectorate first. Current status: " . ($voucher->status ?? 'unknown'));
+            }
+
+            // Get the current maximum approval step
+            $maxStep = $voucher->approvals()->max('approval_step') ?? 0;
+            $tcoStep = $maxStep + 1;
+
+            // Create TCO approval record
+            VoucherApproval::create([
+                'voucher_id' => $voucher->id,
+                'user_id' => auth()->id(),
+                'approval_role' => VoucherApproval::ROLE_TCO,
+                'approval_step' => $tcoStep,
+                'approval_level' => $tcoStep,
+                'action' => VoucherApproval::ACTION_APPROVED,
+                'status' => VoucherApproval::STATUS_APPROVED,
+                'comment' => $request->input('comment', 'Payment processed by TCO'),
+                'action_at' => now(),
+                'approved_at' => now(),
+            ]);
+
+            // Update voucher status to closed (paid)
+            $voucher->update([
+                'status' => 'closed',
+                'tco_approved_by' => auth()->id(),
+                'tco_approved_at' => now(),
+                'closed_at' => now(),
+                'closed_by' => auth()->id(),
+            ]);
+
+            // Log activity
+            if ($this->activityLogger) {
+                $this->activityLogger->log(
+                    "TCO approved voucher {$voucher->voucher_number}",
+                    [
+                        'voucher_id' => $voucher->id,
+                        'voucher_number' => $voucher->voucher_number,
+                        'voucher_type' => $voucher->voucher_type,
+                        'tco_step' => $tcoStep,
+                        'approved_by' => auth()->id(),
+                    ],
+                    'voucher'
+                );
+            }
+
+            DB::commit();
+
+            Log::info('TCO Approval Successful:', [
+                'voucher_id' => $voucher->id,
+                'voucher_number' => $voucher->voucher_number,
+                'voucher_type' => $voucher->voucher_type,
+            ]);
+
+            return redirect()->route('treasury-cash-office.index')
+                ->with('success', "Voucher {$voucher->voucher_number} has been approved and marked as paid.");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('TCO Approval Failed:', [
+                'voucher_id' => $voucher->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return redirect()->route('treasury-cash-office.index')
+                ->with('error', 'Failed to approve voucher: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Reject voucher from TCO (send back to Inspectorate)
      */
     public function reject(Voucher $voucher, Request $request)
     {
-        Log::info('MAS Reject Request:', [
+        Log::info('TCO Rejection Request:', [
             'voucher_id' => $voucher->id,
             'voucher_number' => $voucher->voucher_number,
-            'reason' => $request->input('reason'),
+            'voucher_type' => $voucher->voucher_type,
+            'user_id' => auth()->id(),
+            'reason' => $request->input('reason')
         ]);
+
+        // Check if voucher type should go to TCO
+        if (!in_array($voucher->voucher_type, self::TCO_VOUCHER_TYPES)) {
+            return redirect()->route('treasury-cash-office.index')
+                ->with('error', "Voucher type '{$voucher->voucher_type}' does not go to TCO.");
+        }
 
         DB::beginTransaction();
 
@@ -960,15 +808,15 @@ class ManagementAccountSectionController extends Controller
 
             if (empty($reason)) {
                 DB::rollBack();
-                return redirect()->route('management-account-section.index')
+                return redirect()->route('treasury-cash-office.index')
                     ->with('error', 'Rejection reason is required.');
             }
 
             // Check if voucher is in correct state
-            if ($voucher->status !== 'ag_approved') {
+            if ($voucher->status !== 'inspectorate_approved') {
                 DB::rollBack();
-                return redirect()->route('management-account-section.index')
-                    ->with('error', "Voucher {$voucher->voucher_number} must be AG approved first.");
+                return redirect()->route('treasury-cash-office.index')
+                    ->with('error', "Voucher {$voucher->voucher_number} must be approved by Inspectorate first. Current status: " . ($voucher->status ?? 'unknown'));
             }
 
             // Get the current maximum approval step
@@ -979,32 +827,34 @@ class ManagementAccountSectionController extends Controller
             VoucherApproval::create([
                 'voucher_id' => $voucher->id,
                 'user_id' => auth()->id(),
-                'approval_role' => VoucherApproval::ROLE_MAS,
+                'approval_role' => VoucherApproval::ROLE_TCO,
                 'approval_step' => $rejectionStep,
                 'approval_level' => $rejectionStep,
                 'action' => VoucherApproval::ACTION_DECLINED,
                 'status' => VoucherApproval::STATUS_REJECTED,
                 'comment' => $reason,
                 'action_at' => now(),
-                // 'rejected_at' => now(),
+                'rejected_at' => now(),
             ]);
 
             // Update voucher status
             $voucher->update([
-                'status' => 'mas_rejected',
-                // 'rejection_reason' => $reason,
-                // 'rejected_by' => auth()->id(),
-                // 'rejected_at' => now(),
+                'status' => 'tco_rejected',
+                'rejection_reason' => $reason,
+                'rejected_by' => auth()->id(),
+                'rejected_at' => now(),
             ]);
 
             // Log activity
             if ($this->activityLogger) {
                 $this->activityLogger->log(
-                    "Management Account Section rejected voucher {$voucher->voucher_number}",
+                    "TCO rejected voucher {$voucher->voucher_number}",
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
+                        'voucher_type' => $voucher->voucher_type,
                         'reason' => $reason,
+                        'rejection_step' => $rejectionStep,
                         'rejected_by' => auth()->id(),
                     ],
                     'voucher'
@@ -1013,29 +863,30 @@ class ManagementAccountSectionController extends Controller
 
             DB::commit();
 
-            Log::info('MAS Reject Successful:', [
+            Log::info('TCO Rejection Successful:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
+                'reason' => $reason
             ]);
 
-            return redirect()->route('management-account-section.index')
-                ->with('success', "Voucher {$voucher->voucher_number} has been rejected.");
+            return redirect()->route('treasury-cash-office.index')
+                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Inspectorate.");
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('MAS Reject Failed:', [
+            Log::error('TCO Rejection Failed:', [
                 'voucher_id' => $voucher->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
-            return redirect()->route('management-account-section.index')
+            return redirect()->route('treasury-cash-office.index')
                 ->with('error', 'Failed to reject voucher: ' . $e->getMessage());
         }
     }
 
     /**
-     * Show voucher details
+     * Show voucher details for TCO
      */
     public function show($id)
     {
@@ -1053,10 +904,10 @@ class ManagementAccountSectionController extends Controller
                 'assignedTo'
             ])->findOrFail($id);
 
-            // Check if voucher type should go through MAS
-            if (!in_array($voucher->voucher_type, self::MAS_VOUCHER_TYPES)) {
-                return redirect()->route('management-account-section.index')
-                    ->with('error', "This voucher type '{$voucher->voucher_type}' does not go through MAS.");
+            // Check if voucher type should go through TCO
+            if (!in_array($voucher->voucher_type, self::TCO_VOUCHER_TYPES)) {
+                return redirect()->route('treasury-cash-office.index')
+                    ->with('error', "This voucher type '{$voucher->voucher_type}' does not go through TCO.");
             }
 
             $voucherData = [
@@ -1121,75 +972,70 @@ class ManagementAccountSectionController extends Controller
                 ] : null,
             ];
 
-            return Inertia::render('admin/managementAccountSection/show', [
+            return Inertia::render('admin/treasuryCashOffice/show', [
                 'voucher' => $voucherData,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('MAS Show Error: ' . $e->getMessage());
-            return redirect()->route('management-account-section.index')
+            Log::error('TCO Show Error: ' . $e->getMessage());
+            return redirect()->route('treasury-cash-office.index')
                 ->with('error', 'Voucher not found.');
         }
     }
 
     /**
-     * Get statistics (API endpoint)
+     * Get statistics (API endpoint for AJAX calls)
      */
     public function stats()
     {
         try {
             $stats = [
-                'pending_ag_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'ag_approved')
+                'pending_inspectorate_count' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
                     ->count(),
-                'pending_mas_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'ag_approved')
-                    ->whereNull('mas_approved_at')
+                'pending_tco_count' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
+                    ->whereNull('tco_approved_at')
                     ->count(),
-                'closed_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                'approved_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
-                    ->whereDate('mas_approved_at', today())
+                    ->whereDate('tco_approved_at', today())
                     ->count(),
-                'rejected_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'mas_rejected')
+                'rejected_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'tco_rejected')
                     ->whereDate('rejected_at', today())
                     ->count(),
-                'total_processed' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->whereIn('status', ['closed', 'mas_rejected'])
+                'total_processed' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->whereIn('status', ['closed', 'tco_rejected'])
                     ->count(),
-                'total_amount_pending' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->where('status', 'ag_approved')
-                    ->whereNull('mas_approved_at')
+                'total_amount_pending' => (float) Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
+                    ->whereNull('tco_approved_at')
                     ->sum('total_amount'),
-                'total_amount_closed' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                'total_amount_paid' => (float) Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
                     ->sum('total_amount'),
-                'liability_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-                    ->whereDate('ag_approved_at', today())
-                    ->count(),
             ];
 
             return response()->json($stats);
 
         } catch (\Exception $e) {
-            Log::error('MAS Stats Error: ' . $e->getMessage());
+            Log::error('TCO Stats Error: ' . $e->getMessage());
             return response()->json([
-                'pending_ag_count' => 0,
-                'pending_mas_count' => 0,
-                'closed_today' => 0,
+                'pending_inspectorate_count' => 0,
+                'pending_tco_count' => 0,
+                'approved_today' => 0,
                 'rejected_today' => 0,
                 'total_processed' => 0,
                 'total_amount_pending' => 0,
-                'total_amount_closed' => 0,
-                'liability_count' => 0,
+                'total_amount_paid' => 0,
             ]);
         }
     }
 
-
     /**
-     * Display assigned vouchers for MAS staff (non-admin users)
-     * Shows only vouchers assigned to the current user in MAS
+     * Display assigned vouchers for TCO staff
+     * Shows only vouchers assigned to the current user
      */
     public function assignedIndex(Request $request)
     {
@@ -1205,19 +1051,19 @@ class ManagementAccountSectionController extends Controller
             
             $userId = auth()->id();
             
-            // Build query - only vouchers assigned to current user
+            // Build query - only vouchers assigned to current user and TCO types
             $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals'])
                 ->where('assigned_to_user_id', $userId)
-                ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                 ->orderBy('created_at', 'desc');
             
             // Apply tab filter
             if ($tab === 'pending') {
-                $query->where('status', 'ag_approved');
-            } elseif ($tab === 'closed') {
-                $query->where('status', 'closed');
+                $query->where('status', 'inspectorate_approved')->whereNull('tco_approved_at');
+            } elseif ($tab === 'approved') {
+                $query->where('status', 'closed')->whereNotNull('tco_approved_at');
             } elseif ($tab === 'rejected') {
-                $query->where('status', 'mas_rejected');
+                $query->where('status', 'tco_rejected');
             }
             
             // Apply search filter
@@ -1226,11 +1072,11 @@ class ManagementAccountSectionController extends Controller
                 foreach ($words as $word) {
                     $query->where(function ($q) use ($word) {
                         $q->where('voucher_number', 'like', "%{$word}%")
-                        ->orWhere('narration', 'like', "%{$word}%")
-                        ->orWhere('payee_name', 'like', "%{$word}%")
-                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
-                            $mdaQuery->where('name', 'like', "%{$word}%");
-                        });
+                            ->orWhere('narration', 'like', "%{$word}%")
+                            ->orWhere('payee_name', 'like', "%{$word}%")
+                            ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                                $mdaQuery->where('name', 'like', "%{$word}%");
+                            });
                     });
                 }
             }
@@ -1248,9 +1094,9 @@ class ManagementAccountSectionController extends Controller
             // Apply payment status filter
             if ($paymentStatus) {
                 if ($paymentStatus === 'paid') {
-                    $query->where('status', 'closed')->whereNotNull('mas_approved_at');
-                } elseif ($paymentStatus === 'awaiting_mas') {
-                    $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
+                    $query->where('status', 'closed')->whereNotNull('tco_approved_at');
+                } elseif ($paymentStatus === 'awaiting_tco') {
+                    $query->where('status', 'inspectorate_approved')->whereNull('tco_approved_at');
                 }
             }
             
@@ -1266,39 +1112,32 @@ class ManagementAccountSectionController extends Controller
             
             // Transform the data for the frontend
             $transformedVouchers = $vouchers->through(function ($voucher) {
-                // Get approval records for display
-                $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+                // Get approval records
                 $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
-                $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
-                $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+                $inspectorateApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_INSPECTORATE)->first();
+                $tcoApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_TCO)->first();
                 
                 // Determine payment status
                 $paymentStatus = 'unknown';
-                if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
+                if ($voucher->status === 'closed' && $voucher->tco_approved_at) {
                     $paymentStatus = 'paid';
-                } elseif ($voucher->status === 'ag_approved') {
-                    $paymentStatus = 'awaiting_mas';
+                } elseif ($voucher->status === 'inspectorate_approved') {
+                    $paymentStatus = 'awaiting_tco';
                 }
                 
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
                     'voucher_date' => $voucher->voucher_date?->toDateString(),
-                    'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(),
-                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
-                    'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                    'i_approved_at' => $inspectorateApproval?->approved_at?->toDateTimeString(),
+                    'tco_approved_at' => $tcoApproval?->approved_at?->toDateTimeString(),
                     'narration' => $voucher->narration,
                     'total_amount' => (float) $voucher->total_amount,
                     'payee_name' => $voucher->payee_name,
                     'status' => $voucher->status,
                     'voucher_type' => $voucher->voucher_type,
-                    'created_at' => $voucher->created_at?->toDateTimeString(),
                     'payment_status' => $paymentStatus,
-                    'mda' => $voucher->mda ? [
-                        'id' => $voucher->mda->id,
-                        'name' => $voucher->mda->name,
-                        'code' => $voucher->mda->code,
-                    ] : null,
                     'bank_activity' => $voucher->bankActivity ? [
                         'id' => $voucher->bankActivity->id,
                         'bank_name' => $voucher->bankActivity->bank_name,
@@ -1306,9 +1145,10 @@ class ManagementAccountSectionController extends Controller
                         'tag' => $voucher->bankActivity->tag,
                         'title' => $voucher->bankActivity->title,
                     ] : null,
-                    'assigned_to' => $voucher->assignedTo ? [
-                        'id' => $voucher->assignedTo->id,
-                        'name' => $voucher->assignedTo->name,
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
                     ] : null,
                     'items' => $voucher->items->map(function ($item) {
                         return [
@@ -1327,27 +1167,28 @@ class ManagementAccountSectionController extends Controller
             // Get statistics specific to assigned vouchers
             $stats = [
                 'total_assigned' => Voucher::where('assigned_to_user_id', $userId)
-                    ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                    ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->count(),
                 'pending_review' => Voucher::where('assigned_to_user_id', $userId)
-                    ->where('status', 'ag_approved')
-                    ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
+                    ->whereNull('tco_approved_at')
+                    ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->count(),
-                'closed_count' => Voucher::where('assigned_to_user_id', $userId)
+                'approved_count' => Voucher::where('assigned_to_user_id', $userId)
                     ->where('status', 'closed')
-                    ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                    ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->count(),
                 'rejected_count' => Voucher::where('assigned_to_user_id', $userId)
-                    ->where('status', 'mas_rejected')
-                    ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                    ->where('status', 'tco_rejected')
+                    ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->count(),
-                'forwarded_count' => 0, // MAS doesn't forward, they close or reject
+                'forwarded_count' => 0, // TCO doesn't forward
                 'total_amount' => (float) Voucher::where('assigned_to_user_id', $userId)
-                    ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                    ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->sum('total_amount'),
             ];
             
-            return Inertia::render('admin/managementAccountSection/assigned', [
+            return Inertia::render('admin/treasuryCashOffice/assigned', [
                 'vouchers' => [
                     'data' => $transformedVouchers,
                     'total' => $vouchers->total(),
@@ -1360,8 +1201,8 @@ class ManagementAccountSectionController extends Controller
             ]);
             
         } catch (\Exception $e) {
-            Log::error('MAS Assigned Index Error: ' . $e->getMessage());
-            return Inertia::render('admin/managementAccountSection/assigned', [
+            Log::error('TCO Assigned Index Error: ' . $e->getMessage());
+            return Inertia::render('admin/treasuryCashOffice/assigned', [
                 'vouchers' => [
                     'data' => [],
                     'total' => 0,
@@ -1373,7 +1214,7 @@ class ManagementAccountSectionController extends Controller
                 'stats' => [
                     'total_assigned' => 0,
                     'pending_review' => 0,
-                    'closed_count' => 0,
+                    'approved_count' => 0,
                     'rejected_count' => 0,
                     'forwarded_count' => 0,
                     'total_amount' => 0,
@@ -1403,16 +1244,16 @@ class ManagementAccountSectionController extends Controller
             // Build query - only vouchers assigned to current user
             $query = Voucher::with(['mda', 'bankActivity', 'items', 'creator', 'approvals'])
                 ->where('assigned_to_user_id', $userId)
-                ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                 ->orderBy('created_at', 'desc');
             
             // Apply tab filter
             if ($tab === 'pending') {
-                $query->where('status', 'ag_approved');
-            } elseif ($tab === 'closed') {
-                $query->where('status', 'closed');
+                $query->where('status', 'inspectorate_approved')->whereNull('tco_approved_at');
+            } elseif ($tab === 'approved') {
+                $query->where('status', 'closed')->whereNotNull('tco_approved_at');
             } elseif ($tab === 'rejected') {
-                $query->where('status', 'mas_rejected');
+                $query->where('status', 'tco_rejected');
             }
             
             // Apply search filter
@@ -1421,11 +1262,11 @@ class ManagementAccountSectionController extends Controller
                 foreach ($words as $word) {
                     $query->where(function ($q) use ($word) {
                         $q->where('voucher_number', 'like', "%{$word}%")
-                        ->orWhere('narration', 'like', "%{$word}%")
-                        ->orWhere('payee_name', 'like', "%{$word}%")
-                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
-                            $mdaQuery->where('name', 'like', "%{$word}%");
-                        });
+                            ->orWhere('narration', 'like', "%{$word}%")
+                            ->orWhere('payee_name', 'like', "%{$word}%")
+                            ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                                $mdaQuery->where('name', 'like', "%{$word}%");
+                            });
                     });
                 }
             }
@@ -1443,9 +1284,9 @@ class ManagementAccountSectionController extends Controller
             // Apply payment status filter
             if ($paymentStatus) {
                 if ($paymentStatus === 'paid') {
-                    $query->where('status', 'closed')->whereNotNull('mas_approved_at');
-                } elseif ($paymentStatus === 'awaiting_mas') {
-                    $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
+                    $query->where('status', 'closed')->whereNotNull('tco_approved_at');
+                } elseif ($paymentStatus === 'awaiting_tco') {
+                    $query->where('status', 'inspectorate_approved')->whereNull('tco_approved_at');
                 }
             }
             
@@ -1462,45 +1303,41 @@ class ManagementAccountSectionController extends Controller
             // Transform the data for the frontend
             $transformedVouchers = $vouchers->map(function ($voucher) {
                 // Get approval records
-                $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
-                $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+                $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+                $inspectorateApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_INSPECTORATE)->first();
+                $tcoApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_TCO)->first();
                 
                 // Determine payment status
                 $paymentStatus = 'unknown';
-                if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
+                if ($voucher->status === 'closed' && $voucher->tco_approved_at) {
                     $paymentStatus = 'paid';
-                } elseif ($voucher->status === 'ag_approved') {
-                    $paymentStatus = 'awaiting_mas';
+                } elseif ($voucher->status === 'inspectorate_approved') {
+                    $paymentStatus = 'awaiting_tco';
                 }
                 
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
                     'voucher_date' => $voucher->voucher_date?->toDateString(),
-                    'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(),
-                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
-                    'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                    'i_approved_at' => $inspectorateApproval?->approved_at?->toDateTimeString(),
+                    'tco_approved_at' => $tcoApproval?->approved_at?->toDateTimeString(),
                     'narration' => $voucher->narration,
                     'total_amount' => (float) $voucher->total_amount,
                     'payee_name' => $voucher->payee_name,
                     'status' => $voucher->status,
                     'voucher_type' => $voucher->voucher_type,
-                    'created_at' => $voucher->created_at?->toDateTimeString(),
                     'payment_status' => $paymentStatus,
-                    'mda' => $voucher->mda ? [
-                        'id' => $voucher->mda->id,
-                        'name' => $voucher->mda->name,
-                        'code' => $voucher->mda->code,
-                    ] : null,
                     'bank_activity' => $voucher->bankActivity ? [
                         'id' => $voucher->bankActivity->id,
                         'bank_name' => $voucher->bankActivity->bank_name,
                         'account_number' => $voucher->bankActivity->account_number,
                         'tag' => $voucher->bankActivity->tag,
                     ] : null,
-                    'assigned_to' => $voucher->assignedTo ? [
-                        'id' => $voucher->assignedTo->id,
-                        'name' => $voucher->assignedTo->name,
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
                     ] : null,
                     'items' => $voucher->items->map(function ($item) {
                         return [
@@ -1517,23 +1354,24 @@ class ManagementAccountSectionController extends Controller
             // Get statistics specific to assigned vouchers
             $stats = [
                 'total_assigned' => Voucher::where('assigned_to_user_id', $userId)
-                    ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                    ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->count(),
                 'pending_review' => Voucher::where('assigned_to_user_id', $userId)
-                    ->where('status', 'ag_approved')
-                    ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                    ->where('status', 'inspectorate_approved')
+                    ->whereNull('tco_approved_at')
+                    ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->count(),
-                'closed_count' => Voucher::where('assigned_to_user_id', $userId)
+                'approved_count' => Voucher::where('assigned_to_user_id', $userId)
                     ->where('status', 'closed')
-                    ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                    ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->count(),
                 'rejected_count' => Voucher::where('assigned_to_user_id', $userId)
-                    ->where('status', 'mas_rejected')
-                    ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                    ->where('status', 'tco_rejected')
+                    ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->count(),
                 'forwarded_count' => 0,
                 'total_amount' => (float) Voucher::where('assigned_to_user_id', $userId)
-                    ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
+                    ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->sum('total_amount'),
             ];
             
@@ -1552,7 +1390,7 @@ class ManagementAccountSectionController extends Controller
             ]);
             
         } catch (\Exception $e) {
-            Log::error('MAS Assigned Search Error: ' . $e->getMessage(), [
+            Log::error('TCO Assigned Search Error: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
             ]);
             
@@ -1571,7 +1409,7 @@ class ManagementAccountSectionController extends Controller
                 'stats' => [
                     'total_assigned' => 0,
                     'pending_review' => 0,
-                    'closed_count' => 0,
+                    'approved_count' => 0,
                     'rejected_count' => 0,
                     'forwarded_count' => 0,
                     'total_amount' => 0,
@@ -1581,63 +1419,56 @@ class ManagementAccountSectionController extends Controller
     }
 
     /**
-     * Close assigned voucher from Management Account Section (Final Stage)
+     * Approve assigned voucher from TCO - mark as paid
      */
-    public function closeAssigned(Voucher $voucher, Request $request)
+    public function approveAssigned(Voucher $voucher, Request $request)
     {
-        Log::info('MAS Close Assigned Request:', [
+        Log::info('TCO Approve Assigned Request:', [
             'voucher_id' => $voucher->id,
             'voucher_number' => $voucher->voucher_number,
             'voucher_type' => $voucher->voucher_type,
             'user_id' => auth()->id(),
         ]);
 
-        // Check if voucher type should go to MAS
-        if (!in_array($voucher->voucher_type, self::MAS_VOUCHER_TYPES)) {
-            return redirect()->route('management-account-section.assigned')
-                ->with('error', "Voucher type '{$voucher->voucher_type}' does not go through MAS.");
+        // Check if voucher type should go to TCO
+        if (!in_array($voucher->voucher_type, self::TCO_VOUCHER_TYPES)) {
+            return redirect()->route('treasury-cash-office.assigned')
+                ->with('error', "Voucher type '{$voucher->voucher_type}' does not go to TCO.");
         }
 
         DB::beginTransaction();
 
         try {
             // Check if voucher is in correct state
-            if ($voucher->status !== 'ag_approved') {
+            if ($voucher->status !== 'inspectorate_approved') {
                 DB::rollBack();
-                return redirect()->route('management-account-section.assigned')
-                    ->with('error', "Voucher {$voucher->voucher_number} must be approved by AG first. Current status: " . ($voucher->status ?? 'unknown'));
-            }
-
-            // Check if bank is assigned
-            if (!$voucher->bank_activity_id) {
-                DB::rollBack();
-                return redirect()->route('management-account-section.assigned')
-                    ->with('error', "Voucher {$voucher->voucher_number} must have a bank account assigned before closing.");
+                return redirect()->route('treasury-cash-office.assigned')
+                    ->with('error', "Voucher {$voucher->voucher_number} must be approved by Inspectorate first. Current status: " . ($voucher->status ?? 'unknown'));
             }
 
             // Get the current maximum approval step
             $maxStep = $voucher->approvals()->max('approval_step') ?? 0;
-            $masStep = $maxStep + 1;
+            $tcoStep = $maxStep + 1;
 
-            // Create MAS approval record
+            // Create TCO approval record
             VoucherApproval::create([
                 'voucher_id' => $voucher->id,
                 'user_id' => auth()->id(),
-                'approval_role' => VoucherApproval::ROLE_MAS,
-                'approval_step' => $masStep,
-                'approval_level' => $masStep,
+                'approval_role' => VoucherApproval::ROLE_TCO,
+                'approval_step' => $tcoStep,
+                'approval_level' => $tcoStep,
                 'action' => VoucherApproval::ACTION_APPROVED,
                 'status' => VoucherApproval::STATUS_APPROVED,
-                'comment' => $request->input('comment', 'Voucher closed by Management Account Section'),
+                'comment' => $request->input('comment', 'Payment processed by TCO'),
                 'action_at' => now(),
                 'approved_at' => now(),
             ]);
 
-            // Update voucher status to closed
+            // Update voucher status to closed (paid)
             $voucher->update([
                 'status' => 'closed',
-                'mas_approved_by' => auth()->id(),
-                'mas_approved_at' => now(),
+                'tco_approved_by' => auth()->id(),
+                'tco_approved_at' => now(),
                 'closed_at' => now(),
                 'closed_by' => auth()->id(),
             ]);
@@ -1645,13 +1476,13 @@ class ManagementAccountSectionController extends Controller
             // Log activity
             if ($this->activityLogger) {
                 $this->activityLogger->log(
-                    "Management Account Section closed assigned voucher {$voucher->voucher_number}",
+                    "TCO approved assigned voucher {$voucher->voucher_number}",
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
                         'voucher_type' => $voucher->voucher_type,
-                        'mas_step' => $masStep,
-                        'closed_by' => auth()->id(),
+                        'tco_step' => $tcoStep,
+                        'approved_by' => auth()->id(),
                     ],
                     'voucher'
                 );
@@ -1659,38 +1490,46 @@ class ManagementAccountSectionController extends Controller
 
             DB::commit();
 
-            Log::info('MAS Close Assigned Successful:', [
+            Log::info('TCO Approve Assigned Successful:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
                 'voucher_type' => $voucher->voucher_type,
             ]);
 
-            return redirect()->route('management-account-section.assigned')
-                ->with('success', "Voucher {$voucher->voucher_number} has been closed successfully.");
+            return redirect()->route('treasury-cash-office.assigned')
+                ->with('success', "Voucher {$voucher->voucher_number} has been approved and marked as paid.");
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('MAS Close Assigned Failed:', [
+            Log::error('TCO Approve Assigned Failed:', [
                 'voucher_id' => $voucher->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
-            return redirect()->route('management-account-section.assigned')
-                ->with('error', 'Failed to close voucher: ' . $e->getMessage());
+            return redirect()->route('treasury-cash-office.assigned')
+                ->with('error', 'Failed to approve voucher: ' . $e->getMessage());
         }
     }
 
     /**
-     * Reject assigned voucher from Management Account Section
+     * Reject assigned voucher from TCO (send back to Inspectorate)
      */
     public function rejectAssigned(Voucher $voucher, Request $request)
     {
-        Log::info('MAS Reject Assigned Request:', [
+        Log::info('TCO Reject Assigned Request:', [
             'voucher_id' => $voucher->id,
             'voucher_number' => $voucher->voucher_number,
-            'reason' => $request->input('reason'),
+            'voucher_type' => $voucher->voucher_type,
+            'user_id' => auth()->id(),
+            'reason' => $request->input('reason')
         ]);
+
+        // Check if voucher type should go to TCO
+        if (!in_array($voucher->voucher_type, self::TCO_VOUCHER_TYPES)) {
+            return redirect()->route('treasury-cash-office.assigned')
+                ->with('error', "Voucher type '{$voucher->voucher_type}' does not go to TCO.");
+        }
 
         DB::beginTransaction();
 
@@ -1699,15 +1538,15 @@ class ManagementAccountSectionController extends Controller
 
             if (empty($reason)) {
                 DB::rollBack();
-                return redirect()->route('management-account-section.assigned')
+                return redirect()->route('treasury-cash-office.assigned')
                     ->with('error', 'Rejection reason is required.');
             }
 
             // Check if voucher is in correct state
-            if ($voucher->status !== 'ag_approved') {
+            if ($voucher->status !== 'inspectorate_approved') {
                 DB::rollBack();
-                return redirect()->route('management-account-section.assigned')
-                    ->with('error', "Voucher {$voucher->voucher_number} must be AG approved first.");
+                return redirect()->route('treasury-cash-office.assigned')
+                    ->with('error', "Voucher {$voucher->voucher_number} must be approved by Inspectorate first. Current status: " . ($voucher->status ?? 'unknown'));
             }
 
             // Get the current maximum approval step
@@ -1718,7 +1557,7 @@ class ManagementAccountSectionController extends Controller
             VoucherApproval::create([
                 'voucher_id' => $voucher->id,
                 'user_id' => auth()->id(),
-                'approval_role' => VoucherApproval::ROLE_MAS,
+                'approval_role' => VoucherApproval::ROLE_TCO,
                 'approval_step' => $rejectionStep,
                 'approval_level' => $rejectionStep,
                 'action' => VoucherApproval::ACTION_DECLINED,
@@ -1730,7 +1569,7 @@ class ManagementAccountSectionController extends Controller
 
             // Update voucher status
             $voucher->update([
-                'status' => 'mas_rejected',
+                'status' => 'tco_rejected',
                 'rejection_reason' => $reason,
                 'rejected_by' => auth()->id(),
                 'rejected_at' => now(),
@@ -1739,11 +1578,13 @@ class ManagementAccountSectionController extends Controller
             // Log activity
             if ($this->activityLogger) {
                 $this->activityLogger->log(
-                    "Management Account Section rejected assigned voucher {$voucher->voucher_number}",
+                    "TCO rejected assigned voucher {$voucher->voucher_number}",
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
+                        'voucher_type' => $voucher->voucher_type,
                         'reason' => $reason,
+                        'rejection_step' => $rejectionStep,
                         'rejected_by' => auth()->id(),
                     ],
                     'voucher'
@@ -1752,23 +1593,24 @@ class ManagementAccountSectionController extends Controller
 
             DB::commit();
 
-            Log::info('MAS Reject Assigned Successful:', [
+            Log::info('TCO Reject Assigned Successful:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
+                'reason' => $reason
             ]);
 
-            return redirect()->route('management-account-section.assigned')
-                ->with('success', "Voucher {$voucher->voucher_number} has been rejected.");
+            return redirect()->route('treasury-cash-office.assigned')
+                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Inspectorate.");
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('MAS Reject Assigned Failed:', [
+            Log::error('TCO Reject Assigned Failed:', [
                 'voucher_id' => $voucher->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
-            return redirect()->route('management-account-section.assigned')
+            return redirect()->route('treasury-cash-office.assigned')
                 ->with('error', 'Failed to reject voucher: ' . $e->getMessage());
         }
     }

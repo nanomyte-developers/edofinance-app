@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\ExpenditureControlController;
 use App\Http\Controllers\Admin\FinalAccountsController;
 use App\Http\Controllers\Admin\FinancialYearController;
 use App\Http\Controllers\Admin\ImportVoucherController;
+use App\Http\Controllers\Admin\InspectorateController;
 use App\Http\Controllers\Admin\InternalAuditController;
 use App\Http\Controllers\Admin\JournalController;
 use App\Http\Controllers\Admin\ManagementAccountSectionController;
@@ -33,6 +34,7 @@ use App\Http\Controllers\Admin\RetirementController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ScheduleController;
 use App\Http\Controllers\Admin\SectorController;
+use App\Http\Controllers\Admin\TreasuryCashOfficeController;
 use App\Http\Controllers\Admin\UsersController;
 use App\Http\Controllers\Admin\VouchersController;
 use App\Http\Controllers\DashboardController;
@@ -146,31 +148,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/vouchers', [VouchersController::class, 'storeFinal'])->name('vouchers.store');
     });
 
-    // // Expenditure Control Routes (Step 4 in workflow)
-    // Route::prefix('expenditure-control')->name('expenditure-control.')->middleware(['auth'])->group(function () {
-    //     Route::get('/', [ExpenditureControlController::class, 'index'])->name('index');
-    //     Route::get('/search', [ExpenditureControlController::class, 'search'])->name('search');
-    //     Route::get('/stats', [ExpenditureControlController::class, 'stats'])->name('stats');
-    //     Route::get('/vouchers/{id}', [ExpenditureControlController::class, 'show'])->name('show');
-    //     Route::post('/vouchers/{voucher}/approve', [ExpenditureControlController::class, 'approve'])->name('approve');
-    //     Route::post('/vouchers/{voucher}/reject', [ExpenditureControlController::class, 'reject'])->name('reject');
-
-    //     // For the payment page details
-    //     Route::get('/payment-status', [ExpenditureControlController::class, 'paymentStatus'])->name('payment-status');
-    //     Route::get('/payment-status/search', [ExpenditureControlController::class, 'searchPaymentStatus'])->name('payment-status.search');
-    //     Route::get('/payment-status/stats', [ExpenditureControlController::class, 'paymentStats'])->name('payment-status.stats');
-    //     Route::post('/vouchers/{voucher}/mark-paid', [ExpenditureControlController::class, 'markAsPaid'])->name('mark-paid');
-
-    //     // Salary voucher routes (NEW)
-    //     Route::get('/salary', [ExpenditureControlController::class, 'salaryIndex'])->name('salary.index');
-    //     Route::get('/salary-vouchers/{voucher}', [ExpenditureControlController::class, 'showSalaryVoucher'])->name('salary.show');
-    //     Route::post('/salary-vouchers/{voucher}/approve', [ExpenditureControlController::class, 'approveSalaryVoucher'])->name('salary.approve');
-    //     Route::post('/salary-vouchers/{voucher}/reject', [ExpenditureControlController::class, 'rejectSalaryVoucher'])->name('salary.reject');
-    //     Route::post('/salary-vouchers/{voucher}/forward-inspectorate', [ExpenditureControlController::class, 'forwardToInspectorate'])->name('salary.forward');
-    //     Route::get('/salary/search', [ExpenditureControlController::class, 'searchSalaryVouchers'])->name('salary.search');
-    //     Route::get('/salary/stats', [ExpenditureControlController::class, 'salaryStats'])->name('salary.stats');
-    // });
-
     // Expenditure Control Routes (Step 4 in workflow)
     Route::prefix('expenditure-control')->name('expenditure-control.')->middleware(['auth'])->group(function () {
         // Main index and search
@@ -208,16 +185,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 
     // ==================== ACCOUNTANT GENERAL ROUTES (Step 5) ====================
-    // Route::prefix('accountant-general')->name('accountant-general.')->middleware(['auth'])->group(function () {
-    //     Route::get('/', [AccountantGeneralController::class, 'index'])->name('index');
-    //     Route::get('/search', [AccountantGeneralController::class, 'search'])->name('search');
-    //     Route::get('/stats', [AccountantGeneralController::class, 'stats'])->name('stats');
-    //     Route::get('/vouchers/{id}', [AccountantGeneralController::class, 'show'])->name('show');
-    //     Route::post('/vouchers/{voucher}/approve', [AccountantGeneralController::class, 'approve'])->name('approve');
-    //     Route::post('/vouchers/{voucher}/reject', [AccountantGeneralController::class, 'reject'])->name('reject');
-    // });
-    // Route::get('/accountant-general/bank-activities', [AccountantGeneralController::class, 'getBankActivities'])->name('accountant-general.bank-activities');
-
     Route::prefix('accountant-general')->name('accountant-general.')->middleware(['auth'])->group(function () {
         Route::get('/', [AccountantGeneralController::class, 'index'])->name('index');
         Route::get('/search', [AccountantGeneralController::class, 'search'])->name('search');
@@ -227,16 +194,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/vouchers/{voucher}/reject', [AccountantGeneralController::class, 'reject'])->name('reject');
     });
     Route::get('/accountant-general/bank-activities', [AccountantGeneralController::class, 'getBankActivities'])->name('accountant-general.bank-activities');
-
-    // Management Account Section Routes (Step 6 - Final)
-    // Route::prefix('management-account-section')->name('management-account-section.')->middleware(['auth'])->group(function () {
-    //     Route::get('/', [ManagementAccountSectionController::class, 'index'])->name('index');
-    //     Route::get('/search', [ManagementAccountSectionController::class, 'search'])->name('search');
-    //     Route::get('/stats', [ManagementAccountSectionController::class, 'stats'])->name('stats');
-    //     Route::get('/vouchers/{id}', [ManagementAccountSectionController::class, 'show'])->name('show');
-    //     Route::post('/vouchers/{voucher}/approve', [ManagementAccountSectionController::class, 'approve'])->name('approve');
-    //     Route::post('/vouchers/{voucher}/reject', [ManagementAccountSectionController::class, 'reject'])->name('reject');
-    // });
 
     // ==================== MANAGEMENT ACCOUNT SECTION ROUTES (Step 6 - Final) ====================
     Route::prefix('management-account-section')->name('management-account-section.')->middleware(['auth'])->group(function () {
@@ -250,14 +207,53 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/vouchers/{voucher}/assign', [ManagementAccountSectionController::class, 'assign'])->name('assign');
 
         // Assigned routes
-    Route::get('/assigned', [ManagementAccountSectionController::class, 'assignedIndex'])->name('assigned');
-    Route::get('/assigned/search', [ManagementAccountSectionController::class, 'searchAssigned'])->name('assigned.search');
-    Route::post('/assigned/{voucher}/close', [ManagementAccountSectionController::class, 'closeAssigned'])->name('assigned.close');
-    Route::post('/assigned/{voucher}/reject', [ManagementAccountSectionController::class, 'rejectAssigned'])->name('assigned.reject');
+        Route::get('/assigned', [ManagementAccountSectionController::class, 'assignedIndex'])->name('assigned');
+        Route::get('/assigned/search', [ManagementAccountSectionController::class, 'searchAssigned'])->name('assigned.search');
+        Route::post('/assigned/{voucher}/close', [ManagementAccountSectionController::class, 'closeAssigned'])->name('assigned.close');
+        Route::post('/assigned/{voucher}/reject', [ManagementAccountSectionController::class, 'rejectAssigned'])->name('assigned.reject');
     });
 
     // Also add bank activities endpoint if needed
     Route::get('/management-account-section/bank-activities', [ManagementAccountSectionController::class, 'getBankActivities'])->name('management-account-section.bank-activities');
+
+    // ==================== INSPECTORATE ROUTES ====================
+    Route::prefix('inspectorate')->name('inspectorate.')->middleware(['auth'])->group(function () {
+        Route::get('/', [InspectorateController::class, 'index'])->name('index');
+        Route::get('/search', [InspectorateController::class, 'search'])->name('search');
+        Route::get('/stats', [InspectorateController::class, 'stats'])->name('stats');
+        Route::get('/vouchers/{id}', [InspectorateController::class, 'show'])->name('show');
+        Route::post('/vouchers/{voucher}/approve', [InspectorateController::class, 'approve'])->name('approve');
+        Route::post('/vouchers/{voucher}/reject', [InspectorateController::class, 'reject'])->name('reject');
+
+        Route::post('/vouchers/{voucher}/assign', [InspectorateController::class, 'assign'])->name('assign');
+
+        // Assigned routes
+        Route::get('/assigned', [InspectorateController::class, 'assignedIndex'])->name('assigned');
+        Route::get('/assigned/search', [InspectorateController::class, 'searchAssigned'])->name('assigned.search');
+        Route::post('/assigned/{voucher}/approve', [InspectorateController::class, 'approveAssigned'])->name('assigned.approve');
+        Route::post('/assigned/{voucher}/reject', [InspectorateController::class, 'rejectAssigned'])->name('assigned.reject');
+    });
+
+    // ==================== TREASURY CASH OFFICE ROUTES (TCO) ====================
+    Route::prefix('treasury-cash-office')->name('treasury-cash-office.')->middleware(['auth'])->group(function () {
+        // Main routes
+        Route::get('/', [TreasuryCashOfficeController::class, 'index'])->name('index');
+        Route::get('/search', [TreasuryCashOfficeController::class, 'search'])->name('search');
+        Route::get('/stats', [TreasuryCashOfficeController::class, 'stats'])->name('stats');
+        Route::get('/vouchers/{id}', [TreasuryCashOfficeController::class, 'show'])->name('show');
+        
+        // Action routes
+        Route::post('/vouchers/{voucher}/approve', [TreasuryCashOfficeController::class, 'approve'])->name('approve');
+        Route::post('/vouchers/{voucher}/reject', [TreasuryCashOfficeController::class, 'reject'])->name('reject');
+        Route::post('/vouchers/{voucher}/assign', [TreasuryCashOfficeController::class, 'assign'])->name('assign');
+        Route::post('/vouchers/{voucher}/bank', [TreasuryCashOfficeController::class, 'assignBank'])->name('assigned.bank');
+        
+        // Assigned routes
+        Route::get('/assigned', [TreasuryCashOfficeController::class, 'assignedIndex'])->name('assigned');
+        Route::get('/assigned/search', [TreasuryCashOfficeController::class, 'searchAssigned'])->name('assigned.search');
+        Route::post('/assigned/{voucher}/approve', [TreasuryCashOfficeController::class, 'approveAssigned'])->name('assigned.approve');
+        Route::post('/assigned/{voucher}/reject', [TreasuryCashOfficeController::class, 'rejectAssigned'])->name('assigned.reject');
+    });
 
     Route::prefix('retirements')->name('retirements.')->group(function () {
         // Main retirement pages

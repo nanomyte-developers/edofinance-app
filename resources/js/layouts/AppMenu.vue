@@ -158,11 +158,6 @@ onMounted(() => {
                     icon: 'pi pi-fw pi-check-square',
                     to: '/expenditure-control/assigned',
                 },
-                // {
-                //     label: 'Salary Vouchers',
-                //     icon: 'pi pi-fw pi-times-circle',
-                //     to: '/expenditure-control/salary',
-                // }
             ],
         });
     }
@@ -171,7 +166,18 @@ onMounted(() => {
         menu.push({
             label: 'Treasury Cash Office (TCO)',
             icon: 'pi pi-fw pi-bars',
-            to: '#',
+            items: [
+                {
+                    label: 'Pending Vouchers',
+                    icon: 'pi pi-fw pi-clone',
+                    to: '/treasury-cash-office',
+                },
+                {
+                    label: 'Assigned Vouchers',
+                    icon: 'pi pi-fw pi-check-square',
+                    to: '/treasury-cash-office/assigned',
+                },
+            ],
         });
     }
 
@@ -179,7 +185,18 @@ onMounted(() => {
         menu.push({
             label: 'Inspectorate (I)',
             icon: 'pi pi-fw pi-bolt',
-            to: '#',
+            items: [
+                {
+                    label: 'Pending Vouchers',
+                    icon: 'pi pi-fw pi-clone',
+                    to: '/inspectorate',
+                },
+                {
+                    label: 'Assigned Vouchers',
+                    icon: 'pi pi-fw pi-check-square',
+                    to: '/inspectorate/assigned',
+                },
+            ],
         });
     }
 
@@ -198,11 +215,6 @@ onMounted(() => {
                     icon: 'pi pi-fw pi-check-square',
                     to: '/management-account-section/assigned',
                 },
-                // {
-                //     label: 'Salary Vouchers',
-                //     icon: 'pi pi-fw pi-times-circle',
-                //     to: '/expenditure-control/salary',
-                // }
             ],
         });
     }
