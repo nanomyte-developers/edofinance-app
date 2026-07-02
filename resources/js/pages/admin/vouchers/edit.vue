@@ -42,6 +42,9 @@ const documentViewerTitle = ref('');
 // Add confirmation dialog visibility
 const showSubmitConfirmation = ref(false);
 
+// File upload ref
+const fileUploadRef = ref<any>(null);
+
 // Add this computed property to check if editing is allowed
 const canEditVoucher = computed(() => {
     const nonEditableStatuses = ['approved', 'paid', 'processed'];
@@ -83,6 +86,7 @@ interface RequiredDocument {
     uploaded: boolean;
     file?: File;
     existing_document_id?: number;
+    existing_file_name?: string;
 }
 
 interface UploadedDocument {
@@ -115,10 +119,23 @@ interface ProgrammeCode {
     value?: number;
 }
 
+// DFA Permissions interface
+interface DFAPermissions {
+    can_submit_for_approval: boolean;
+    can_save_as_draft: boolean;
+    is_subordinate: boolean;
+    is_dfa_main: boolean;
+    can_view: boolean;
+}
+
 const voucherTypes = [
     {
-        label: 'Standard',
-        value: 'standard',
+        label: 'Capital',
+        value: 'capital',
+    },
+    {
+        label: 'Recurrent',
+        value: 'recurrent',
     },
     {
         label: 'Prepayment',
@@ -127,6 +144,14 @@ const voucherTypes = [
     {
         label: 'Salary',
         value: 'salary',
+    },
+    {
+        label: 'Gratuity',
+        value: 'gratuity',
+    },
+    {
+        label: 'Pension',
+        value: 'pension',
     },
 ];
 
@@ -167,6 +192,16 @@ const props = defineProps({
     programmeCodes: {
         type: Array,
         default: () => [],
+    },
+    dfaPermissions: {
+        type: Object as () => DFAPermissions,
+        default: () => ({
+            can_submit_for_approval: false,
+            can_save_as_draft: false,
+            is_subordinate: false,
+            is_dfa_main: false,
+            can_view: false,
+        }),
     },
 });
 
@@ -215,9 +250,7 @@ const requiredDocuments = ref<RequiredDocument[]>([]);
 const optionalDocuments = ref<UploadedDocument[]>([]);
 const selectedDocumentType = ref<string>('');
 const allUploadedFiles = ref<File[]>([]);
-const existingDocuments = ref<ExistingDocument[]>(
-    props.existingDocuments || [],
-);
+const existingDocuments = ref<ExistingDocument[]>([]);
 const documentsToDelete = ref<number[]>([]);
 
 // Programme Codes Management
@@ -328,17 +361,54 @@ const clearFieldError = (item: LineItem, field: string) => {
     }
 };
 
-// Initialize required documents from existing documents
+// ✅ FIXED: Initialize required documents from existing documents
 const initializeRequiredDocuments = () => {
-    existingDocuments.value.forEach((doc) => {
+    // Define required document types - Approval Memo is the only truly required one
+    const requiredTypes = [
+        { type: 'approval_memo', label: 'Approval Memo', required: true },
+        { type: 'release_warrant', label: 'Release Warrant', required: false },
+        { type: 'exco_approval', label: 'Exco Approval/Conclusion', required: false },
+    ];
+    
+    // Initialize required documents
+    requiredDocuments.value = requiredTypes.map(rt => ({
+        ...rt,
+        uploaded: false,
+        file: undefined,
+        existing_document_id: undefined,
+        existing_file_name: undefined,
+    }));
+
+    // Get existing documents from props - ensure it's an array
+    const existingDocs = Array.isArray(props.existingDocuments) ? props.existingDocuments : [];
+    existingDocuments.value = existingDocs;
+
+    // Map existing documents to required documents
+    existingDocs.forEach((doc: any) => {
+        // Try to find matching required document by type
         const requiredDoc = requiredDocuments.value.find(
-            (rd) => rd.type === doc.document_type,
+            (rd) => rd.type === doc.document_type
         );
+        
         if (requiredDoc) {
             requiredDoc.uploaded = true;
             requiredDoc.existing_document_id = doc.id;
+            requiredDoc.existing_file_name = doc.file_name;
+        } else {
+            // If not a required type, add to optional with a flag
+            optionalDocuments.value.push({
+                type: doc.document_type || 'other',
+                label: doc.document_label || doc.document_type || 'Additional Document',
+                file: new File([], doc.file_name), // Placeholder for existing docs
+                document_type: doc.document_type || 'other',
+            });
         }
     });
+    
+    // Debug: Log the state after initialization
+    console.log('📄 Required documents after initialization:', requiredDocuments.value);
+    console.log('📄 Total existing documents:', existingDocuments.value.length);
+    console.log('📄 Optional documents:', optionalDocuments.value.length);
 };
 
 // Economic Code Options
@@ -684,13 +754,31 @@ const onEconomyCodeChange = (item: LineItem) => {
     item.economy_code_item_id = null;
 };
 
-// File upload handlers
+// ✅ FIXED: File upload handlers
 const onSelect = (event: any) => {
-    const newFiles = [...event.files];
+    console.log('📎 File selected:', event);
+    
+    // Get files from the event - handle both formats
+    let newFiles = [];
+    if (event.files) {
+        newFiles = [...event.files];
+    } else if (event.target && event.target.files) {
+        newFiles = [...event.target.files];
+    } else if (Array.isArray(event)) {
+        newFiles = event;
+    }
+    
+    if (newFiles.length === 0) {
+        console.warn('No files found in selection event');
+        return;
+    }
+    
+    console.log('📎 Processing files:', newFiles.map((f: File) => f.name));
     validationErrors.value.documents = '';
 
+    // Filter out duplicates
     const uniqueNewFiles = newFiles.filter(
-        (newFile) => !allUploadedFiles.value.some(
+        (newFile: File) => !allUploadedFiles.value.some(
             (existingFile) => existingFile.name === newFile.name && existingFile.size === newFile.size,
         ),
     );
@@ -706,9 +794,43 @@ const onSelect = (event: any) => {
 
     if (uniqueNewFiles.length === 0) return;
 
-    uniqueNewFiles.forEach((file) => {
+    // Process each file
+    uniqueNewFiles.forEach((file: File) => {
+        // Validate file size
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.size > maxSize) {
+            toast.add({
+                severity: 'error',
+                summary: 'File Too Large',
+                detail: `${file.name} exceeds the 10MB limit.`,
+                life: 5000,
+            });
+            return;
+        }
+
+        // Validate file type
+        const allowedTypes = [
+            'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+            'application/pdf', 'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ];
+        
+        if (!allowedTypes.includes(file.type)) {
+            toast.add({
+                severity: 'error',
+                summary: 'Unsupported File Type',
+                detail: `${file.name} has an unsupported format.`,
+                life: 5000,
+            });
+            return;
+        }
+
+        // Add to uploaded files
         allUploadedFiles.value.push(file);
 
+        // If no document type selected or 'other', add as optional
         if (!selectedDocumentType.value || selectedDocumentType.value === 'other') {
             optionalDocuments.value.push({
                 type: 'other',
@@ -716,11 +838,20 @@ const onSelect = (event: any) => {
                 file: file,
                 document_type: 'other',
             });
+            toast.add({
+                severity: 'success',
+                summary: 'Document Added',
+                detail: `${file.name} uploaded as additional document.`,
+                life: 3000,
+            });
         } else {
+            // Find existing required document of this type
             const requiredDoc = requiredDocuments.value.find(
                 (doc) => doc.type === selectedDocumentType.value,
             );
+            
             if (requiredDoc) {
+                // If there's already a file for this document type, move it to optional
                 if (requiredDoc.uploaded && requiredDoc.file) {
                     optionalDocuments.value.push({
                         type: 'other',
@@ -728,6 +859,7 @@ const onSelect = (event: any) => {
                         file: requiredDoc.file,
                         document_type: 'other',
                     });
+                    // Remove from allUploadedFiles if not already removed
                     const oldFileIndex = allUploadedFiles.value.findIndex(
                         (f) => f.name === requiredDoc.file?.name,
                     );
@@ -735,21 +867,138 @@ const onSelect = (event: any) => {
                         allUploadedFiles.value.splice(oldFileIndex, 1);
                     }
                 }
+                
+                // Assign the new file to this document type
                 requiredDoc.uploaded = true;
                 requiredDoc.file = file;
+                requiredDoc.existing_document_id = undefined; // Clear any existing document reference
+                requiredDoc.existing_file_name = undefined;
 
                 toast.add({
                     severity: 'success',
                     summary: 'Document Added',
-                    detail: `${requiredDoc.label} uploaded successfully`,
+                    detail: `${requiredDoc.label} uploaded successfully.`,
+                    life: 3000,
+                });
+            } else {
+                // If document type not found in required, add as optional
+                optionalDocuments.value.push({
+                    type: selectedDocumentType.value,
+                    label: documentTypeOptions.find(opt => opt.value === selectedDocumentType.value)?.label || 'Document',
+                    file: file,
+                    document_type: selectedDocumentType.value,
+                });
+                toast.add({
+                    severity: 'success',
+                    summary: 'Document Added',
+                    detail: `${file.name} uploaded as ${selectedDocumentType.value}.`,
                     life: 3000,
                 });
             }
         }
     });
 
+    // Update form documents
     form.documents = [...allUploadedFiles.value];
+    
+    // Clear selection for next upload
     selectedDocumentType.value = '';
+    
+    // If using fileUploadRef, clear it
+    if (fileUploadRef.value) {
+        fileUploadRef.value.clear();
+    }
+};
+
+// ✅ FIXED: onRemove handler
+const onRemove = (event: any) => {
+    console.log('🗑️ File removed:', event);
+    
+    let fileToRemove = null;
+    if (event.file) {
+        fileToRemove = event.file;
+    } else if (event.target && event.target.files) {
+        fileToRemove = event.target.files[0];
+    }
+
+    if (!fileToRemove) {
+        console.warn('No file to remove');
+        return;
+    }
+
+    // Remove from required documents
+    const requiredDoc = requiredDocuments.value.find(
+        (doc) => doc.file && doc.file.name === fileToRemove.name && doc.file.size === fileToRemove.size
+    );
+    if (requiredDoc) {
+        requiredDoc.uploaded = false;
+        requiredDoc.file = undefined;
+        requiredDoc.existing_document_id = undefined;
+        requiredDoc.existing_file_name = undefined;
+    }
+
+    // Remove from optional documents
+    const optionalDocIndex = optionalDocuments.value.findIndex(
+        (doc) => doc.file.name === fileToRemove.name && doc.file.size === fileToRemove.size
+    );
+    if (optionalDocIndex > -1) {
+        optionalDocuments.value.splice(optionalDocIndex, 1);
+    }
+
+    // Remove from all uploaded files
+    const allFilesIndex = allUploadedFiles.value.findIndex(
+        (file) => file.name === fileToRemove.name && file.size === fileToRemove.size
+    );
+    if (allFilesIndex > -1) {
+        allUploadedFiles.value.splice(allFilesIndex, 1);
+    }
+
+    // Update form documents
+    form.documents = [...allUploadedFiles.value];
+    
+    if (form.documents.length > 0) {
+        validationErrors.value.documents = '';
+    }
+};
+
+// ✅ FIXED: clearAllDocuments
+const clearAllDocuments = () => {
+    // Clear required documents
+    requiredDocuments.value.forEach((doc) => {
+        doc.uploaded = false;
+        doc.file = undefined;
+        doc.existing_document_id = undefined;
+        doc.existing_file_name = undefined;
+    });
+    
+    // Clear optional documents
+    optionalDocuments.value = [];
+    allUploadedFiles.value = [];
+    form.documents = [];
+    
+    // Mark existing documents for deletion
+    existingDocuments.value.forEach((doc) => {
+        if (!documentsToDelete.value.includes(doc.id)) {
+            documentsToDelete.value.push(doc.id);
+        }
+    });
+    existingDocuments.value = [];
+    form.documents_to_delete = documentsToDelete.value;
+    
+    validationErrors.value.documents = '';
+    selectedDocumentType.value = '';
+    
+    // Clear file upload component
+    if (fileUploadRef.value) {
+        fileUploadRef.value.clear();
+    }
+    
+    toast.add({
+        severity: 'info',
+        summary: 'Cleared',
+        detail: 'All documents cleared.',
+        life: 3000,
+    });
 };
 
 const assignDocumentType = (file: File, documentType: string) => {
@@ -773,6 +1022,8 @@ const assignDocumentType = (file: File, documentType: string) => {
 
         requiredDoc.uploaded = true;
         requiredDoc.file = file;
+        requiredDoc.existing_document_id = undefined;
+        requiredDoc.existing_file_name = undefined;
 
         toast.add({
             severity: 'success',
@@ -794,6 +1045,8 @@ const removeDocumentAssignment = (documentType: string) => {
         });
         requiredDoc.uploaded = false;
         requiredDoc.file = undefined;
+        requiredDoc.existing_document_id = undefined;
+        requiredDoc.existing_file_name = undefined;
     }
 };
 
@@ -805,6 +1058,7 @@ const removeExistingDocument = (documentId: number) => {
         if (requiredDoc && requiredDoc.uploaded && requiredDoc.existing_document_id === documentId) {
             requiredDoc.uploaded = false;
             requiredDoc.existing_document_id = undefined;
+            requiredDoc.existing_file_name = undefined;
         }
         existingDocuments.value.splice(docIndex, 1);
         documentsToDelete.value.push(documentId);
@@ -816,45 +1070,6 @@ const removeExistingDocument = (documentId: number) => {
             life: 3000,
         });
     }
-};
-
-const onRemove = (event: any) => {
-    const fileToRemove = event.file;
-    const requiredDoc = requiredDocuments.value.find((doc) => doc.file && doc.file.name === fileToRemove.name);
-    if (requiredDoc) {
-        requiredDoc.uploaded = false;
-        requiredDoc.file = undefined;
-    }
-    const optionalDocIndex = optionalDocuments.value.findIndex((doc) => doc.file.name === fileToRemove.name);
-    if (optionalDocIndex > -1) {
-        optionalDocuments.value.splice(optionalDocIndex, 1);
-    }
-    const allFilesIndex = allUploadedFiles.value.findIndex((file) => file.name === fileToRemove.name);
-    if (allFilesIndex > -1) {
-        allUploadedFiles.value.splice(allFilesIndex, 1);
-    }
-    form.documents = [...allUploadedFiles.value];
-    if (form.documents.length > 0) {
-        validationErrors.value.documents = '';
-    }
-};
-
-const clearAllDocuments = () => {
-    requiredDocuments.value.forEach((doc) => {
-        doc.uploaded = false;
-        doc.file = undefined;
-        doc.existing_document_id = undefined;
-    });
-    optionalDocuments.value = [];
-    allUploadedFiles.value = [];
-    form.documents = [];
-    existingDocuments.value.forEach((doc) => {
-        documentsToDelete.value.push(doc.id);
-    });
-    existingDocuments.value = [];
-    form.documents_to_delete = documentsToDelete.value;
-    validationErrors.value.documents = '';
-    selectedDocumentType.value = '';
 };
 
 const onUpload = (event: any) => {
@@ -1007,18 +1222,74 @@ const validateLineItems = () => {
     return isValid;
 };
 
+// ✅ FIXED: Validate documents - properly checks existing documents
 const validateDocuments = () => {
     validationErrors.value.documents = '';
+    
+    // If status is Draft, documents are optional
     if (form.status === 'Draft') {
         return true;
     }
+    
+    // If status is Submitted, validate documents
     if (form.status === 'Submitted') {
-        const totalUploadedDocuments = requiredDocuments.value.filter((doc) => doc.uploaded).length + optionalDocuments.value.length;
-        if (totalUploadedDocuments === 0) {
-            validationErrors.value.documents = 'At least one supporting document is required for submission';
+        // Get all document IDs from existing documents
+        const existingDocIds = existingDocuments.value.map(doc => doc.id);
+        const requiredDocIds = requiredDocuments.value
+            .filter(doc => doc.existing_document_id)
+            .map(doc => doc.existing_document_id);
+        
+        // Check if any required document exists (either uploaded or existing)
+        const hasRequiredDocument = requiredDocuments.value.some(
+            (doc) => {
+                // Check if the document is required and either:
+                // 1. Has a newly uploaded file
+                // 2. Has an existing document ID that's still in the list
+                if (!doc.required) return false;
+                
+                const hasNewFile = doc.uploaded && doc.file;
+                const hasExisting = doc.existing_document_id && 
+                    existingDocIds.includes(doc.existing_document_id);
+                
+                return hasNewFile || hasExisting;
+            }
+        );
+        
+        // Count total documents (existing + new uploads)
+        const totalExisting = existingDocuments.value.length;
+        const totalNewUploads = allUploadedFiles.value.length;
+        const totalDocuments = totalExisting + totalNewUploads;
+        
+        console.log('🔍 Document validation debug:');
+        console.log('  - Existing documents:', totalExisting);
+        console.log('  - New uploads:', totalNewUploads);
+        console.log('  - Total documents:', totalDocuments);
+        console.log('  - Has required document:', hasRequiredDocument);
+        console.log('  - Required docs details:', requiredDocuments.value.map(d => ({
+            type: d.type,
+            required: d.required,
+            uploaded: d.uploaded,
+            has_file: !!d.file,
+            existing_id: d.existing_document_id,
+            existing_file: d.existing_file_name
+        })));
+        
+        // Validation rules:
+        // 1. Must have at least one document (existing or new)
+        if (totalDocuments === 0) {
+            validationErrors.value.documents = 'At least one supporting document is required for submission. Please upload a document.';
             return false;
         }
+        
+        // 2. Must have at least one required document (Approval Memo)
+        if (!hasRequiredDocument) {
+            validationErrors.value.documents = 'At least one required document (e.g., Approval Memo) is required for submission.';
+            return false;
+        }
+        
+        return true;
     }
+
     return true;
 };
 
@@ -1258,6 +1529,30 @@ const onFilterBank = (event: any) => {
     fetchBankActivityData(1, event.value);
 };
 
+// ✅ Debug helper function
+const debugDocuments = () => {
+    console.log('--- DOCUMENT DEBUG ---');
+    console.log('Existing documents:', existingDocuments.value);
+    console.log('Required documents:', requiredDocuments.value);
+    console.log('Optional documents:', optionalDocuments.value);
+    console.log('All uploaded files:', allUploadedFiles.value);
+    
+    const hasRequired = requiredDocuments.value.some(
+        (doc) => doc.required && (doc.uploaded || doc.existing_document_id)
+    );
+    console.log('Has required document:', hasRequired);
+    console.log('Form status:', form.status);
+    console.log('--- END DEBUG ---');
+    
+    const total = existingDocuments.value.length + allUploadedFiles.value.length;
+    toast.add({
+        severity: 'info',
+        summary: 'Document Count',
+        detail: `Total: ${total} documents (${existingDocuments.value.length} existing, ${allUploadedFiles.value.length} new)`,
+        life: 5000,
+    });
+};
+
 // Initialize
 onMounted(() => {
     initializeFormItems();
@@ -1265,6 +1560,11 @@ onMounted(() => {
     fetchData(1);
     fetchBankActivityData(1);
     searchProgrammeCodes('');
+    
+    // Debug after initialization
+    setTimeout(() => {
+        debugDocuments();
+    }, 500);
 });
 </script>
 
@@ -1590,8 +1890,109 @@ onMounted(() => {
                         <div class="field-group">
                             <div class="justify-content-between align-items-center mb-3 flex">
                                 <h4 class="m-0">Supporting Documents</h4>
-                                <Button v-if="form.documents.length > 0 || existingDocuments.length > 0"
-                                    label="Clear All" icon="pi pi-times" severity="secondary" text @click="clearAllDocuments" />
+                                <div class="flex gap-2">
+                                    <Button 
+                                        v-if="allUploadedFiles.length > 0 || existingDocuments.length > 0"
+                                        label="Clear All" 
+                                        icon="pi pi-times" 
+                                        severity="secondary" 
+                                        text 
+                                        @click="clearAllDocuments" 
+                                    />
+                                    <Button 
+                                        label="Debug Docs" 
+                                        icon="pi pi-bug" 
+                                        severity="info" 
+                                        text 
+                                        @click="debugDocuments" 
+                                    />
+                                </div>
+                            </div>
+
+                            <!-- ✅ Required Documents Status -->
+                            <div class="mb-4">
+                                <h5 class="mb-2">Required Documents:</h5>
+                                <div class="grid">
+                                    <div v-for="doc in requiredDocuments" :key="doc.type" class="col-12 mb-2">
+                                        <div class="surface-100 border-round border-1 p-3">
+                                            <div class="align-items-center justify-content-between mb-1 flex">
+                                                <div class="align-items-center flex gap-2">
+                                                    <i :class="(doc.uploaded || doc.existing_document_id)
+                                                        ? 'pi pi-check-circle text-green-500' 
+                                                        : doc.required ? 'pi pi-exclamation-circle text-red-500' : 'pi pi-circle text-gray-400'
+                                                    "></i>
+                                                    <span :class="(doc.uploaded || doc.existing_document_id)
+                                                        ? 'text-700 font-semibold' 
+                                                        : 'text-500'
+                                                    ">
+                                                        {{ doc.label }}
+                                                        <span v-if="doc.required" class="text-red-500 text-sm">*</span>
+                                                    </span>
+                                                    <Badge v-if="doc.required && !(doc.uploaded || doc.existing_document_id)" 
+                                                        value="Required" severity="warning" size="small" />
+                                                    <Badge v-else-if="(doc.uploaded || doc.existing_document_id)" 
+                                                        value="Uploaded" severity="success" size="small" />
+                                                </div>
+                                                <div class="flex gap-1">
+                                                    <Button v-if="doc.existing_document_id" 
+                                                        icon="pi pi-eye" 
+                                                        severity="info" 
+                                                        text 
+                                                        rounded 
+                                                        size="small"
+                                                        @click="viewDocument(existingDocuments.find(d => d.id === doc.existing_document_id), 'existing')" 
+                                                        title="View document" 
+                                                    />
+                                                    <Button v-if="doc.existing_document_id" 
+                                                        icon="pi pi-times" 
+                                                        severity="danger" 
+                                                        text 
+                                                        rounded 
+                                                        size="small"
+                                                        @click="removeExistingDocument(doc.existing_document_id)" 
+                                                        title="Remove document" 
+                                                    />
+                                                    <Button v-if="doc.uploaded && doc.file && !doc.existing_document_id"
+                                                        icon="pi pi-eye"
+                                                        severity="info"
+                                                        text
+                                                        rounded
+                                                        size="small"
+                                                        @click="viewDocument(doc, 'required')"
+                                                        title="View uploaded document"
+                                                    />
+                                                    <Button v-if="doc.uploaded && doc.file && !doc.existing_document_id"
+                                                        icon="pi pi-times"
+                                                        severity="danger"
+                                                        text
+                                                        rounded
+                                                        size="small"
+                                                        @click="() => {
+                                                            const removeEvent = { file: doc.file };
+                                                            onRemove(removeEvent);
+                                                        }"
+                                                        title="Remove uploaded file"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div v-if="doc.existing_document_id" class="mt-1">
+                                                <small class="text-500 block">
+                                                    <i class="pi pi-file mr-1"></i>
+                                                    {{ existingDocuments.find(d => d.id === doc.existing_document_id)?.file_name || 'Existing file' }}
+                                                </small>
+                                            </div>
+                                            <div v-if="doc.uploaded && doc.file && !doc.existing_document_id" class="mt-1">
+                                                <small class="text-500 block">
+                                                    <i class="pi pi-file mr-1"></i>
+                                                    {{ doc.file.name }}
+                                                </small>
+                                            </div>
+                                            <div v-else-if="!doc.uploaded && !doc.existing_document_id && doc.required" class="mt-1">
+                                                <small class="text-red-500">Required for submission</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="surface-50 border-round mb-4 p-3">
@@ -1609,11 +2010,26 @@ onMounted(() => {
                                 <Message severity="error" :closable="false">{{ validationErrors.documents }}</Message>
                             </div>
 
-                            <FileUpload mode="advanced" name="documents" :multiple="true" :maxFileSize="10000000"
-                                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" chooseLabel="Attach Documents"
-                                uploadLabel="Upload" cancelLabel="Cancel" @select="onSelect" @remove="onRemove"
-                                @upload="onUpload" :auto="false" :customUpload="true" :disabled="form.processing"
-                                :class="{ 'p-invalid': validationErrors.documents }">
+                            <!-- ✅ FIXED: FileUpload with proper ref -->
+                            <FileUpload 
+                                ref="fileUploadRef"
+                                mode="advanced" 
+                                name="documents" 
+                                :multiple="true" 
+                                :maxFileSize="10000000"
+                                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" 
+                                chooseLabel="Attach Documents"
+                                uploadLabel="Upload" 
+                                cancelLabel="Cancel" 
+                                @select="onSelect" 
+                                @remove="onRemove"
+                                @clear="clearAllDocuments"
+                                @upload="onUpload" 
+                                :auto="false" 
+                                :customUpload="true" 
+                                :disabled="form.processing"
+                                :class="{ 'p-invalid': validationErrors.documents }"
+                            >
                                 <template #empty>
                                     <p class="text-500">Drag and drop files here or click to browse</p>
                                     <small class="text-500">Supported formats: Images, PDF, Word, Excel (Max: 10MB per file)</small>
@@ -1625,28 +2041,79 @@ onMounted(() => {
                                             </div>
                                         </Message>
                                     </div>
+                                    <div v-else class="mt-2">
+                                        <Message severity="info" :closable="false" class="text-sm">
+                                            <div class="align-items-center flex gap-2">
+                                                <i class="pi pi-info-circle"></i>
+                                                <span>Uploading as: <strong>{{ documentTypeOptions.find(opt => opt.value === selectedDocumentType)?.label || selectedDocumentType }}</strong></span>
+                                            </div>
+                                        </Message>
+                                    </div>
+                                    <div class="mt-1">
+                                        <small class="text-500">Max file size: 10MB per file</small>
+                                    </div>
                                 </template>
                             </FileUpload>
 
-                            <!-- Existing Documents -->
-                            <div v-if="existingDocuments.length > 0" class="mt-4">
-                                <h5 class="mb-2 text-blue-600">Existing Documents:</h5>
-                                <ul class="m-0 list-none p-0">
-                                    <li v-for="doc in existingDocuments" :key="doc.id"
-                                        class="align-items-center justify-content-between surface-50 border-round mb-2 flex p-2">
-                                        <div class="align-items-center flex">
-                                            <i :class="getDocumentIcon(doc.mime_type, doc.file_name)" class="mr-2"></i>
-                                            <div>
-                                                <span class="font-medium">{{ doc.file_name }}</span>
-                                                <small class="text-500 block">{{ doc.document_label }} • {{ (doc.file_size / 1024).toFixed(2) }} KB</small>
+                            <!-- ✅ FIXED: Uploaded Files Display -->
+                            <div v-if="allUploadedFiles.length > 0 || existingDocuments.length > 0" class="mt-4">
+                                <h5 class="mb-2">Uploaded Files ({{ allUploadedFiles.length + existingDocuments.length }}):</h5>
+                                
+                                <!-- Existing Documents -->
+                                <div v-if="existingDocuments.length > 0" class="mb-3">
+                                    <h6 class="mb-2 text-blue-600">Existing Documents:</h6>
+                                    <ul class="m-0 list-none p-0">
+                                        <li v-for="doc in existingDocuments" :key="doc.id"
+                                            class="align-items-center justify-content-between surface-50 border-round mb-2 flex p-2">
+                                            <div class="align-items-center flex">
+                                                <i :class="getDocumentIcon(doc.mime_type, doc.file_name)" class="mr-2"></i>
+                                                <div>
+                                                    <span class="font-medium">{{ doc.file_name }}</span>
+                                                    <small class="text-500 block">{{ doc.document_label }} • {{ (doc.file_size / 1024).toFixed(2) }} KB</small>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div class="align-items-center flex gap-2">
-                                            <Button icon="pi pi-eye" severity="info" text rounded @click="viewDocument(doc, 'existing')" title="View document" />
-                                            <Button icon="pi pi-times" severity="danger" text rounded @click="removeExistingDocument(doc.id)" title="Remove document" />
-                                        </div>
-                                    </li>
-                                </ul>
+                                            <div class="align-items-center flex gap-2">
+                                                <Button icon="pi pi-eye" severity="info" text rounded @click="viewDocument(doc, 'existing')" title="View document" />
+                                                <Button icon="pi pi-times" severity="danger" text rounded @click="removeExistingDocument(doc.id)" title="Remove document" />
+                                            </div>
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <!-- Newly Uploaded Documents -->
+                                <div v-if="allUploadedFiles.length > 0">
+                                    <h6 class="mb-2 text-green-600">Newly Uploaded:</h6>
+                                    <ul class="m-0 list-none p-0">
+                                        <li v-for="file in allUploadedFiles" :key="file.name + file.size"
+                                            class="align-items-center justify-content-between surface-50 border-round mb-2 flex p-2">
+                                            <div class="align-items-center flex">
+                                                <i :class="getDocumentIcon(file.type, file.name)" class="mr-2"></i>
+                                                <div>
+                                                    <span class="font-medium">{{ file.name }}</span>
+                                                    <small class="text-500 block">{{ (file.size / 1024).toFixed(2) }} KB</small>
+                                                </div>
+                                            </div>
+                                            <div class="align-items-center flex gap-2">
+                                                <Button icon="pi pi-eye" severity="info" text rounded 
+                                                    @click="() => {
+                                                        const requiredDoc = requiredDocuments.value.find(d => d.file === file);
+                                                        if (requiredDoc) {
+                                                            viewDocument(requiredDoc, 'required');
+                                                        }
+                                                    }" 
+                                                    title="View file" 
+                                                />
+                                                <Button icon="pi pi-times" severity="danger" text rounded 
+                                                    @click="() => {
+                                                        const removeEvent = { file: file };
+                                                        onRemove(removeEvent);
+                                                    }" 
+                                                    title="Remove file" 
+                                                />
+                                            </div>
+                                        </li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>

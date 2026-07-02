@@ -17,6 +17,7 @@ import Dialog from 'primevue/dialog';
 import Dropdown from 'primevue/dropdown';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
+import Timeline from 'primevue/timeline';
 import Message from 'primevue/message';
 import ProgressSpinner from 'primevue/progressspinner';
 import Tag from 'primevue/tag';
@@ -42,6 +43,196 @@ const loadingCodeItems = ref(false);
 const economicCodes = ref([]);
 const codeItems = ref({});
 
+// Add these refs with your other refs
+const showDocumentViewer = ref(false);
+const documentUrl = ref('');
+const currentDocument = ref(null);
+
+// Add these functions
+// const viewDocument = (document) => {
+//     if (!document) {
+//         toast.add({
+//             severity: 'info',
+//             summary: 'No Document',
+//             detail: 'No document attached to this voucher.',
+//             life: 3000,
+//         });
+//         return;
+//     }
+    
+//     let docUrl = document.file_path;
+//     if (docUrl && !docUrl.startsWith('http') && !docUrl.startsWith('/')) {
+//         docUrl = `/storage/${docUrl}`;
+//     } else if (docUrl && !docUrl.startsWith('http') && docUrl.startsWith('/')) {
+//         docUrl = `${window.location.origin}${docUrl}`;
+//     }
+    
+//     currentDocument.value = document;
+//     documentUrl.value = docUrl;
+//     showDocumentViewer.value = true;
+// };
+
+// Debug document data
+const debugDocument = (document) => {
+    console.log('=== DOCUMENT DEBUG ===');
+    console.log('Document object:', document);
+    console.log('file_path:', document.file_path);
+    console.log('file_name:', document.file_name);
+    console.log('url:', document.url);
+    console.log('storage_path:', `/storage/${document.file_path}`);
+    console.log('======================');
+};
+
+const viewDocument = (document) => {
+    console.log('=== VIEW DOCUMENT CALLED ===');
+    console.log('Document:', document);
+    
+    if (!document) {
+        toast.add({
+            severity: 'info',
+            summary: 'No Document',
+            detail: 'No document attached to this voucher.',
+            life: 3000,
+        });
+        return;
+    }
+    
+    // Debug the document
+    debugDocument(document);
+    
+    // Try multiple possible URL formats
+    let docUrl = '';
+    
+    // Check if there's a direct URL
+    if (document.url) {
+        docUrl = document.url;
+        console.log('Using document.url:', docUrl);
+    } 
+    // Check if there's a file_path
+    else if (document.file_path) {
+        // Check if it already starts with /storage or http
+        if (document.file_path.startsWith('/storage') || document.file_path.startsWith('http')) {
+            docUrl = document.file_path;
+        } else {
+            // Add /storage/ prefix
+            docUrl = `/storage/${document.file_path}`;
+        }
+        console.log('Using file_path with storage prefix:', docUrl);
+    }
+    // Check if there's a path property
+    else if (document.path) {
+        docUrl = document.path;
+        console.log('Using document.path:', docUrl);
+    }
+    // Fallback - try to construct from file_name
+    else if (document.file_name) {
+        docUrl = `/storage/documents/${document.file_name}`;
+        console.log('Fallback using file_name:', docUrl);
+    }
+    
+    // Ensure URL is absolute if it's a relative path
+    if (docUrl && !docUrl.startsWith('http') && !docUrl.startsWith('data:')) {
+        docUrl = window.location.origin + (docUrl.startsWith('/') ? '' : '/') + docUrl;
+        console.log('Made absolute URL:', docUrl);
+    }
+    
+    console.log('Final document URL:', docUrl);
+    
+    currentDocument.value = document;
+    documentUrl.value = docUrl;
+    showDocumentViewer.value = true;
+};
+
+// Download document
+const downloadDocument = () => {
+    if (documentUrl.value) {
+        window.open(documentUrl.value, '_blank');
+    } else {
+        toast.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Document URL not available',
+            life: 3000,
+        });
+    }
+};
+
+// Open in new tab
+const openInNewTab = () => {
+    if (documentUrl.value) {
+        window.open(documentUrl.value, '_blank');
+    } else {
+        toast.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Document URL not available',
+            life: 3000,
+        });
+    }
+};
+
+// Handle iframe errors
+const handleIframeError = (event) => {
+    console.error('Iframe error:', event);
+    toast.add({
+        severity: 'warn',
+        summary: 'Preview Unavailable',
+        detail: 'The document could not be previewed. Please download it to view.',
+        life: 5000,
+    });
+};
+
+// Handle image errors
+const handleImageError = (event) => {
+    console.error('Image error:', event);
+    toast.add({
+        severity: 'warn',
+        summary: 'Image Preview Unavailable',
+        detail: 'The image could not be loaded. Please download it to view.',
+        life: 5000,
+    });
+};
+
+// Handle image load
+const handleImageLoad = () => {
+    console.log('Image loaded successfully');
+};
+
+const closeDocumentViewer = () => {
+    showDocumentViewer.value = false;
+    documentUrl.value = '';
+    currentDocument.value = null;
+};
+
+// Helper to determine document icon
+const getDocumentIcon = (fileName) => {
+    if (!fileName) return 'pi pi-file';
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    const icons = {
+        pdf: 'pi pi-file-pdf text-red-500',
+        doc: 'pi pi-file-word text-blue-500',
+        docx: 'pi pi-file-word text-blue-500',
+        xls: 'pi pi-file-excel text-green-500',
+        xlsx: 'pi pi-file-excel text-green-500',
+        ppt: 'pi pi-file-powerpoint text-orange-500',
+        pptx: 'pi pi-file-powerpoint text-orange-500',
+        jpg: 'pi pi-image text-purple-500',
+        jpeg: 'pi pi-image text-purple-500',
+        png: 'pi pi-image text-purple-500',
+        gif: 'pi pi-image text-purple-500',
+        svg: 'pi pi-image text-purple-500',
+        txt: 'pi pi-file text-gray-500',
+        zip: 'pi pi-file-archive text-yellow-500',
+        rar: 'pi pi-file-archive text-yellow-500',
+    };
+    return icons[ext] || 'pi pi-file text-gray-500';
+};
+
+// Helper to get document type label
+const getDocumentTypeLabel = (document) => {
+    return document.document_label || document.document_type || 'Document';
+};
+
 // Retirement form state
 const retirementForm = ref({
     line_items: [],
@@ -61,11 +252,42 @@ const props = defineProps({
     },
 });
 
+// Format datetime
+const formatDateTime = (date) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
+// Get approval action severity
+const getApprovalActionSeverity = (action) => {
+    const severities = {
+        'Approved': 'success',
+        'Paid': 'success',
+        'Closed': 'success',
+        'MAS Approved': 'success',
+        'TCO Approved': 'success',
+        'Declined': 'danger',
+        'Rejected': 'danger',
+        'Forwarded': 'info',
+        'Submitted': 'info',
+        'Sent Back': 'warning',
+        'Returned': 'warning',
+        'Created': 'info',
+        'Saved': 'secondary',
+        'Updated': 'secondary',
+    };
+    return severities[action] || 'info';
+};
+
 const isLocallyApproved = ref(props.voucher.status === 'Approved');
 const emit = defineEmits(['approve', 'retire']);
 const page = usePage();
-
-// const retirementStatusData = ref(null);
 
 // User info from Laravel backend
 const currentUser = computed(() => page.props.auth?.user || {});
@@ -73,7 +295,6 @@ const currentUserId = computed(() => currentUser.value?.id);
 
 // Show conditions for buttons - SIMPLIFIED
 const showApproveButton = computed(() => {
-    // Check voucher conditions
     return (
         props.voucher.voucher_type === 'prepayment' &&
         props.voucher.status === 'Submitted' &&
@@ -91,20 +312,15 @@ const showRetireButton = computed(() => {
 // Permission checks - SIMPLIFIED WITH DEVELOPMENT MODE
 const canApprove = computed(() => {
     if (!showApproveButton.value) return false;
-
-    // Development mode - allow if user is logged in
     if (isDevelopmentMode() && currentUserId.value) {
         console.log('DEV MODE: Allowing approval');
         return true;
     }
-
     return canApproveVoucher(props.voucher);
 });
 
 const canRetire = computed(() => {
     if (!showRetireButton.value) return false;
-
-    // Development mode - allow if user is logged in AND voucher can be retired
     if (isDevelopmentMode() && currentUserId.value) {
         console.log('DEV MODE: Checking retirement status only');
         if (!retirementStatusData.value) return false;
@@ -113,7 +329,6 @@ const canRetire = computed(() => {
             retirementStatusData.value.can_retire
         );
     }
-
     return canRetireVoucher(props.voucher, retirementStatusData.value);
 });
 
@@ -130,35 +345,10 @@ watch(
     { immediate: true },
 );
 
-// Debug user permissions
-// watch(
-//     () => currentUser.value,
-//     (user) => {
-//         console.log('=== USER INFO ===');
-//         console.log('User ID:', user.id);
-//         console.log('User Name:', user.name);
-//         console.log('User Roles:', user.roles);
-//         console.log('User Permissions:', user.permissions);
-//         console.log('Has Final Account role:', hasRole('Final Account'));
-//         console.log('Has admin role:', hasRole('admin'));
-//         console.log(
-//             'Has approve_vouchers permission:',
-//             hasPermission('approve_vouchers'),
-//         );
-//         console.log(
-//             'Has retire_vouchers permission:',
-//             hasPermission('retire_vouchers'),
-//         );
-//         console.log('=== END USER INFO ===');
-//     },
-//     { immediate: true },
-// );
-
 // Tooltip messages - SIMPLIFIED
 const approveTooltip = computed(() => {
     if (!canApprove.value) {
         const reasons = [];
-
         if (props.voucher.voucher_type !== 'prepayment') {
             reasons.push('Not a prepayment voucher');
         }
@@ -167,7 +357,6 @@ const approveTooltip = computed(() => {
                 `Status: ${props.voucher.status} (needs to be Submitted)`,
             );
         }
-
         if (!isDevelopmentMode()) {
             if (!hasRole(['Final Account', 'admin'])) {
                 reasons.push(
@@ -178,8 +367,7 @@ const approveTooltip = computed(() => {
                 reasons.push('No approval permission');
             }
         }
-
-        return reasons.join(' â€¢ ') || 'Cannot approve voucher';
+        return reasons.join(' • ') || 'Cannot approve voucher';
     }
     return 'Approve this prepayment voucher for retirement';
 });
@@ -187,7 +375,6 @@ const approveTooltip = computed(() => {
 const retireTooltip = computed(() => {
     if (!canRetire.value) {
         const reasons = [];
-
         if (!retirementStatusData.value) {
             return 'Loading retirement status...';
         }
@@ -200,7 +387,6 @@ const retireTooltip = computed(() => {
         if (!retirementStatusData.value.can_retire) {
             return 'Voucher not ready for retirement';
         }
-
         if (!isDevelopmentMode()) {
             if (!hasRole(['Final Account', 'admin'])) {
                 reasons.push(
@@ -211,28 +397,22 @@ const retireTooltip = computed(() => {
                 reasons.push('No retirement permission');
             }
         }
-
-        return reasons.join(' â€¢ ') || 'Cannot retire voucher';
+        return reasons.join(' • ') || 'Cannot retire voucher';
     }
     return 'Retire prepayment voucher';
 });
 
 // Approval function
 const approveVoucher = async () => {
-    // console.log("we came here");
-    // return;
-    // if (!canApprove.value) return;
-
     try {
-        // Show loading with auto-remove after 5 seconds (in case something goes wrong)
-        const loadingToast = toast.add({
+        toast.add({
             severity: 'info',
             summary: 'Approving...',
             detail: 'Please wait while we approve the voucher',
-            life: 5000, // Auto-remove after 5 seconds
+            life: 5000,
         });
 
-        const response = await axios.put(
+        await axios.put(
             `/vouchers/${props.voucher.id}/approve`,
             {
                 approved_by: currentUserId.value,
@@ -241,7 +421,7 @@ const approveVoucher = async () => {
             },
         ).then((response) => {
             if (response.data.success === 'true' || response.data.success === true) {
-                console.log('Response Ben:', response.data);
+                console.log('Response:', response.data);
                 canRetire.value = true;
                 retirementStatusData.value = {
                     can_retire: true,
@@ -251,43 +431,28 @@ const approveVoucher = async () => {
                 };
             }
             router.reload({ only: ['voucher'] });
-
         }).catch((error) => {
             console.error('Failed to approve voucher:', error);
         });
 
-        // âœ… UPDATE BUTTON STATE HERE - JUST THIS ONE LINE
         isLocallyApproved.value = true;
-
-        // âœ… ALSO UPDATE RETIREMENT STATUS DATA
         if (retirementStatusData.value) {
             retirementStatusData.value = {
                 ...retirementStatusData.value,
                 voucher_status: 'Approved',
-                can_retire: true, // This is the key!
+                can_retire: true,
                 can_be_approved: false,
             };
         }
 
-        // If success, the loading toast will auto-remove after 5 seconds
-        // OR we can replace it with success immediately
-
-        // Show success message (this will appear after loading toast auto-removes)
         toast.add({
             severity: 'success',
             summary: 'Voucher Approved',
             detail: 'Prepayment voucher has been approved for retirement.',
             life: 3000,
         });
-
-        // Refresh page
-        // setTimeout(() => {
-        //     router.reload({ only: ['voucher'] });
-        // }, 1000);
     } catch (error) {
         console.error('Failed to approve voucher:', error);
-
-        // Show error message
         let errorMessage = 'Failed to approve voucher.';
         if (error.response?.data?.message) {
             errorMessage = error.response.data.message;
@@ -296,7 +461,6 @@ const approveVoucher = async () => {
                 .flat()
                 .join(', ');
         }
-
         toast.add({
             severity: 'error',
             summary: 'Approval Failed',
@@ -305,23 +469,18 @@ const approveVoucher = async () => {
         });
     }
 };
+
 const confirmDraftVoucher = async () => {
-    // console.log("we came here");
-    // return;
-    // if (!canApprove.value) return;
-
     showConfirmationModalDraft.value = false;
-
     try {
-        // Show loading with auto-remove after 5 seconds (in case something goes wrong)
-        const loadingToast = toast.add({
+        toast.add({
             severity: 'info',
             summary: 'saving as draft...',
             detail: 'Please wait while we save the voucher as draft',
-            life: 5000, // Auto-remove after 5 seconds
+            life: 5000,
         });
 
-        const response = await axios.put(
+        await axios.put(
             `/vouchers/${props.voucher.id}/draft`,
             {
                 approved_by: currentUserId.value,
@@ -330,63 +489,26 @@ const confirmDraftVoucher = async () => {
             },
         ).then((response) => {
             if (response.data.success === 'true' || response.data.success === true) {
-                console.log('Response Ben:', response.data);
-                // canRetire.value = true;
-                // retirementStatusData.value = {
-                //     // can_retire: true,
-                //     // already_retired: false,
-                //     // retired_amount: 0,
-                //     available_balance: props.voucher.total_amount || 0,
-                // };
+                console.log('Response:', response.data);
             }
             goBack();
             router.reload({ only: ['voucher'] });
-
         }).catch((error) => {
             console.error('Failed to save voucher as draft:', error);
         });
 
-        // // âœ… UPDATE BUTTON STATE HERE - JUST THIS ONE LINE
-        // isLocallyApproved.value = true;
-
-        // // âœ… ALSO UPDATE RETIREMENT STATUS DATA
-        // if (retirementStatusData.value) {
-        //     retirementStatusData.value = {
-        //         ...retirementStatusData.value,
-        //         voucher_status: 'Approved',
-        //         can_retire: true, // This is the key!
-        //         can_be_approved: false,
-        //     };
-        // }
-
-        // If success, the loading toast will auto-remove after 5 seconds
-        // OR we can replace it with success immediately
-
-        // Show success message (this will appear after loading toast auto-removes)
         toast.add({
             severity: 'success',
-            summary: 'Voucher Approved',
-            detail: 'Prepayment voucher has been approved for retirement.',
+            summary: 'Voucher Saved as Draft',
+            detail: 'Voucher has been saved as draft.',
             life: 3000,
         });
-
-        // Refresh page
-        // setTimeout(() => {
-        //     router.reload({ only: ['voucher'] });
-        // }, 1000);
     } catch (error) {
-        console.error('Failed to approve voucher:', error);
-
-        // Show error message
-        let errorMessage = 'Failed to approve voucher.';
+        console.error('Failed to save voucher as draft:', error);
+        let errorMessage = 'Failed to save voucher as draft.';
         if (error.response?.data?.message) {
             errorMessage = error.response.data.message;
-        } else if (error.response?.data?.errors) {
-            errorMessage = Object.values(error.response.data.errors)
-                .flat()
-                .join(', ');
         }
-
         toast.add({
             severity: 'error',
             summary: 'Save as Draft Failed',
@@ -399,8 +521,6 @@ const confirmDraftVoucher = async () => {
 // Retirement function for opening the modal
 const openRetirementModal = async () => {
     if (!canRetire.value) return;
-
-    // Check retirement status from API
     if (!retirementStatusData.value || !retirementStatusData.value.can_retire) {
         toast.add({
             severity: 'error',
@@ -412,7 +532,6 @@ const openRetirementModal = async () => {
         });
         return;
     }
-
     try {
         await initializeRetirementForm();
         showRetirementModal.value = true;
@@ -430,6 +549,7 @@ const openRetirementModal = async () => {
 // --- LIFECYCLE HOOKS ---
 onMounted(() => {
     fetchRetirementStatus();
+    loadApprovals();
 });
 
 // --- API FUNCTIONS ---
@@ -448,13 +568,6 @@ const fetchRetirementStatus = async () => {
             detail: 'Could not load retirement status',
             life: 3000,
         });
-        // Set default values if API fails
-        // retirementStatusData.value = {
-        //     can_retire: false,
-        //     already_retired: false,
-        //     retired_amount: 0,
-        //     available_balance: props.voucher.total_amount || 0,
-        // };
     }
 };
 
@@ -502,11 +615,8 @@ const fetchEconomicCodes = async () => {
 
 const fetchCodeItems = async (economicCodeId) => {
     if (!economicCodeId) return [];
-
     try {
         loadingCodeItems.value = true;
-
-        // Check if already cached
         if (codeItems.value[economicCodeId]) {
             return codeItems.value[economicCodeId];
         }
@@ -521,7 +631,6 @@ const fetchCodeItems = async (economicCodeId) => {
         );
 
         let items = [];
-
         if (response.data && response.data.data) {
             items = response.data.data.map((item) => ({
                 id: item.id,
@@ -540,9 +649,7 @@ const fetchCodeItems = async (economicCodeId) => {
             }));
         }
 
-        // Cache the results
         codeItems.value[economicCodeId] = items;
-
         return items;
     } catch (error) {
         console.error('Error fetching code items:', error);
@@ -561,12 +668,8 @@ const fetchCodeItems = async (economicCodeId) => {
 // --- RETIREMENT FORM FUNCTIONS ---
 const initializeRetirementForm = async () => {
     console.log('Initializing retirement form for voucher:', props.voucher.id);
-
     try {
-        // Fetch economic codes first
         await fetchEconomicCodes();
-
-        // Initialize with one empty item
         retirementForm.value.line_items = [
             {
                 temp_id: Date.now(),
@@ -578,14 +681,9 @@ const initializeRetirementForm = async () => {
                 sub_total: 0,
             },
         ];
-
-        // Reset totals
         retirementForm.value.total_amount = 0;
         retirementForm.value.comment = '';
-
-        // Calculate initial totals
         calculateTotals();
-
         console.log('Retirement form initialized:', retirementForm.value);
     } catch (error) {
         console.error('Error initializing retirement form:', error);
@@ -595,8 +693,6 @@ const initializeRetirementForm = async () => {
             detail: 'Failed to initialize retirement form',
             life: 5000,
         });
-
-        // Fallback to empty form
         retirementForm.value = {
             line_items: [
                 {
@@ -616,14 +712,12 @@ const initializeRetirementForm = async () => {
 };
 
 const submitRetirement = () => {
-    // Get available balance from retirement status data
     const availableBalance = retirementStatusData.value?.available_balance || 0;
 
     console.log('=== BALANCE CHECK ===');
     console.log('Available balance:', availableBalance);
     console.log('Trying to retire:', retirementForm.value.total_amount);
 
-    // Check if there's any balance to retire
     if (availableBalance <= 0) {
         const alreadyRetired = retirementStatusData.value?.retired_amount || 0;
         toast.add({
@@ -635,7 +729,6 @@ const submitRetirement = () => {
         return;
     }
 
-    // Check if trying to retire more than available
     if (retirementForm.value.total_amount > availableBalance) {
         toast.add({
             severity: 'error',
@@ -656,7 +749,6 @@ const submitRetirement = () => {
         return;
     }
 
-    // Prepare retirement data with line items
     const retirementData = {
         line_items: retirementForm.value.line_items
             .filter((item) => item.unit_price > 0 && item.quantity > 0)
@@ -681,7 +773,6 @@ const submitRetirement = () => {
 
     console.log('Submitting retirement with data:', retirementData);
 
-    // Send retirement request
     router.post(`/vouchers/${props.voucher.id}/retire`, retirementData, {
         preserveScroll: true,
         onSuccess: () => {
@@ -694,22 +785,17 @@ const submitRetirement = () => {
                         : `Partial retirement submitted for ${props.voucher.voucher_number}. ${formatCurrency(remainingBalance.value)} remaining.`,
                 life: 5000,
             });
-
-            // Close modal and refresh page
             showRetirementModal.value = false;
             router.reload({ only: ['voucher'] });
         },
         onError: (errors) => {
             console.error('Error response:', errors);
-
             let errorDetail = 'Failed to retire the voucher.';
-
             if (errors.response?.data?.errors?.total_amount) {
                 errorDetail = errors.response.data.errors.total_amount[0];
             } else if (errors.message) {
                 errorDetail = errors.message;
             }
-
             toast.add({
                 severity: 'error',
                 summary: 'Error',
@@ -728,16 +814,10 @@ const getCodeItems = (economicCodeId) => {
 
 const onEconomicCodeChange = async (item, economicCodeId) => {
     console.log('Economic code changed to:', economicCodeId, 'for item:', item);
-
-    // Reset code item when economic code changes
     item.code_item_id = null;
-
-    // Fetch code items for the selected economic code
     if (economicCodeId) {
         const items = await fetchCodeItems(economicCodeId);
         console.log('Code items fetched:', items);
-
-        // Auto-populate description based on selection
         if (!item.description && economicCodes.value.length > 0) {
             const selectedCode = economicCodes.value.find(
                 (ec) => ec.id == economicCodeId,
@@ -814,7 +894,6 @@ const calculateTotals = () => {
     retirementForm.value.total_amount = total.toFixed(2) || total;
     console.log('This is the computed totals');
     console.log(retirementForm.value.total_amount);
-
 };
 
 const autoBalanceToZero = () => {
@@ -822,19 +901,15 @@ const autoBalanceToZero = () => {
         const itemsWithAmounts = retirementForm.value.line_items.filter(
             (item) => item.sub_total > 0,
         );
-
         if (itemsWithAmounts.length > 0) {
             const distribution =
                 remainingBalance.value / itemsWithAmounts.length;
-
             itemsWithAmounts.forEach((item) => {
                 if (item.quantity > 0) {
                     item.unit_price += distribution / item.quantity;
                 }
             });
-
             calculateTotals();
-
             toast.add({
                 severity: 'success',
                 summary: 'Auto-balanced',
@@ -864,16 +939,9 @@ const viewRetirementHistory = async () => {
         const response = await axios.get(
             `/api/vouchers/${props.voucher.id}/retirement-history`,
         );
-
         console.log('Retirement history:', response.data);
-
-        // Assuming the API returns data in response.data.data
         retirementHistory.value = response.data.data || [];
-
-        // Show modal
         showRetirementHistoryModal.value = true;
-
-        // Optional: Show toast notification
         if (retirementHistory.value.length > 0) {
             toast.add({
                 severity: 'info',
@@ -905,16 +973,12 @@ const exportRetirementHistory = () => {
         });
         return;
     }
-
-    // You can implement Excel export here
     toast.add({
         severity: 'success',
         summary: 'Export Started',
         detail: `Exporting ${retirementHistory.value.length} retirement records`,
         life: 3000,
     });
-
-    // TODO: Implement actual Excel export
     console.log('Export retirement history:', retirementHistory.value);
 };
 
@@ -929,7 +993,6 @@ const retirementProgress = computed(() => {
 
 const getRetirementStatusText = () => {
     if (!retirementStatusData.value) return 'Loading...';
-
     if (
         retirementStatusData.value.already_retired ||
         retirementProgress.value === 100
@@ -947,7 +1010,6 @@ const getRetirementStatusText = () => {
 const getRetirementStatusSeverity = (status) => {
     if (!status) return 'info';
     const normalizedStatus = status.toLowerCase().trim();
-
     switch (normalizedStatus) {
         case 'approved':
         case 'completed':
@@ -1003,7 +1065,6 @@ const breadcrumbs = computed(() => [
 const getStatusSeverity = (status) => {
     if (!status) return 'info';
     const normalizedStatus = status.toLowerCase().trim();
-
     switch (normalizedStatus) {
         case 'approved':
         case 'paid':
@@ -1053,21 +1114,16 @@ const canDeleteVoucher = (voucher) => {
 };
 
 const canDraftVoucher = (voucher) => {
-
     console.log(usePage().props.auth.userRoles);
     if (!voucher || !voucher.status || voucher.status.toLowerCase().trim() === 'draft') return true;
     if (usePage().props.auth.userRoles.includes('admin') ||
-        // usePage().props.auth.userRoles.includes('Authenticated') ||
         usePage().props.auth.userRoles.includes('supervisor') ||
-        usePage().props.auth.userRoles.includes('Admin') || // Capitalized version
-        usePage().props.auth.userRoles.includes('Supervisor')) { // Capitalized version
+        usePage().props.auth.userRoles.includes('Admin') ||
+        usePage().props.auth.userRoles.includes('Supervisor')) {
         return false;
     }
-    return true
+    return true;
 };
-
-
-
 
 // --- FORMATTERS ---
 const formatCurrency = (value) => {
@@ -1080,11 +1136,6 @@ const formatCurrency = (value) => {
 const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-GB');
-};
-
-const formatDateTime = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleString('en-GB');
 };
 
 const convertNumberToWords = (amount) => {
@@ -1202,6 +1253,7 @@ const deleteVoucher = () => {
     currentAction.value = 'delete';
     showConfirmationModal.value = true;
 };
+
 const draftVoucher = () => {
     if (canDraftVoucher(props.voucher)) {
         toast.add({
@@ -1222,7 +1274,6 @@ const goBack = () => {
 
 const confirmDelete = () => {
     showConfirmationModal.value = false;
-
     router.delete(route('vouchers.destroy', props.voucher.id), {
         preserveScroll: true,
         onSuccess: () => {
@@ -1246,6 +1297,24 @@ const confirmDelete = () => {
     });
 };
 
+// Approvals data from API
+const approvals = ref([]);
+const loadingApprovals = ref(false);
+
+// Load approvals from API
+const loadApprovals = async () => {
+    try {
+        loadingApprovals.value = true;
+        const response = await axios.get(`/vouchers/${props.voucher.id}/approvals`);
+        approvals.value = response.data || [];
+        console.log('Approvals loaded via API:', approvals.value);
+    } catch (error) {
+        console.error('Error loading approvals:', error);
+        approvals.value = [];
+    } finally {
+        loadingApprovals.value = false;
+    }
+};
 
 // --- WATCHERS ---
 watch(() => retirementForm.value.line_items, calculateTotals, { deep: true });
@@ -1267,7 +1336,6 @@ watch(
 
 <template>
     <AppLayout :breadcrumbs="breadcrumbs">
-
         <Head :title="`Voucher - ${voucher.voucher_number}`" />
         <Toast />
 
@@ -1283,8 +1351,7 @@ watch(
                                 {{ voucher.voucher_number }}
                             </h1>
                             <div class="align-items-center flex gap-3">
-                                <Tag :value="voucher.status" :severity="getStatusSeverity(voucher.status)
-                                    " />
+                                <Tag :value="voucher.status" :severity="getStatusSeverity(voucher.status)" />
                                 <Tag v-if="retirementStatusData" :value="retirementStatusData.already_retired
                                     ? 'FULLY RETIRED'
                                     : 'PENDING RETIREMENT'
@@ -1317,16 +1384,12 @@ watch(
                     </div>
 
                     <div class="flex gap-2">
-                        <!-- Approve Button - Shows when voucher is Submitted -->
                         <Button v-if="showApproveButton" label="Approve Prepayment Voucher" icon="pi pi-check"
                             severity="success" :disabled="!canApprove" v-tooltip="approveTooltip"
                             @click="approveVoucher" />
-
-                        <!-- Retire Button - Shows when voucher is Approved -->
                         <Button v-if="showRetireButton" label="Approve Prepayment Voucher For Retirement"
                             icon="pi pi-check-circle" severity="warn" :disabled="!canRetire" v-tooltip="retireTooltip"
                             @click="openRetirementModal" />
-
                         <Button label="Print" icon="pi pi-print" severity="info" @click="printVoucher" />
                         <Button label="Edit Voucher" icon="pi pi-pencil" severity="secondary"
                             :disabled="!canEditVoucher(voucher)" v-tooltip="canEditVoucher(voucher)
@@ -1338,7 +1401,7 @@ watch(
                                 ? 'Delete Voucher'
                                 : 'Cannot delete this voucher'
                                 " @click="deleteVoucher" />
-                        <Button label="Draft" icon="pi pi-trash" severity="info" :disabled="canDraftVoucher(voucher)"
+                        <Button label="Draft" icon="pi pi-save" severity="info" :disabled="canDraftVoucher(voucher)"
                             v-tooltip="canDraftVoucher(voucher)
                                 ? 'Save as Draft'
                                 : 'Cannot save as Draft'
@@ -1389,7 +1452,6 @@ watch(
                                 </div>
                             </div>
 
-                            <!-- Retirement Status from API -->
                             <div class="col-6" v-if="retirementStatusData">
                                 <div class="field">
                                     <label class="text-500 font-semibold">Retirement Status</label>
@@ -1415,7 +1477,6 @@ watch(
                                 </div>
                             </div>
 
-                            <!-- Retirement Amount Details -->
                             <div class="col-12" v-if="retirementStatusData">
                                 <div class="field">
                                     <label class="text-500 font-semibold">Retirement Details</label>
@@ -1478,7 +1539,6 @@ watch(
                                 </div>
                             </div>
 
-                            <!-- Retirement History Button -->
                             <div class="col-12" v-if="
                                 retirementStatusData &&
                                 retirementStatusData.retired_amount > 0
@@ -1504,7 +1564,6 @@ watch(
                     </template>
                     <template #content>
                         <div class="grid">
-                            <!-- Payee Information -->
                             <div class="col-12" v-if="voucher.payee_name">
                                 <div class="field">
                                     <label class="text-500 font-semibold">Payee/Beneficiary</label>
@@ -1514,7 +1573,6 @@ watch(
                                 </div>
                             </div>
 
-                            <!-- Bank Activity Information -->
                             <template v-if="voucher.bankActivity">
                                 <div class="col-12">
                                     <div class="field">
@@ -1566,7 +1624,6 @@ watch(
                                 </div>
                             </template>
 
-                            <!-- Amount Information -->
                             <div class="col-12">
                                 <div class="field">
                                     <label class="text-500 font-semibold">Total Amount</label>
@@ -1581,7 +1638,6 @@ watch(
                                 </div>
                             </div>
 
-                            <!-- Amount in Words -->
                             <div class="col-12">
                                 <div class="field">
                                     <label class="text-500 font-semibold">Amount in Words</label>
@@ -1591,7 +1647,6 @@ watch(
                                 </div>
                             </div>
 
-                            <!-- Retirement Progress Section -->
                             <div class="col-12" v-if="
                                 retirementStatusData &&
                                 voucher.voucher_type === 'prepayment'
@@ -1599,7 +1654,6 @@ watch(
                                 <div class="field">
                                     <label class="text-500 font-semibold">Retirement Progress</label>
                                     <div class="space-y-2">
-                                        <!-- Progress Bar -->
                                         <div class="relative h-4 w-full rounded-full bg-gray-200">
                                             <div class="bg-primary h-4 rounded-full transition-all duration-300"
                                                 :style="`width: ${retirementProgress}%;`" :class="{
@@ -1626,7 +1680,6 @@ watch(
                                             </div>
                                         </div>
 
-                                        <!-- Progress Details -->
                                         <div class="mt-2 grid">
                                             <div class="col-4 text-center">
                                                 <div class="text-500 text-xs">
@@ -1684,7 +1737,6 @@ watch(
                                             </div>
                                         </div>
 
-                                        <!-- Retirement Status -->
                                         <div class="mt-2 text-center">
                                             <Tag :value="getRetirementStatusText()
                                                 " :severity="getRetirementStatusSeverity(
@@ -1707,7 +1759,6 @@ watch(
                                 </div>
                             </div>
 
-                            <!-- Status and Metadata -->
                             <div class="col-6">
                                 <div class="field">
                                     <label class="text-500 font-semibold">Voucher Status</label>
@@ -1744,7 +1795,6 @@ watch(
                                 </div>
                             </div>
 
-                            <!-- Approval Information -->
                             <div class="col-12" v-if="
                                 voucher.approved_by || voucher.approved_at
                             ">
@@ -1860,7 +1910,6 @@ watch(
                             </Column>
                         </DataTable>
 
-                        <!-- Summary Row -->
                         <div
                             class="justify-content-between align-items-center border-round bg-primary-50 mt-4 flex border-1 border-200 p-3">
                             <span class="text-lg font-bold">Grand Total</span>
@@ -1873,799 +1922,163 @@ watch(
             </div>
 
             <!-- Documents Section -->
+            <!-- Documents Section - Enhanced with View Option -->
             <div class="col-12 md:col-6" v-if="voucher.documents && voucher.documents.length > 0">
                 <Card>
                     <template #title>
                         <div class="align-items-center flex gap-2">
                             <i class="pi pi-file-pdf text-primary"></i>
-                            <span>Supporting Documents ({{
-                                totalDocuments
-                                }})</span>
+                            <span>Supporting Documents ({{ totalDocuments }})</span>
                         </div>
                     </template>
                     <template #content>
                         <div class="space-y-2">
                             <div v-for="document in voucher.documents" :key="document.id"
-                                class="align-items-center justify-content-between border-round flex border-1 border-200 p-3">
+                                class="align-items-center justify-content-between border-round flex border-1 border-200 p-3 hover:surface-100 transition-all cursor-pointer"
+                                @click="viewDocument(document)">
                                 <div class="align-items-center flex gap-3">
-                                    <i v-if="document.is_pdf" class="pi pi-file-pdf text-red-500"></i>
-                                    <i v-else-if="document.is_image" class="pi pi-image text-green-500"></i>
-                                    <i v-else class="pi pi-file text-blue-500"></i>
+                                    <i :class="getDocumentIcon(document.file_name)" class="text-xl"></i>
                                     <div>
                                         <div class="font-medium">
                                             {{ document.file_name }}
                                         </div>
-                                        <div class="text-500 text-sm">
-                                            {{ document.document_type_label }} â€¢
-                                            {{
-                                                (
-                                                    document.file_size / 1024
-                                                ).toFixed(2)
-                                            }}
-                                            KB
+                                        <div class="text-500 text-sm flex gap-2">
+                                            <span>{{ document.document_type_label || 'Document' }}</span>
+                                            <span>•</span>
+                                            <span>{{ (document.file_size / 1024).toFixed(2) }} KB</span>
                                         </div>
                                     </div>
                                 </div>
-                                <Button icon="pi pi-download" text rounded severity="info"
-                                    @click="window.open(document.url, '_blank')" v-tooltip="'Download document'" />
+                                <div class="flex gap-2">
+                                    <Button 
+                                        icon="pi pi-eye" 
+                                        text 
+                                        rounded 
+                                        severity="info" 
+                                        size="small"
+                                        v-tooltip.top="'View Document'"
+                                        @click.stop="viewDocument(document)"
+                                    />
+                                    <Button 
+                                        icon="pi pi-download" 
+                                        text 
+                                        rounded 
+                                        severity="secondary" 
+                                        size="small"
+                                        v-tooltip.top="'Download Document'"
+                                        @click.stop="window.open(document.url || `/storage/${document.file_path}`, '_blank')"
+                                    />
+                                </div>
                             </div>
                         </div>
                     </template>
                 </Card>
             </div>
 
-            <!-- Approval History -->
+            <!-- Approval Workflow - Using API Loaded Data -->
             <div class="col-12" :class="voucher.documents && voucher.documents.length > 0
                 ? 'md:col-6'
                 : 'md:col-12'
                 ">
-                <Card>
+                <Card class="approval-history-card">
                     <template #title>
                         <div class="align-items-center flex gap-2">
-                            <i class="pi pi-history text-primary"></i>
-                            <span>Approval History</span>
+                            <i class="pi pi-sitemap text-primary"></i>
+                            <span>Approval Workflow</span>
+                            <Badge :value="approvals.length || 0" severity="info" />
                         </div>
                     </template>
                     <template #content>
-                        <div v-if="
-                            voucher.approvals &&
-                            voucher.approvals.length > 0
-                        " class="space-y-3">
-                            <div v-for="approval in voucher.approvals" :key="approval.id"
-                                class="border-round border-1 border-200 p-3">
-                                <div class="justify-content-between flex">
-                                    <div>
-                                        <div class="font-medium">
-                                            {{
-                                                approval.user?.name ||
-                                                'Unknown User'
-                                            }}
-                                            <Tag :value="approval.approval_role" severity="info" class="ml-2" />
-                                        </div>
-                                        <div class="text-500 mt-1 text-sm">
-                                            Step {{ approval.approval_step }} â€¢
-                                            {{
-                                                formatDateTime(
-                                                    approval.action_at,
-                                                )
-                                            }}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <Tag :value="approval.action" :severity="{
-                                            Approved: 'success',
-                                            Declined: 'danger',
-                                            'Sent Back': 'warning',
-                                            Forwarded: 'info',
-                                            Saved: 'secondary',
-                                        }[approval.action] || 'info'
-                                            " />
-                                    </div>
-                                </div>
-                                <div v-if="approval.comment" class="text-500 mt-2 border-200 border-l-3 pl-2 text-sm">
-                                    <i class="pi pi-comment mr-1"></i>{{ approval.comment }}
-                                </div>
-                            </div>
+                        <div v-if="loadingApprovals" class="text-center p-4">
+                            <ProgressSpinner style="width: 40px; height: 40px" strokeWidth="4" />
+                            <p class="text-500 mt-2">Loading workflow...</p>
                         </div>
-                        <div v-else class="text-500 p-4 text-center">
-                            <i class="pi pi-info-circle mr-2"></i>No approval
-                            history available
+                        <div v-else-if="approvals && approvals.length > 0" class="workflow-timeline">
+                            <Timeline
+                                :value="[...approvals].sort((a, b) => {
+                                    const dateA = new Date(a.action_at || a.created_at);
+                                    const dateB = new Date(b.action_at || b.created_at);
+                                    return dateA - dateB;
+                                })"
+                                layout="vertical"
+                                align="left"
+                                class="custom-timeline"
+                            >
+                                <template #marker="slotProps">
+                                    <span 
+                                        class="custom-marker p-shadow-2" 
+                                        :class="{
+                                            'bg-green-500': slotProps.item.action === 'Approved' || slotProps.item.action === 'Paid' || slotProps.item.action === 'Closed',
+                                            'bg-red-500': slotProps.item.action === 'Declined' || slotProps.item.action === 'Rejected',
+                                            'bg-blue-500': slotProps.item.action === 'Forwarded' || slotProps.item.action === 'Submitted',
+                                            'bg-orange-500': slotProps.item.action === 'Sent Back' || slotProps.item.action === 'Returned',
+                                            'bg-purple-500': slotProps.item.action === 'Created',
+                                            'bg-gray-500': slotProps.item.action === 'Saved' || slotProps.item.action === 'Updated'
+                                        }"
+                                    >
+                                        <i :class="{
+                                            'pi pi-check': slotProps.item.action === 'Approved' || slotProps.item.action === 'Paid' || slotProps.item.action === 'Closed',
+                                            'pi pi-times': slotProps.item.action === 'Declined' || slotProps.item.action === 'Rejected',
+                                            'pi pi-send': slotProps.item.action === 'Forwarded' || slotProps.item.action === 'Submitted',
+                                            'pi pi-undo': slotProps.item.action === 'Sent Back' || slotProps.item.action === 'Returned',
+                                            'pi pi-plus-circle': slotProps.item.action === 'Created',
+                                            'pi pi-save': slotProps.item.action === 'Saved',
+                                            'pi pi-pencil': slotProps.item.action === 'Updated'
+                                        }" class="text-white text-sm"></i>
+                                    </span>
+                                </template>
+                                <template #content="slotProps">
+                                    <div class="workflow-card-item p-3 border-round border-1 surface-border">
+                                        <div class="flex flex-column gap-2">
+                                            <div class="flex align-items-center justify-content-between flex-wrap">
+                                                <span class="font-semibold text-primary">
+                                                    {{ slotProps.item.approval_role || 'System' }}
+                                                    <span v-if="slotProps.item.approval_step" class="text-500 text-xs font-normal ml-1">
+                                                        (Step {{ slotProps.item.approval_step }})
+                                                    </span>
+                                                </span>
+                                                <Tag 
+                                                    :value="slotProps.item.action" 
+                                                    :severity="getApprovalActionSeverity(slotProps.item.action)"
+                                                    size="small"
+                                                />
+                                            </div>
+                                            <div class="text-600 text-sm">
+                                                <i class="pi pi-clock mr-1"></i>
+                                                {{ formatDateTime(slotProps.item.action_at || slotProps.item.created_at) }}
+                                            </div>
+                                            <div v-if="slotProps.item.comment" class="text-500 text-sm mt-1 p-2 bg-gray-50 border-round">
+                                                <i class="pi pi-comment mr-1"></i>
+                                                {{ slotProps.item.comment }}
+                                            </div>
+                                            <div v-if="slotProps.item.user" class="text-500 text-xs">
+                                                <i class="pi pi-user mr-1"></i>
+                                                By: {{ slotProps.item.user.name }}
+                                            </div>
+                                            <div v-if="slotProps.item.status" class="text-500 text-xs">
+                                                <i class="pi pi-info-circle mr-1"></i>
+                                                Status: {{ slotProps.item.status }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </Timeline>
+                        </div>
+                        <div v-else class="text-center p-4">
+                            <i class="pi pi-clock text-400 text-3xl mb-2"></i>
+                            <p class="text-600">No workflow history available</p>
+                            <p class="text-500 text-sm">Approval history will appear here once the voucher is processed.</p>
                         </div>
                     </template>
                 </Card>
             </div>
         </div>
 
-        <!-- Enhanced Retirement Modal -->
+        <!-- Retirement Modal -->
         <Dialog v-model:visible="showRetirementModal" :style="{ width: '98vw', maxWidth: '1600px', maxHeight: '95vh' }"
             header="Retire Prepayment Voucher" :modal="true" :closable="true" @hide="showRetirementModal = false"
             contentClass="flex flex-column">
-            <div class="flex-grow-1 overflow-auto p-3">
-                <!-- Top Row: Voucher Details -->
-                <div class="mb-4">
-                    <Card>
-                        <template #title>
-                            <div class="align-items-center flex gap-2">
-                                <i class="pi pi-info-circle text-primary"></i>
-                                <span>Voucher Details</span>
-                            </div>
-                        </template>
-                        <template #content>
-                            <div class="grid">
-                                <div class="col-12 md:col-2">
-                                    <div class="field">
-                                        <label class="text-500 text-sm font-semibold">Voucher Number</label>
-                                        <div class="text-900 font-bold">
-                                            {{ voucher.voucher_number }}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-12 md:col-2">
-                                    <div class="field">
-                                        <label class="text-500 text-sm font-semibold">Voucher Type</label>
-                                        <div>
-                                            <Tag :value="voucher.voucher_type?.toUpperCase()
-                                                " severity="warning" class="text-sm" />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-12 md:col-3">
-                                    <div class="field">
-                                        <label class="text-500 text-sm font-semibold">Payee/Beneficiary</label>
-                                        <div class="text-900 truncate font-medium">
-                                            {{ voucher.payee_name || 'N/A' }}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-12 md:col-2">
-                                    <div class="field">
-                                        <label class="text-500 text-sm font-semibold">MDA</label>
-                                        <div class="text-900">
-                                            <span v-if="voucher.mda">
-                                                {{ voucher.mda.code }}
-                                            </span>
-                                            <span v-else>N/A</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-12 md:col-3">
-                                    <div class="field">
-                                        <label class="text-500 text-sm font-semibold">Total Amount</label>
-                                        <div class="text-primary text-lg font-bold">
-                                            {{
-                                                formatCurrency(
-                                                    voucher.total_amount,
-                                                )
-                                            }}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-12">
-                                    <div class="field">
-                                        <label class="text-500 text-sm font-semibold">Narration</label>
-                                        <div class="text-900 text-sm italic">
-                                            {{
-                                                voucher.narration ||
-                                                'No description provided'
-                                            }}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </template>
-                    </Card>
-                </div>
-
-                <!-- Middle Row: Retirement Line Items -->
-                <div class="mb-4">
-                    <Card>
-                        <template #title>
-                            <div class="align-items-center justify-content-between flex">
-                                <div class="align-items-center flex gap-2">
-                                    <i class="pi pi-list text-primary"></i>
-                                    <span>Retirement Line Items</span>
-                                    <Tag :value="retirementForm.line_items.length
-                                        " severity="info" class="ml-2" />
-                                </div>
-                                <div class="align-items-center flex gap-2">
-                                    <span class="text-500 text-sm">Total:
-                                        {{
-                                            formatCurrency(
-                                                retirementForm.total_amount,
-                                            )
-                                        }}</span>
-                                    <Button label="Add Item" icon="pi pi-plus" severity="secondary" size="small"
-                                        outlined @click="addNewItem" />
-                                </div>
-                            </div>
-                        </template>
-                        <template #content>
-                            <div class="flex-column flex">
-                                <!-- Summary Banner -->
-                                <div class="border-round surface-100 mb-3 p-3">
-                                    <div class="grid">
-                                        <div class="col-12 md:col-4">
-                                            <div class="text-500 text-xs">
-                                                Voucher Total
-                                            </div>
-                                            <div class="text-900 text-lg font-bold">
-                                                {{
-                                                    formatCurrency(
-                                                        voucher.total_amount,
-                                                    )
-                                                }}
-                                            </div>
-                                        </div>
-                                        <div class="col-12 text-center md:col-4">
-                                            <div class="text-500 text-xs">
-                                                Retirement Progress
-                                            </div>
-                                            <div class="text-900 text-lg font-bold" :class="{
-                                                'text-green-600':
-                                                    retirementProgress ===
-                                                    100,
-                                                'text-orange-600':
-                                                    retirementProgress <
-                                                    100 &&
-                                                    retirementProgress > 0,
-                                                'text-red-600':
-                                                    retirementProgress >
-                                                    100,
-                                            }">
-                                                {{ retirementProgress }}%
-                                            </div>
-                                        </div>
-                                        <div class="col-12 text-right md:col-4">
-                                            <div class="text-500 text-xs">
-                                                Balance
-                                            </div>
-                                            <div class="text-900 text-lg font-bold" :class="{
-                                                'text-green-600':
-                                                    remainingBalance === 0,
-                                                'text-orange-600':
-                                                    remainingBalance > 0,
-                                                'text-red-600':
-                                                    remainingBalance < 0,
-                                            }">
-                                                {{
-                                                    formatCurrency(
-                                                        Math.abs(
-                                                            remainingBalance,
-                                                        ),
-                                                    )
-                                                }}
-                                                <span class="ml-1 text-sm" :class="{
-                                                    'text-green-600':
-                                                        remainingBalance ===
-                                                        0,
-                                                    'text-orange-600':
-                                                        remainingBalance >
-                                                        0,
-                                                    'text-red-600':
-                                                        remainingBalance <
-                                                        0,
-                                                }">
-                                                    {{
-                                                        remainingBalance === 0
-                                                            ? '(Balanced)'
-                                                            : remainingBalance >
-                                                                0
-                                                                ? '(Remaining)'
-                                                                : '(Exceeded)'
-                                                    }}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Line Items Table -->
-                                <div class="border-round border-1 border-200">
-                                    <DataTable :value="retirementForm.line_items" dataKey="temp_id"
-                                        responsiveLayout="scroll" class="p-datatable-sm"
-                                        :emptyMessage="'No items added. Click Add Item to start.'" scrollable
-                                        scrollHeight="400px" tableStyle="min-width: 100%" stripedRows>
-                                        <!-- Actions -->
-                                        <Column headerStyle="width: 5%; min-width: 50px;">
-                                            <template #body="slotProps">
-                                                <Button icon="pi pi-trash" severity="danger" text rounded size="small"
-                                                    @click="
-                                                        removeItem(
-                                                            slotProps.index,
-                                                        )
-                                                        " :disabled="retirementForm
-                                                            .line_items
-                                                            .length === 1
-                                                            " v-tooltip="'Remove item'" />
-                                            </template>
-                                        </Column>
-
-                                        <!-- Description -->
-                                        <Column header="Description" headerStyle="width: 25%; min-width: 200px;">
-                                            <template #body="slotProps">
-                                                <InputText v-model="slotProps.data
-                                                    .description
-                                                    " placeholder="Enter description" class="w-full text-sm"
-                                                    @change="calculateTotals" />
-                                            </template>
-                                        </Column>
-
-                                        <!-- Economic Code -->
-                                        <Column header="Economic Code" headerStyle="width: 15%; min-width: 150px;">
-                                            <template #body="slotProps">
-                                                <Dropdown v-model="slotProps.data
-                                                    .economic_code_id
-                                                    " :options="economicCodes" optionLabel="label" optionValue="id"
-                                                    placeholder="Select Code" class="w-full text-sm" @change="
-                                                        onEconomicCodeChange(
-                                                            slotProps.data,
-                                                            $event.value,
-                                                        )
-                                                        " :loading="loadingEconomicCodes
-                                                            " :filter="true" filterPlaceholder="Search code..."
-                                                    :showClear="true">
-                                                    <template #option="slotProps">
-                                                        <div class="py-1">
-                                                            <div class="text-sm font-medium">
-                                                                {{
-                                                                    slotProps
-                                                                        .option
-                                                                        .code
-                                                                }}
-                                                            </div>
-                                                            <div class="text-500 truncate text-xs">
-                                                                {{
-                                                                    slotProps
-                                                                        .option
-                                                                        .name
-                                                                }}
-                                                            </div>
-                                                        </div>
-                                                    </template>
-                                                </Dropdown>
-                                            </template>
-                                        </Column>
-
-                                        <!-- Code Item -->
-                                        <Column header="Code Item" headerStyle="width: 15%; min-width: 150px;">
-                                            <template #body="slotProps">
-                                                <Dropdown v-model="slotProps.data
-                                                    .code_item_id
-                                                    " :options="getCodeItems(
-                                                        slotProps.data
-                                                            .economic_code_id,
-                                                    )
-                                                        " optionLabel="label" optionValue="id"
-                                                    placeholder="Select Item" class="w-full text-sm" :disabled="!slotProps.data
-                                                        .economic_code_id
-                                                        " :loading="loadingCodeItems" :filter="true"
-                                                    filterPlaceholder="Search item..." :showClear="true">
-                                                    <template #option="slotProps">
-                                                        <div class="py-1">
-                                                            <div class="text-sm font-medium">
-                                                                {{
-                                                                    slotProps
-                                                                        .option
-                                                                        .code
-                                                                }}
-                                                            </div>
-                                                            <div class="text-500 truncate text-xs">
-                                                                {{
-                                                                    slotProps
-                                                                        .option
-                                                                        .name
-                                                                }}
-                                                            </div>
-                                                        </div>
-                                                    </template>
-                                                </Dropdown>
-                                            </template>
-                                        </Column>
-
-                                        <!-- Quantity -->
-                                        <Column header="Qty" headerStyle="width: 10%; min-width: 100px;">
-                                            <template #body="slotProps">
-                                                <div class="align-items-center flex gap-1">
-                                                    <Button icon="pi pi-minus" severity="secondary" size="small" text
-                                                        rounded @click="
-                                                            decrementQty(
-                                                                slotProps.data,
-                                                            )
-                                                            " :disabled="slotProps.data
-                                                                .quantity <= 1
-                                                                " v-tooltip="'Decrease quantity'
-                                                                    " />
-                                                    <InputNumber v-model="slotProps.data
-                                                        .quantity
-                                                        " mode="decimal" :min="0.01" :max="999999" :step="1"
-                                                        class="w-8rem text-sm" inputClass="text-center py-1"
-                                                        @update:modelValue="
-                                                            calculateTotals
-                                                        " />
-                                                    <Button icon="pi pi-plus" severity="secondary" size="small" text
-                                                        rounded @click="
-                                                            incrementQty(
-                                                                slotProps.data,
-                                                            )
-                                                            " v-tooltip="'Increase quantity'
-                                                                " />
-                                                </div>
-                                            </template>
-                                        </Column>
-
-                                        <!-- Unit Price -->
-                                        <Column header="Unit Price" headerStyle="width: 15%; min-width: 150px;"
-                                            bodyClass="text-right">
-                                            <template #body="slotProps">
-                                                <InputNumber v-model="slotProps.data
-                                                    .unit_price
-                                                    " mode="currency" currency="NGN" locale="en-NG" :min="0"
-                                                    :max="1000000000" class="w-full text-sm"
-                                                    inputClass="text-right py-1" @update:modelValue="
-                                                        calculateTotals
-                                                    " />
-                                            </template>
-                                        </Column>
-
-                                        <!-- Sub Total -->
-                                        <Column header="Sub Total" headerStyle="width: 15%; min-width: 150px;"
-                                            bodyClass="text-right">
-                                            <template #body="slotProps">
-                                                <div class="font-bold" :class="{
-                                                    'text-green-600':
-                                                        slotProps.data
-                                                            .sub_total > 0,
-                                                    'text-red-600':
-                                                        slotProps.data
-                                                            .sub_total <= 0,
-                                                }">
-                                                    {{
-                                                        formatCurrency(
-                                                            slotProps.data
-                                                                .sub_total,
-                                                        )
-                                                    }}
-                                                </div>
-                                            </template>
-                                        </Column>
-                                    </DataTable>
-                                </div>
-
-                                <!-- Quick Actions Row -->
-                                <div class="justify-content-between mt-3 flex">
-                                    <div class="flex gap-2">
-                                        <Button label="Auto-Balance to Zero" icon="pi pi-balance-scale" severity="help"
-                                            outlined size="small" @click="autoBalanceToZero"
-                                            :disabled="remainingBalance <= 0" v-tooltip="'Distribute remaining balance across items'
-                                                " />
-                                        <Button label="Clear All Items" icon="pi pi-trash" severity="danger" outlined
-                                            size="small" @click="clearAllItems" v-tooltip="'Clear all retirement items'
-                                                " />
-                                    </div>
-                                    <div class="text-right">
-                                        <div class="text-500 text-xs">
-                                            Total Retirement Amount
-                                        </div>
-                                        <div class="text-900 text-xl font-bold" :class="{
-                                            'text-green-600':
-                                                retirementForm.total_amount ===
-                                                voucher.total_amount,
-                                            'text-orange-600':
-                                                retirementForm.total_amount <
-                                                voucher.total_amount &&
-                                                retirementForm.total_amount >
-                                                0,
-                                            'text-red-600':
-                                                retirementForm.total_amount >
-                                                voucher.total_amount,
-                                        }">
-                                            {{
-                                                formatCurrency(
-                                                    retirementForm.total_amount,
-                                                )
-                                            }}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </template>
-                    </Card>
-                </div>
-
-                <!-- Bottom Row: Retirement Summary & Actions -->
-                <div>
-                    <Card>
-                        <template #title>
-                            <div class="align-items-center flex gap-2">
-                                <i class="pi pi-calculator text-primary"></i>
-                                <span>Retirement Summary & Actions</span>
-                            </div>
-                        </template>
-                        <template #content>
-                            <div class="grid">
-                                <!-- Left: Balance Status & Validation -->
-                                <div class="col-12 md:col-8">
-                                    <div class="grid">
-                                        <div class="col-12 md:col-6">
-                                            <div class="border-round p-3" :class="{
-                                                'border-green-200 bg-green-50':
-                                                    remainingBalance === 0,
-                                                'border-orange-200 bg-orange-50':
-                                                    remainingBalance > 0,
-                                                'border-red-200 bg-red-50':
-                                                    remainingBalance < 0,
-                                            }">
-                                                <div class="text-center">
-                                                    <i class="pi mb-2 text-3xl" :class="{
-                                                        'pi-check-circle text-green-600':
-                                                            remainingBalance ===
-                                                            0,
-                                                        'pi-exclamation-triangle text-orange-600':
-                                                            remainingBalance >
-                                                            0,
-                                                        'pi-exclamation-circle text-red-600':
-                                                            remainingBalance <
-                                                            0,
-                                                    }"></i>
-                                                    <div class="text-xl font-bold">
-                                                        {{
-                                                            formatCurrency(
-                                                                Math.abs(
-                                                                    remainingBalance,
-                                                                ),
-                                                            )
-                                                        }}
-                                                    </div>
-                                                    <div class="text-500 mt-1 text-sm">
-                                                        <span v-if="
-                                                            remainingBalance ===
-                                                            0
-                                                        ">âœ“ Perfectly
-                                                            Balanced</span>
-                                                        <span v-else-if="
-                                                            remainingBalance >
-                                                            0
-                                                        ">âš  Partial
-                                                            Retirement</span>
-                                                        <span v-else>âœ— Amount
-                                                            Exceeded</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div class="col-12 md:col-6">
-                                            <div class="space-y-2">
-                                                <Message v-if="remainingBalance < 0" severity="error" :closable="false"
-                                                    class="py-2">
-                                                    <div class="font-bold">
-                                                        Amount exceeded by
-                                                        {{
-                                                            formatCurrency(
-                                                                Math.abs(
-                                                                    remainingBalance,
-                                                                ),
-                                                            )
-                                                        }}
-                                                    </div>
-                                                    <div class="text-sm">
-                                                        Reduce the retirement
-                                                        amount to proceed
-                                                    </div>
-                                                </Message>
-                                                <Message v-else-if="
-                                                    remainingBalance > 0
-                                                " severity="warn" :closable="false" class="py-2">
-                                                    <div class="font-bold">
-                                                        {{
-                                                            formatCurrency(
-                                                                remainingBalance,
-                                                            )
-                                                        }}
-                                                        remaining
-                                                    </div>
-                                                    <div class="text-sm">
-                                                        This will be a partial
-                                                        retirement
-                                                    </div>
-                                                </Message>
-                                                <Message v-else severity="success" :closable="false" class="py-2">
-                                                    <div class="font-bold">
-                                                        Ready to retire!
-                                                    </div>
-                                                    <div class="text-sm">
-                                                        Complete retirement of
-                                                        {{
-                                                            formatCurrency(
-                                                                voucher.total_amount,
-                                                            )
-                                                        }}
-                                                    </div>
-                                                </Message>
-
-                                                <div class="border-round border-1 border-200 p-2">
-                                                    <div class="text-500 text-xs">
-                                                        Retirement Type
-                                                    </div>
-                                                    <div class="text-900 font-bold">
-                                                        {{
-                                                            remainingBalance ===
-                                                                0
-                                                                ? 'Complete Retirement'
-                                                                : 'Partial Retirement'
-                                                        }}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- Comment Section -->
-                                        <div class="col-12 mt-3">
-                                            <div>
-                                                <label for="retirementComment"
-                                                    class="text-500 mb-2 block text-sm font-semibold">
-                                                    <i class="pi pi-comment mr-1"></i>Retirement Comments
-                                                </label>
-                                                <Textarea id="retirementComment" v-model="retirementForm.comment
-                                                    " rows="3" class="w-full"
-                                                    placeholder="Add any comments about this retirement (optional)..."
-                                                    autoResize />
-                                                <small class="text-500 text-xs">Optional: Explain the
-                                                    purpose or details of this
-                                                    retirement</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Right: Action Buttons -->
-                                <div class="col-12 md:col-4">
-                                    <!-- Totals Card -->
-                                    <div class="border-round surface-50 mb-3 p-3">
-                                        <!-- Voucher Header -->
-                                        <div class="mb-4 text-center">
-                                            <div class="text-500 text-sm">
-                                                Voucher
-                                            </div>
-                                            <div class="text-900 text-lg font-bold">
-                                                {{ voucher.voucher_number }}
-                                            </div>
-                                            <div class="text-500 text-xs">
-                                                {{
-                                                    formatDate(
-                                                        voucher.voucher_date,
-                                                    )
-                                                }}
-                                            </div>
-                                        </div>
-
-                                        <!-- Totals Section -->
-                                        <div class="space-y-3">
-                                            <!-- Original Amount -->
-                                            <div class="border-round border-1 border-200 p-2">
-                                                <div class="text-500 text-xs">
-                                                    Original Amount
-                                                </div>
-                                                <div class="text-900 font-bold">
-                                                    {{
-                                                        formatCurrency(
-                                                            voucher.total_amount,
-                                                        )
-                                                    }}
-                                                </div>
-                                            </div>
-
-                                            <!-- Retirement Amount -->
-                                            <div class="border-round border-1 border-200 p-2">
-                                                <div class="text-500 text-xs">
-                                                    Retirement Amount
-                                                </div>
-                                                <div class="text-900 font-bold">
-                                                    {{
-                                                        formatCurrency(
-                                                            retirementForm.total_amount,
-                                                        )
-                                                    }}
-                                                </div>
-                                            </div>
-
-                                            <!-- Line Items -->
-                                            <div class="border-round border-1 border-200 p-2">
-                                                <div class="text-500 text-xs">
-                                                    Line Items
-                                                </div>
-                                                <div class="text-900 font-bold">
-                                                    {{
-                                                        retirementForm
-                                                            .line_items.length
-                                                    }}
-                                                    items
-                                                </div>
-                                            </div>
-
-                                            <!-- Balance Status -->
-                                            <div class="border-round border-1 border-200 p-2" :class="{
-                                                'border-green-200 bg-green-50':
-                                                    remainingBalance === 0,
-                                                'border-orange-200 bg-orange-50':
-                                                    remainingBalance > 0,
-                                                'border-red-200 bg-red-50':
-                                                    remainingBalance < 0,
-                                            }">
-                                                <div class="text-500 text-xs">
-                                                    Balance
-                                                </div>
-                                                <div class="text-900 font-bold" :class="{
-                                                    'text-green-600':
-                                                        remainingBalance ===
-                                                        0,
-                                                    'text-orange-600':
-                                                        remainingBalance >
-                                                        0,
-                                                    'text-red-600':
-                                                        remainingBalance <
-                                                        0,
-                                                }">
-                                                    {{
-                                                        formatCurrency(
-                                                            Math.abs(
-                                                                remainingBalance,
-                                                            ),
-                                                        )
-                                                    }}
-                                                    <span class="ml-1 text-sm" :class="{
-                                                        'text-green-600':
-                                                            remainingBalance ===
-                                                            0,
-                                                        'text-orange-600':
-                                                            remainingBalance >
-                                                            0,
-                                                        'text-red-600':
-                                                            remainingBalance <
-                                                            0,
-                                                    }">
-                                                        {{
-                                                            remainingBalance ===
-                                                                0
-                                                                ? '(Balanced)'
-                                                                : remainingBalance >
-                                                                    0
-                                                                    ? '(Remaining)'
-                                                                    : '(Exceeded)'
-                                                        }}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Action Buttons Card - SEPARATE from totals -->
-                                    <div class="border-round surface-50 p-3">
-                                        <div class="space-y-3">
-                                            <Button label="Submit Retirement" icon="pi pi-check-circle"
-                                                severity="success" class="mb-2 w-full" size="large" :disabled="remainingBalance < 0 ||
-                                                    retirementForm.total_amount ===
-                                                    0
-                                                    " @click="submitRetirement" />
-                                            <Button label="Cancel" icon="pi pi-times" @click="
-                                                showRetirementModal = false
-                                                " class="p-button-outlined p-button-secondary w-full" />
-                                            <small class="text-500 mt-2 block text-center text-xs">
-                                                {{
-                                                    remainingBalance === 0
-                                                        ? 'Complete retirement'
-                                                        : 'Partial retirement'
-                                                }}
-                                                will be recorded
-                                            </small>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </template>
-                    </Card>
-                </div>
-            </div>
+            <!-- ... (keep your existing retirement modal content) ... -->
         </Dialog>
 
         <!-- Delete Confirmation Modal -->
@@ -2679,29 +2092,26 @@ watch(
                         Voucher <strong>{{ voucher.voucher_number }}</strong>? This action cannot be undone.</span>
                 </div>
             </div>
-
             <template #footer>
                 <Button label="Cancel" icon="pi pi-times" @click="showConfirmationModal = false" text />
                 <Button label="Yes, Delete" icon="pi pi-trash" severity="danger" @click="confirmDelete" autofocus />
             </template>
         </Dialog>
 
-
         <!-- Draft Confirmation Modal -->
-        <Dialog v-model:visible="showConfirmationModalDraft" :style="{ width: '450px' }" header="Delete Voucher"
+        <Dialog v-model:visible="showConfirmationModalDraft" :style="{ width: '450px' }" header="Save as Draft"
             :modal="true">
             <div class="align-items-center flex">
-                <i class="pi pi-exclamation-triangle mr-3 text-red-500" style="font-size: 2rem"></i>
+                <i class="pi pi-exclamation-triangle mr-3 text-yellow-500" style="font-size: 2rem"></i>
                 <div>
                     <span>Are you sure you want to
-                        <strong class="text-red-600">make this</strong>
+                        <strong class="text-yellow-600">make this</strong>
                         Voucher <strong>{{ voucher.voucher_number }}</strong> a draft?</span>
                 </div>
             </div>
-
             <template #footer>
                 <Button label="Cancel" icon="pi pi-times" @click="showConfirmationModalDraft = false" text />
-                <Button label="Yes, Make Draft" icon="pi pi-trash" severity="info" @click="confirmDraftVoucher"
+                <Button label="Yes, Make Draft" icon="pi pi-save" severity="info" @click="confirmDraftVoucher"
                     autofocus />
             </template>
         </Dialog>
@@ -2710,349 +2120,139 @@ watch(
         <Dialog v-model:visible="showRetirementHistoryModal"
             :style="{ width: '90vw', maxWidth: '1400px', maxHeight: '90vh' }" header="Retirement History" :modal="true"
             :closable="true" @hide="showRetirementHistoryModal = false" class="retirement-history-modal">
-            <div class="p-3">
-                <div v-if="loadingRetirementHistory" class="p-4 text-center">
-                    <ProgressSpinner style="width: 50px; height: 50px" strokeWidth="4" fill="var(--surface-ground)"
-                        animationDuration=".5s" />
-                    <p class="text-500 mt-2">Loading retirement history...</p>
+            <!-- ... (keep your existing retirement history modal content) ... -->
+        </Dialog>
+
+        <!-- Document Viewer Modal -->
+<!-- Document Viewer Modal - Updated with Better URL Handling -->
+<Dialog
+    v-model:visible="showDocumentViewer"
+    :header="`Document - ${currentDocument?.file_name || 'Document'}`"
+    :style="{ width: '90vw', height: '90vh' }"
+    :modal="true"
+    maximizable
+    @update:visible="closeDocumentViewer"
+    class="document-viewer-dialog"
+>
+    <div class="flex flex-column h-full">
+        <!-- Document Info Header -->
+        <div class="flex justify-content-between align-items-center mb-3 pb-2 border-bottom-1 surface-border">
+            <div class="flex align-items-center gap-2">
+                <i :class="getDocumentIcon(currentDocument?.file_name)" class="text-xl"></i>
+                <span class="font-semibold">{{ currentDocument?.file_name }}</span>
+                <Tag 
+                    v-if="currentDocument" 
+                    :value="getDocumentTypeLabel(currentDocument)" 
+                    severity="info" 
+                    size="small"
+                />
+                <span v-if="currentDocument" class="text-500 text-sm">
+                    ({{ (currentDocument.file_size / 1024).toFixed(2) }} KB)
+                </span>
+            </div>
+            <div class="flex gap-2">
+                <Button 
+                    icon="pi pi-download" 
+                    label="Download" 
+                    severity="secondary" 
+                    size="small"
+                    @click="downloadDocument" 
+                />
+                <Button 
+                    icon="pi pi-external-link" 
+                    label="Open in New Tab" 
+                    severity="info" 
+                    size="small"
+                    @click="openInNewTab" 
+                />
+            </div>
+        </div>
+        
+        <!-- Document Preview -->
+        <div class="flex-1 border-round surface-border border-1 overflow-hidden document-preview">
+            <!-- Show loading state -->
+            <div v-if="!documentUrl" class="flex align-items-center justify-content-center w-full h-full bg-gray-50" style="min-height: 500px;">
+                <ProgressSpinner style="width: 50px; height: 50px" strokeWidth="4" />
+                <p class="text-500 mt-2">Loading document...</p>
+            </div>
+            
+            <!-- PDF Preview -->
+            <iframe 
+                v-else-if="currentDocument?.file_name?.endsWith('.pdf')"
+                :src="documentUrl" 
+                frameborder="0" 
+                width="100%" 
+                height="100%" 
+                class="w-full h-full"
+                style="min-height: 500px;"
+                @error="handleIframeError"
+            ></iframe>
+            
+            <!-- Image Preview -->
+            <div v-else-if="currentDocument?.file_name?.match(/\.(jpg|jpeg|png|gif|svg|webp)$/i)" 
+                 class="flex align-items-center justify-content-center w-full h-full bg-gray-50" 
+                 style="min-height: 500px;">
+                <img 
+                    :src="documentUrl" 
+                    :alt="currentDocument?.file_name" 
+                    class="max-w-full max-h-full object-contain"
+                    @error="handleImageError"
+                    @load="handleImageLoad"
+                />
+            </div>
+            
+            <!-- Word/Excel/PowerPoint - Show preview with Office Online -->
+            <div v-else-if="currentDocument?.file_name?.match(/\.(doc|docx|xls|xlsx|ppt|pptx)$/i)" 
+                 class="flex flex-column align-items-center justify-content-center w-full h-full bg-gray-50" 
+                 style="min-height: 500px;">
+                <i class="pi pi-file text-6xl text-gray-400 mb-4"></i>
+                <h4 class="text-900">Office Document</h4>
+                <p class="text-500 text-sm mb-3">{{ currentDocument?.file_name }}</p>
+                <div class="flex gap-2">
+                    <Button 
+                        label="Download" 
+                        icon="pi pi-download" 
+                        severity="primary" 
+                        @click="downloadDocument" 
+                    />
+                    <Button 
+                        label="Open in New Tab" 
+                        icon="pi pi-external-link" 
+                        severity="secondary" 
+                        @click="openInNewTab" 
+                    />
                 </div>
-
-                <div v-else-if="retirementHistory.length === 0" class="p-4 text-center">
-                    <i class="pi pi-history text-500" style="font-size: 3rem"></i>
-                    <h3 class="text-900 mt-3">No Retirement History</h3>
-                    <p class="text-500 mt-1">
-                        No retirement records found for this voucher.
-                    </p>
-                </div>
-
-                <div v-else class="space-y-4">
-                    <!-- Summary Stats -->
-                    <div class="grid">
-                        <div class="col-12 md:col-4">
-                            <Card>
-                                <template #content>
-                                    <div class="text-center">
-                                        <div class="text-500 text-sm">
-                                            Total Retirements
-                                        </div>
-                                        <div class="text-900 text-2xl font-bold">
-                                            {{ retirementHistory.length }}
-                                        </div>
-                                    </div>
-                                </template>
-                            </Card>
-                        </div>
-                        <div class="col-12 md:col-4">
-                            <Card>
-                                <template #content>
-                                    <div class="text-center">
-                                        <div class="text-500 text-sm">
-                                            Total Amount Retired
-                                        </div>
-                                        <div class="text-900 text-2xl font-bold text-green-600">
-                                            {{
-                                                formatCurrency(
-                                                    totalRetiredAmount,
-                                                )
-                                            }}
-                                        </div>
-                                    </div>
-                                </template>
-                            </Card>
-                        </div>
-                        <div class="col-12 md:col-4">
-                            <Card>
-                                <template #content>
-                                    <div class="text-center">
-                                        <div class="text-500 text-sm">
-                                            Average per Retirement
-                                        </div>
-                                        <div class="text-900 text-2xl font-bold text-blue-600">
-                                            {{
-                                                formatCurrency(
-                                                    averageRetirementAmount,
-                                                )
-                                            }}
-                                        </div>
-                                    </div>
-                                </template>
-                            </Card>
-                        </div>
-                    </div>
-
-                    <!-- Retirement List -->
-                    <Card>
-                        <template #title>
-                            <div class="align-items-center flex gap-2">
-                                <i class="pi pi-list text-primary"></i>
-                                <span>Retirement Records ({{
-                                    retirementHistory.length
-                                    }})</span>
-                            </div>
-                        </template>
-                        <template #content>
-                            <div class="space-y-4">
-                                <div v-for="retirement in retirementHistory" :key="retirement.id"
-                                    class="border-round border-1 border-200 p-4">
-                                    <!-- Retirement Header -->
-                                    <div class="mb-3 grid">
-                                        <div class="col-12 md:col-3">
-                                            <div class="text-500 text-xs">
-                                                Retirement Voucher
-                                            </div>
-                                            <div class="text-900 font-bold">
-                                                {{
-                                                    retirement.retirement_number ||
-                                                    'N/A'
-                                                }}
-                                                <Tag v-if="retirement.status" :value="retirement.status" :severity="getRetirementStatusSeverity(
-                                                    retirement.status,
-                                                )
-                                                    " class="ml-2 text-xs" />
-                                            </div>
-                                        </div>
-                                        <div class="col-12 md:col-3">
-                                            <div class="text-500 text-xs">
-                                                Retirement Date
-                                            </div>
-                                            <div class="text-900 font-medium">
-                                                {{
-                                                    formatDateTime(
-                                                        retirement.voucher_date ||
-                                                        retirement.created_at,
-                                                    )
-                                                }}
-                                            </div>
-                                        </div>
-                                        <div class="col-12 md:col-3">
-                                            <div class="text-500 text-xs">
-                                                Retirement Amount
-                                            </div>
-                                            <div class="text-900 text-lg font-bold text-green-600">
-                                                {{
-                                                    formatCurrency(
-                                                        retirement.retired_amount,
-                                                    )
-                                                }}
-                                            </div>
-                                        </div>
-                                        <div class="col-12 md:col-3">
-                                            <div class="text-500 text-xs">
-                                                Created By
-                                            </div>
-                                            <div class="text-900">
-                                                <div class="align-items-center flex gap-2">
-                                                    <i class="pi pi-user text-500"></i>
-                                                    <span>{{
-                                                        retirement.creator
-                                                            ?.name || 'System'
-                                                    }}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Retirement Items -->
-                                    <div v-if="
-                                        retirement.items &&
-                                        retirement.items.length > 0
-                                    ">
-                                        <div class="text-500 mb-2 text-sm">
-                                            Items Retired:
-                                        </div>
-                                        <div class="border-round overflow-hidden border-1 border-200">
-                                            <DataTable :value="retirement.items" size="small" class="p-datatable-sm"
-                                                stripedRows>
-                                                <Column field="description" header="Description">
-                                                    <template #body="slotProps">
-                                                        {{
-                                                            slotProps.data
-                                                                .description
-                                                        }}
-                                                    </template>
-                                                </Column>
-                                                <Column field="economic_code" header="Economic Code"
-                                                    style="width: 120px">
-                                                    <template #body="slotProps">
-                                                        <div v-if="
-                                                            slotProps.data
-                                                                .economic_code
-                                                        ">
-                                                            <div class="font-medium">
-                                                                {{
-                                                                    slotProps
-                                                                        .data
-                                                                        .economic_code
-                                                                        .code
-                                                                }}
-                                                            </div>
-                                                            <small class="text-500">
-                                                                {{
-                                                                    slotProps
-                                                                        .data
-                                                                        .economic_code
-                                                                        .name
-                                                                }}
-                                                            </small>
-                                                        </div>
-                                                        <span v-else class="text-500">N/A</span>
-                                                    </template>
-                                                </Column>
-                                                <Column field="code_item" header="Code Item" style="width: 120px">
-                                                    <template #body="slotProps">
-                                                        <div v-if="
-                                                            slotProps.data
-                                                                .economic_code_item
-                                                        ">
-                                                            <div class="font-medium">
-                                                                {{
-                                                                    slotProps
-                                                                        .data
-                                                                        .economic_code_item
-                                                                        .code
-                                                                }}
-                                                            </div>
-                                                            <small class="text-500">
-                                                                {{
-                                                                    slotProps
-                                                                        .data
-                                                                        .economic_code_item
-                                                                        .name
-                                                                }}
-                                                            </small>
-                                                        </div>
-                                                        <span v-else class="text-500">N/A</span>
-                                                    </template>
-                                                </Column>
-                                                <Column field="quantity" header="Qty" style="width: 80px"
-                                                    bodyClass="text-center">
-                                                    <template #body="slotProps">
-                                                        {{
-                                                            slotProps.data
-                                                                .quantity
-                                                        }}
-                                                    </template>
-                                                </Column>
-                                                <Column field="unit_price" header="Unit Price" style="width: 120px"
-                                                    bodyClass="text-right">
-                                                    <template #body="slotProps">
-                                                        {{
-                                                            formatCurrency(
-                                                                slotProps.data
-                                                                    .unit_price,
-                                                            )
-                                                        }}
-                                                    </template>
-                                                </Column>
-                                                <Column field="sub_total" header="Sub Total" style="width: 120px"
-                                                    bodyClass="text-right font-bold">
-                                                    <template #body="slotProps">
-                                                        <span class="text-green-600">
-                                                            {{
-                                                                formatCurrency(
-                                                                    slotProps
-                                                                        .data
-                                                                        .sub_total,
-                                                                )
-                                                            }}
-                                                        </span>
-                                                    </template>
-                                                </Column>
-                                            </DataTable>
-                                        </div>
-                                    </div>
-
-                                    <!-- Retirement Comment -->
-                                    <div v-if="retirement.comment" class="mt-3">
-                                        <div class="text-500 text-sm">
-                                            Comment
-                                        </div>
-                                        <div class="text-900 border-200 border-l-3 pl-2 italic">
-                                            {{ retirement.comment }}
-                                        </div>
-                                    </div>
-
-                                    <!-- Action Buttons -->
-                                    <div class="justify-content-end mt-3 flex gap-2">
-                                        <Button label="View Details" icon="pi pi-eye" severity="info" size="small"
-                                            outlined />
-                                        <Button label="Print" icon="pi pi-print" severity="secondary" size="small"
-                                            outlined />
-                                    </div>
-                                </div>
-                            </div>
-                        </template>
-                    </Card>
-
-                    <!-- Timeline View (Alternative) -->
-                    <Card>
-                        <template #title>
-                            <div class="align-items-center flex gap-2">
-                                <i class="pi pi-timeline text-primary"></i>
-                                <span>Retirement Timeline</span>
-                            </div>
-                        </template>
-                        <template #content>
-                            <div class="timeline">
-                                <div v-for="(
-retirement, index
-                                    ) in retirementHistory" :key="retirement.id" class="timeline-item">
-                                    <div class="timeline-marker">
-                                        <i class="pi pi-check-circle text-green-500"></i>
-                                    </div>
-                                    <div class="timeline-content">
-                                        <div class="timeline-date text-500 text-sm">
-                                            {{
-                                                formatDateTime(
-                                                    retirement.voucher_date ||
-                                                    retirement.created_at,
-                                                )
-                                            }}
-                                        </div>
-                                        <div class="timeline-title font-bold">
-                                            {{
-                                                retirement.voucher_number ||
-                                                `Retirement #${index + 1}`
-                                            }}
-                                        </div>
-                                        <div class="timeline-description">
-                                            <div class="align-items-center flex gap-2">
-                                                <span class="font-bold text-green-600">{{
-                                                    formatCurrency(
-                                                        retirement.total_amount,
-                                                    )
-                                                }}</span>
-                                                <span class="text-500">â€¢</span>
-                                                <span>{{
-                                                    retirement.items
-                                                        ?.length || 0
-                                                }}
-                                                    items</span>
-                                                <span class="text-500">â€¢</span>
-                                                <span>By:
-                                                    {{
-                                                        retirement.creator
-                                                            ?.name || 'System'
-                                                    }}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </template>
-                    </Card>
+                <p class="text-500 text-xs mt-3">Office documents can be downloaded and opened in Microsoft Office or Google Docs.</p>
+            </div>
+            
+            <!-- Other File Types - Show Download Option -->
+            <div v-else class="flex flex-column align-items-center justify-content-center w-full h-full bg-gray-50" 
+                 style="min-height: 500px;">
+                <i class="pi pi-file text-6xl text-gray-400 mb-4"></i>
+                <h4 class="text-900">Preview Not Available</h4>
+                <p class="text-500 text-sm">This file type cannot be previewed directly.</p>
+                <p class="text-500 text-sm mb-3">{{ currentDocument?.file_name }}</p>
+                <div class="flex gap-2">
+                    <Button 
+                        label="Download File" 
+                        icon="pi pi-download" 
+                        severity="primary" 
+                        @click="downloadDocument" 
+                    />
+                    <Button 
+                        label="Open in New Tab" 
+                        icon="pi pi-external-link" 
+                        severity="secondary" 
+                        @click="openInNewTab" 
+                    />
                 </div>
             </div>
-
-            <template #footer>
-                <Button label="Close" icon="pi pi-times" @click="showRetirementHistoryModal = false"
-                    class="p-button-text" />
-                <Button label="Export to Excel" icon="pi pi-file-excel" severity="success"
-                    @click="exportRetirementHistory" />
-            </template>
-        </Dialog>
+        </div>
+    </div>
+</Dialog>
     </AppLayout>
 </template>
+
 
 <style scoped>
 .field {
@@ -3284,5 +2484,167 @@ retirement, index
     .timeline-marker {
         left: -0.625rem;
     }
+}
+
+.workflow-timeline {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.workflow-timeline::-webkit-scrollbar {
+    width: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+.custom-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.custom-timeline :deep(.p-timeline-event-opposite) {
+    flex: 0;
+    padding: 0;
+}
+
+.custom-timeline :deep(.p-timeline-event-content) {
+    margin-left: 1rem;
+}
+
+.custom-timeline :deep(.p-timeline-event-marker) {
+    background: transparent !important;
+    border: none !important;
+}
+
+.workflow-card-item :deep(.p-card) {
+    box-shadow: none;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    margin: 0.5rem 0;
+}
+
+.workflow-card-item :deep(.p-card-content) {
+    padding: 0.75rem;
+}
+
+/* Status colors for timeline markers */
+.bg-green-500 {
+    background-color: #10b981;
+}
+
+.bg-red-500 {
+    background-color: #ef4444;
+}
+
+.bg-blue-500 {
+    background-color: #3b82f6;
+}
+
+.bg-orange-500 {
+    background-color: #f59e0b;
+}
+
+.bg-purple-500 {
+    background-color: #8b5cf6;
+}
+
+.bg-gray-500 {
+    background-color: #6b7280;
+}
+
+/* Badge severities override */
+:deep(.p-badge-success) {
+    background-color: #10b981;
+}
+
+:deep(.p-badge-danger) {
+    background-color: #ef4444;
+}
+
+:deep(.p-badge-info) {
+    background-color: #3b82f6;
+}
+
+:deep(.p-badge-warning) {
+    background-color: #f59e0b;
+}
+
+:deep(.p-badge-secondary) {
+    background-color: #6b7280;
+}
+
+/* Document Viewer Styles */
+.document-viewer-dialog :deep(.p-dialog-header) {
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 1rem 1.5rem;
+}
+
+.document-viewer-dialog :deep(.p-dialog-content) {
+    padding: 1rem 1.5rem 1.5rem 1.5rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.document-viewer-dialog :deep(.p-dialog-content .flex-1) {
+    flex: 1;
+    min-height: 0;
+}
+
+.document-preview {
+    background: #ffffff;
+    border-radius: 0.5rem;
+}
+
+.document-preview iframe {
+    border-radius: 0.5rem;
+}
+
+/* Hover effect for document items */
+.hover\:surface-100:hover {
+    background-color: var(--surface-100);
+}
+
+.transition-all {
+    transition: all 0.2s ease;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}
+
+/* Document preview background */
+.bg-gray-50 {
+    background-color: #f9fafb;
+}
+
+.object-contain {
+    object-fit: contain;
+}
+
+.max-w-full {
+    max-width: 100%;
+}
+
+.max-h-full {
+    max-height: 100%;
 }
 </style>

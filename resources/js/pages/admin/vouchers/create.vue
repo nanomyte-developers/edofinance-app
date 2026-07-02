@@ -19,7 +19,6 @@ import { computed, onMounted, ref, watch } from 'vue';
 import axios from 'axios';
 import moment from 'moment';
 
-// Layout and types
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 
@@ -33,12 +32,8 @@ const breadcrumbs: BreadcrumbItem[] = [
 let nextItemId = 1;
 
 const voucherTypes = [
-    // {
-    //     label: 'Standard',
-    //     value: 'standard',
-    // },
     {
-        label: 'Captial',
+        label: 'Capital',
         value: 'capital',
     },
     {
@@ -63,7 +58,14 @@ const voucherTypes = [
     },
 ];
 
-// Define types for line items - UPDATED with programme code fields
+interface DFAPermissions {
+    can_submit_for_approval: boolean;
+    can_save_as_draft: boolean;
+    is_subordinate: boolean;
+    is_dfa_main: boolean;
+    can_view: boolean;
+}
+
 interface LineItem {
     id: number;
     description: string;
@@ -88,7 +90,6 @@ interface LineItem {
     };
 }
 
-// Document types
 interface RequiredDocument {
     type: string;
     label: string;
@@ -105,7 +106,6 @@ interface UploadedDocument {
     document_type: string;
 }
 
-// Programme code interface
 interface ProgrammeCode {
     id: number;
     code: string;
@@ -127,6 +127,18 @@ const props = defineProps({
     schedule: {
         type: Object,
         default: () => ({}),
+    },
+    lineItem: {
+        type: Object,
+        default: () => null,
+    },
+    voucherData: {
+        type: Object,
+        default: () => ({}),
+    },
+    isLineItemVoucher: {
+        type: Boolean,
+        default: false,
     },
     defaultAccount: String,
     mdas: {
@@ -158,12 +170,30 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    dfaPermissions: {
+        type: Object as () => DFAPermissions,
+        default: () => ({
+            can_submit_for_approval: false,
+            can_save_as_draft: false,
+            is_subordinate: false,
+            is_dfa_main: false,
+            can_view: false,
+        }),
+    },
 });
+
+// ✅ Computed permissions
+const canSubmitForApproval = computed(() => props.dfaPermissions.can_submit_for_approval);
+const canSaveAsDraft = computed(() => props.dfaPermissions.can_save_as_draft);
+const isSubordinate = computed(() => props.dfaPermissions.is_subordinate);
+const isDFAMain = computed(() => props.dfaPermissions.is_dfa_main);
 
 // Page title based on voucher type and schedule
 const pageTitle = computed(() => {
-    const type =
-        props.voucherType.charAt(0).toUpperCase() + props.voucherType.slice(1);
+    const type = props.voucherType.charAt(0).toUpperCase() + props.voucherType.slice(1);
+    if (props.lineItem) {
+        return `Create ${type} Voucher for Line Item - ${props.lineItem.payee_name}`;
+    }
     if (props.schedule?.schedule_number) {
         return `Create ${type} Voucher for Schedule ${props.schedule.schedule_number}`;
     }
@@ -182,7 +212,7 @@ const validationErrors = ref({
     payee_name: '',
 });
 
-// Document type options for dropdown
+// Document type options
 const documentTypeOptions = [
     { label: 'Approval Memo', value: 'approval_memo' },
     { label: 'Release Warrant', value: 'release_warrant' },
@@ -218,18 +248,16 @@ const economyCodeOptions = computed(() => {
     return props.economyCodes;
 });
 
-// Programme Codes Management - UPDATED with search functionality
+// Programme Codes Management
 const programmeCodes = ref<ProgrammeCode[]>([]);
 const programmeCodeLoading = ref(false);
 const selectedProgrammeCodeMap = ref<Record<number, ProgrammeCode>>({});
-
-// NEW: Searchable programme code refs
 const programmeCodeSearchQuery = ref('');
 const programmeCodeOptions = ref([]);
 const programmeCodeSearchLoading = ref(false);
 const programmeCodeSearchDebounce = ref(null);
 
-// NEW: Fetch programme codes from API (searchable)
+// Search programme codes
 const searchProgrammeCodes = async (search = '') => {
     programmeCodeSearchLoading.value = true;
     try {
@@ -267,22 +295,16 @@ const searchProgrammeCodes = async (search = '') => {
     }
 };
 
-// NEW: Handle programme code search input
 const onProgrammeCodeSearch = (event: any) => {
     const query = event.query;
-    
-    // Clear previous debounce
     if (programmeCodeSearchDebounce.value) {
         clearTimeout(programmeCodeSearchDebounce.value);
     }
-    
-    // Debounce search
     programmeCodeSearchDebounce.value = setTimeout(() => {
         searchProgrammeCodes(query);
     }, 300);
 };
 
-// NEW: Handle programme code selection (updated version)
 const onProgrammeCodeSelect = (item: LineItem, selectedProgramme: number | null) => {
     if (!selectedProgramme) {
         item.programme_code_id = null;
@@ -293,7 +315,6 @@ const onProgrammeCodeSelect = (item: LineItem, selectedProgramme: number | null)
         return;
     }
     
-    // Find the selected programme
     const programme = programmeCodeOptions.value.find((pc: any) => pc.id === selectedProgramme);
     
     if (programme) {
@@ -302,16 +323,13 @@ const onProgrammeCodeSelect = (item: LineItem, selectedProgramme: number | null)
         item.programme_name = programme.name;
         item.budget_code = programme.budget_code;
         
-        // Also set economic code if available and not already set
         if (programme.economic_code_id && !item.economy_code_id) {
             item.economy_code_id = programme.economic_code_id;
-            // Trigger economy code change to load items
             onEconomyCodeChange(item);
         }
         
         selectedProgrammeCodeMap.value[item.id] = programme;
         
-        // Validate budget availability
         if (programme.remaining_budget < item.sub_total) {
             toast.add({
                 severity: 'warn',
@@ -321,7 +339,6 @@ const onProgrammeCodeSelect = (item: LineItem, selectedProgramme: number | null)
             });
         }
         
-        // Clear any previous errors
         if (item.errors?.programme_code_id) {
             delete item.errors.programme_code_id;
         }
@@ -331,14 +348,6 @@ const onProgrammeCodeSelect = (item: LineItem, selectedProgramme: number | null)
     }
 };
 
-// Update fetchProgrammeCodes to work with the search
-const fetchProgrammeCodes = async (itemId: number, economicCodeId: number | null, filter = '') => {
-    // For searchable dropdown, we don't pre-fetch all
-    // Just set empty and let search handle it
-    programmeCodes.value = [];
-};
-
-// Filter Economic Code items
 const getEconomyCodeItemOptions = (economyCodeId: number | null) => {
     if (!economyCodeId || !props.economyCodeItems || props.economyCodeItems.length === 0) {
         return [];
@@ -348,7 +357,7 @@ const getEconomyCodeItemOptions = (economyCodeId: number | null) => {
     });
 };
 
-// Inertia form setup - UPDATED with programme code fields
+// Inertia form setup
 const form = useForm({
     schedule_id: props.schedule?.id || null,
     voucher_type: props.voucherType,
@@ -357,14 +366,45 @@ const form = useForm({
     voucher_date: moment(props.today).format('YYYY-MM-DD'),
     narration: props.schedule?.narration || '',
     status: 'Draft',
-    total_amount: props.schedule?.total_amount || 0,
+    total_amount: 0,
     items: [] as LineItem[],
     documents: [] as File[],
     voucher_number: props.voucherNumber || '',
     payee_name: props.schedule?.payee_name || '',
 });
 
-// Auto-select MDA and Financial Year based on schedule
+// ✅ Initialize form with line item data
+const initializeForm = () => {
+    // If we have a line item, pre-fill everything
+    if (props.lineItem) {
+        form.payee_name = props.lineItem.payee_name || '';
+        form.total_amount = props.lineItem.amount || 0;
+        form.narration = props.lineItem.description || `Payment to ${props.lineItem.payee_name}`;
+        
+        // Create a single line item from the schedule item
+        if (form.items.length === 0) {
+            const item: LineItem = {
+                id: nextItemId++,
+                description: props.lineItem.description || `Payment to ${props.lineItem.payee_name}`,
+                economy_code_id: props.lineItem.economy_code_id || null,
+                economy_code_item_id: props.lineItem.economy_code_item_id || null,
+                quantity: 1,
+                unit_price: props.lineItem.amount || 0,
+                sub_total: props.lineItem.amount || 0,
+                programme_code_id: null,
+                programme_code: null,
+                programme_name: null,
+                budget_code: null,
+            };
+            form.items.push(item);
+        }
+    }
+    
+    // Auto-select MDA and Year
+    autoSelectMdaAndYear();
+    generateNarrationFromSchedule();
+};
+
 const autoSelectMdaAndYear = () => {
     if (props.schedule?.mda_id && props.mdas.length > 0) {
         const mdaExists = props.mdas.some(
@@ -385,8 +425,11 @@ const autoSelectMdaAndYear = () => {
     }
 };
 
-// Generate narration from schedule
 const generateNarrationFromSchedule = () => {
+    if (props.lineItem) {
+        form.narration = props.lineItem.description || `Payment to ${props.lineItem.payee_name}`;
+        return;
+    }
     if (props.schedule && !form.narration) {
         const mdaName = props.schedule.mda?.name || 'MDA';
         const scheduleNumber = props.schedule.schedule_number || '';
@@ -394,7 +437,14 @@ const generateNarrationFromSchedule = () => {
     }
 };
 
-// Computed properties for dynamic totals
+// ✅ Computed totals - use line item amount when from schedule item
+const scheduleTotal = computed(() => {
+    if (props.lineItem) {
+        return props.lineItem.amount || 0;
+    }
+    return props.schedule?.total_amount || 0;
+});
+
 const voucherSubtotal = computed(() => {
     return form.items.reduce((sum, item) => sum + (item.sub_total || 0), 0);
 });
@@ -404,12 +454,34 @@ const voucherTotal = computed(() => {
 });
 
 const voucherTotalMatchesSchedule = computed(() => {
-    if (!props.schedule?.total_amount) return true;
-    return Math.abs(voucherTotal.value - props.schedule.total_amount) < 0.01;
+    const targetTotal = props.lineItem ? props.lineItem.amount : props.schedule?.total_amount;
+    if (!targetTotal) return true;
+    return Math.abs(voucherTotal.value - targetTotal) < 0.01;
 });
 
-const scheduleTotal = computed(() => {
-    return props.schedule?.total_amount || 0;
+const scheduleInfo = computed(() => {
+    if (!props.schedule) return null;
+    
+    if (props.lineItem) {
+        return {
+            schedule_number: props.schedule.schedule_number,
+            mda: props.schedule.mda?.name,
+            budget_code: props.schedule.budget_code,
+            total_amount: props.lineItem.amount,
+            is_line_item: true,
+            line_item_payee: props.lineItem.payee_name,
+            line_item_description: props.lineItem.description,
+            line_item_serial: props.lineItem.serial_number,
+        };
+    }
+    
+    return {
+        schedule_number: props.schedule.schedule_number,
+        mda: props.schedule.mda?.name,
+        budget_code: props.schedule.budget_code,
+        total_amount: props.schedule.total_amount,
+        is_line_item: false,
+    };
 });
 
 // Number to words converter
@@ -481,17 +553,8 @@ const convertNumberToWords = (amount: number): string => {
 };
 
 const amountInWords = computed(() => {
-    return convertNumberToWords(voucherTotal.value);
-});
-
-const scheduleInfo = computed(() => {
-    if (!props.schedule) return null;
-    return {
-        schedule_number: props.schedule.schedule_number,
-        mda: props.schedule.mda?.name,
-        budget_code: props.schedule.budget_code,
-        total_amount: props.schedule.total_amount,
-    };
+    const total = props.lineItem ? props.lineItem.amount : voucherTotal.value;
+    return convertNumberToWords(total);
 });
 
 // Validation functions
@@ -549,7 +612,6 @@ const validateHeader = () => {
     return isValid;
 };
 
-// FIXED: Validate line items with programme code validation - budget code is optional now
 const validateLineItems = () => {
     let isValid = true;
 
@@ -567,7 +629,6 @@ const validateLineItems = () => {
     form.items.forEach((item) => {
         const itemErrors: any = {};
 
-        // Description validation
         if (!item.description?.trim()) {
             itemErrors.description = 'Description is required';
             isValid = false;
@@ -579,19 +640,16 @@ const validateLineItems = () => {
             isValid = false;
         }
 
-        // Economic Code validation
         if (!item.economy_code_id) {
             itemErrors.economy_code_id = 'Economic Code is required';
             isValid = false;
         }
 
-        // Economic Code Item validation
         if (!item.economy_code_item_id) {
             itemErrors.economy_code_item_id = 'Economic Code item is required';
             isValid = false;
         }
 
-        // Programme code validation for series 32 economic codes
         const selectedEconomyCode = props.economyCodes.find((ec: any) => ec.value === item.economy_code_id);
         const isSeries32 = selectedEconomyCode && (selectedEconomyCode.code?.startsWith('32') || selectedEconomyCode.type === 'capital');
         
@@ -600,38 +658,21 @@ const validateLineItems = () => {
             isValid = false;
         }
 
-        // FIXED: Budget code validation - auto-fill from programme code, don't make it required
-        if (!item.budget_code && item.programme_code_id) {
-            // Try to auto-fill from selected programme
-            const programme = selectedProgrammeCodeMap.value[item.id];
-            if (programme && programme.budget_code) {
-                item.budget_code = programme.budget_code;
-            } else {
-                // Budget code is not required for draft/submission
-                // It can be auto-filled by the backend if needed
-                console.log(`Budget code not set for item ${item.id}, but will be handled by backend`);
-            }
-        }
-
-        // Quantity validation
         if (!item.quantity || item.quantity <= 0) {
             itemErrors.quantity = 'Quantity must be greater than 0';
             isValid = false;
         }
 
-        // Unit price validation
         if (item.unit_price === null || item.unit_price === undefined || item.unit_price < 0) {
             itemErrors.unit_price = 'Unit price is required and cannot be negative';
             isValid = false;
         }
 
-        // Sub total validation
         if (item.sub_total === null || item.sub_total === undefined || item.sub_total < 0) {
             itemErrors.sub_total = 'Sub total is required and cannot be negative';
             isValid = false;
         }
 
-        // Check if sub_total matches quantity * unit_price
         if (item.quantity && item.unit_price && item.quantity > 0 && item.unit_price >= 0) {
             const calculatedSubTotal = item.quantity * item.unit_price;
             const subTotalDifference = Math.abs(item.sub_total - calculatedSubTotal);
@@ -716,7 +757,6 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
-// Update line item sub_total - UPDATED to validate budget
 const updateItemSubTotal = (item: LineItem, field: 'quantity' | 'unit_price' | 'sub_total') => {
     const quantity = parseFloat(item.quantity?.toString() || '0');
     const unit_price = parseFloat(item.unit_price?.toString() || '0');
@@ -735,7 +775,6 @@ const updateItemSubTotal = (item: LineItem, field: 'quantity' | 'unit_price' | '
 
     form.total_amount = voucherTotal.value;
 
-    // Check budget availability if programme code is selected
     if (item.programme_code_id && selectedProgrammeCodeMap.value[item.id]) {
         const programme = selectedProgrammeCodeMap.value[item.id];
         if (programme.remaining_budget < item.sub_total) {
@@ -756,7 +795,6 @@ const updateItemSubTotal = (item: LineItem, field: 'quantity' | 'unit_price' | '
     }
 };
 
-// Add new line item - UPDATED with programme code fields
 const addItem = () => {
     const newItem: LineItem = {
         id: nextItemId++,
@@ -779,16 +817,12 @@ const deleteItem = (id: number) => {
     if (form.items.length > 1) {
         form.items = form.items.filter((item) => item.id !== id);
         form.total_amount = voucherTotal.value;
-        // Clean up programme code map
         delete selectedProgrammeCodeMap.value[id];
     }
 };
 
-// Watch for Economic Code changes - UPDATED
 const onEconomyCodeChange = (item: LineItem) => {
     item.economy_code_item_id = null;
-    // Don't clear programme code when economic code changes
-    // Keep it as is, user can search for any programme code
 };
 
 // File upload handlers
@@ -1009,7 +1043,6 @@ const submitVoucher = () => {
 
     form.voucher_date = moment(form.voucher_date).format('YYYY-MM-DD');
 
-    // Ensure budget_code is set for all items before submission
     form.items.forEach(item => {
         if (item.programme_code_id && !item.budget_code) {
             const programme = selectedProgrammeCodeMap.value[item.id];
@@ -1017,7 +1050,6 @@ const submitVoucher = () => {
                 item.budget_code = programme.budget_code;
             }
         }
-        // If still no budget code, set a default or leave empty (backend will handle)
         if (!item.budget_code) {
             item.budget_code = '';
         }
@@ -1062,6 +1094,16 @@ const submitVoucher = () => {
 };
 
 const saveDraft = () => {
+    if (!canSaveAsDraft.value) {
+        toast.add({
+            severity: 'error',
+            summary: 'Permission Denied',
+            detail: 'You do not have permission to save vouchers as draft.',
+            life: 5000,
+        });
+        return;
+    }
+
     form.status = 'Draft';
     if (!validateHeader() || !validateLineItems()) {
         toast.add({
@@ -1076,6 +1118,16 @@ const saveDraft = () => {
 };
 
 const submitForApproval = () => {
+    if (!canSubmitForApproval.value) {
+        toast.add({
+            severity: 'error',
+            summary: 'Permission Denied',
+            detail: 'Only Director of Finance with proper permissions can submit vouchers for approval. You can save as draft instead.',
+            life: 5000,
+        });
+        return;
+    }
+
     form.status = 'Submitted';
     if (!validateForm()) {
         toast.add({
@@ -1135,16 +1187,20 @@ fetchData(1);
 // Initialize
 onMounted(() => {
     console.log('Schedule data received:', props.schedule);
-    autoSelectMdaAndYear();
-    generateNarrationFromSchedule();
+    console.log('Line Item data received:', props.lineItem);
+    console.log('Is Line Item Voucher:', props.isLineItemVoucher);
+    console.log('DFA Permissions:', props.dfaPermissions);
+    
+    initializeForm();
+    
     if (form.items.length === 0) {
         addItem();
     }
-    // Initialize programme code options from props
+    
     if (props.programmeCodes && props.programmeCodes.length > 0) {
         programmeCodeOptions.value = props.programmeCodes;
     }
-    // Load initial programme codes for search
+    
     searchProgrammeCodes('');
 });
 </script>
@@ -1156,52 +1212,106 @@ onMounted(() => {
 
         <Card class="voucher-card">
             <template #title>
-                {{ pageTitle }}
-                <span class="text-500 ml-3 text-sm">{{ defaultAccount }}</span>
+                <div class="align-items-center flex flex-wrap gap-2">
+                    {{ pageTitle }}
+                    <span class="text-500 ml-3 text-sm">{{ defaultAccount }}</span>
+                    
+                    <Badge 
+                        v-if="isLineItemVoucher"
+                        value="Line Item Voucher"
+                        severity="info"
+                        class="ml-3"
+                    />
+                    
+                    <Badge 
+                        v-if="isSubordinate"
+                        value="DFA Subordinate - Draft Only"
+                        severity="warning"
+                        class="ml-3"
+                    />
+                    
+                    <Badge 
+                        v-if="isDFAMain"
+                        value="DFA Main - Full Access"
+                        severity="success"
+                        class="ml-3"
+                    />
+                </div>
             </template>
 
             <template #content>
-                <!-- Schedule Information Banner -->
+                <!-- Permission Warning Banner -->
+                <div v-if="isSubordinate" class="mb-4">
+                    <Message severity="warn" :closable="false">
+                        <div class="align-items-center flex gap-2">
+                            <i class="pi pi-exclamation-triangle"></i>
+                            <span>
+                                <strong>DFA Subordinate Mode:</strong> 
+                                You can only save vouchers as <strong>Drafts</strong>. 
+                                Please review and ensure all details are correct before saving. 
+                                Only the Director of Finance can submit for approval.
+                            </span>
+                        </div>
+                    </Message>
+                </div>
+
+                <div v-if="isDFAMain" class="mb-4">
+                    <Message severity="info" :closable="false">
+                        <div class="align-items-center flex gap-2">
+                            <i class="pi pi-info-circle"></i>
+                            <span>
+                                <strong>DFA Main Mode:</strong> 
+                                You have full access. You can save as <strong>Draft</strong> 
+                                or <strong>Submit for Approval</strong> directly.
+                            </span>
+                        </div>
+                    </Message>
+                </div>
+
+                <!-- Schedule/Line Item Information Banner -->
                 <div v-if="scheduleInfo" class="mb-4">
                     <Message severity="info" :closable="false">
                         <div class="align-items-center flex gap-3">
                             <i class="pi pi-info-circle"></i>
                             <div class="flex-column flex">
-                                <span class="font-semibold">Creating voucher from schedule:</span>
-                                <div class="align-items-center mt-1 flex gap-4">
+                                <span class="font-semibold">
+                                    <span v-if="scheduleInfo.is_line_item">
+                                        Creating voucher from schedule line item
+                                        <Badge value="Single Item" severity="info" class="ml-2" />
+                                    </span>
+                                    <span v-else>
+                                        Creating voucher from schedule
+                                    </span>
+                                </span>
+                                <div class="align-items-center mt-1 flex gap-4 flex-wrap">
                                     <span><strong>Schedule No:</strong>
                                         {{ scheduleInfo.schedule_number }}</span>
                                     <span><strong>MDA:</strong>
                                         {{ scheduleInfo.mda }}</span>
-                                    <span><strong>Administrative Code:</strong>
+                                    <span><strong>Admin Code:</strong>
                                         {{ scheduleInfo.budget_code }}</span>
-                                    <span><strong>Schedule Total:</strong>
-                                        {{
-                                            formatCurrency(
-                                                scheduleInfo.total_amount,
-                                            )
-                                        }}</span>
+                                    <span v-if="scheduleInfo.is_line_item">
+                                        <strong>Payee:</strong>
+                                        {{ scheduleInfo.line_item_payee }}
+                                    </span>
+                                    <span v-if="scheduleInfo.is_line_item">
+                                        <strong>Serial No:</strong>
+                                        {{ scheduleInfo.line_item_serial }}
+                                    </span>
+                                    <span><strong>Amount:</strong>
+                                        {{ formatCurrency(scheduleInfo.total_amount) }}
+                                        <span v-if="scheduleInfo.is_line_item" class="text-500 text-sm ml-1">
+                                            (from line item)
+                                        </span>
+                                        <span v-else class="text-500 text-sm ml-1">
+                                            (schedule total)
+                                        </span>
+                                    </span>
                                 </div>
-                                <!-- NEW: Total validation message -->
-                                <div v-if="!voucherTotalMatchesSchedule" class="mt-2">
-                                    <Message severity="warn" :closable="false">
-                                        <div class="align-items-center flex gap-2">
-                                            <i class="pi pi-exclamation-triangle"></i>
-                                            <span>
-                                                <strong>Total Mismatch:</strong>
-                                                Voucher total ({{
-                                                    formatCurrency(
-                                                        voucherTotal,
-                                                    )
-                                                }}) must match schedule total
-                                                ({{
-                                                    formatCurrency(
-                                                        scheduleTotal,
-                                                    )
-                                                }})
-                                            </span>
-                                        </div>
-                                    </Message>
+                                <div v-if="scheduleInfo.is_line_item && scheduleInfo.line_item_description" class="mt-1">
+                                    <span class="text-500 text-sm">
+                                        <strong>Description:</strong> {{ scheduleInfo.line_item_description }}
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -1217,7 +1327,7 @@ onMounted(() => {
                                 <strong>Workflow:</strong> Vouchers are created
                                 as <strong>Drafts</strong> by default. You can
                                 save as draft and edit later, or submit directly
-                                for approval to Internal Audit.
+                                for approval.
                             </span>
                         </div>
                     </Message>
@@ -1300,7 +1410,7 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <!-- Voucher Type Display -->
+                <!-- Voucher Type and Number -->
                 <div class="mb-4 grid">
                     <div class="col-4">
                         <div class="field">
@@ -1411,7 +1521,12 @@ onMounted(() => {
                                 {{ validationErrors.line_items }}
                             </span>
                             <Button label="Add Line Item" icon="pi pi-plus" severity="success" outlined
+                                :disabled="isLineItemVoucher"
                                 @click="addItem()" />
+                            <span v-if="isLineItemVoucher" class="text-500 text-sm">
+                                <i class="pi pi-info-circle"></i>
+                                Line item is pre-filled from schedule
+                            </span>
                         </div>
                     </div>
 
@@ -1439,7 +1554,6 @@ onMounted(() => {
                             </template>
                         </Column>
 
-                        <!-- Economic Code Column -->
                         <Column field="economy_code_id" header="Economic Code"
                             headerStyle="width: 150px; min-width: 150px; max-width: 150px"
                             bodyStyle="width: 150px; min-width: 150px; max-width: 150px">
@@ -1468,7 +1582,6 @@ onMounted(() => {
                             </template>
                         </Column>
 
-                        <!-- Economic Code Item Column -->
                         <Column field="economy_code_item_id" header="Code Item"
                             headerStyle="width: 150px; min-width: 150px; max-width: 150px"
                             bodyStyle="width: 150px; min-width: 150px; max-width: 150px">
@@ -1504,7 +1617,6 @@ onMounted(() => {
                             </template>
                         </Column>
 
-                        <!-- Programme Code Column - SEARCHABLE VERSION -->
                         <Column field="programme_code_id" header="Programme Code"
                             headerStyle="width: 280px; min-width: 280px; max-width: 280px"
                             bodyStyle="width: 280px; min-width: 280px; max-width: 280px">
@@ -1629,7 +1741,8 @@ onMounted(() => {
                             bodyStyle="width: 60px; min-width: 60px; max-width: 60px" bodyClass="text-center">
                             <template #body="slotProps">
                                 <Button icon="pi pi-trash" severity="danger" text rounded
-                                    :disabled="form.items.length === 1" @click="deleteItem(slotProps.data.id)" />
+                                    :disabled="form.items.length === 1 || isLineItemVoucher"
+                                    @click="deleteItem(slotProps.data.id)" />
                             </template>
                         </Column>
                     </DataTable>
@@ -1640,6 +1753,9 @@ onMounted(() => {
                     <div class="align-items-center mb-2 flex gap-2">
                         <i class="pi pi-info-circle text-primary"></i>
                         <span class="font-semibold">Amount in Words:</span>
+                        <span v-if="isLineItemVoucher" class="text-500 text-sm">
+                            (from line item amount)
+                        </span>
                     </div>
                     <div class="surface-0 border-round p-2">
                         <span class="text-900">{{ amountInWords }}</span>
@@ -1649,7 +1765,7 @@ onMounted(() => {
                 <!-- Documents and Totals Section -->
                 <div class="mb-4 grid">
                     <div class="col-6">
-                        <!-- Enhanced Documents Section -->
+                        <!-- Documents Section -->
                         <div class="field-group">
                             <div class="justify-content-between align-items-center mb-3 flex">
                                 <h4 class="m-0">
@@ -1840,7 +1956,7 @@ onMounted(() => {
                                 </template>
                             </FileUpload>
 
-                            <!-- Uploaded Files Display with Type Assignment -->
+                            <!-- Uploaded Files Display -->
                             <div v-if="
                                 form.documents.length > 0 ||
                                 requiredDocuments.some(
@@ -1856,7 +1972,6 @@ onMounted(() => {
                                     }}):
                                 </h5>
 
-                                <!-- Unassigned/Optional Documents -->
                                 <div v-if="optionalDocuments.length > 0" class="mb-4">
                                     <h6 class="mb-2 text-blue-600">
                                         Additional Documents:
@@ -1906,7 +2021,6 @@ doc, index
                                     </div>
                                 </div>
 
-                                <!-- Required Documents Summary -->
                                 <div v-if="
                                     requiredDocuments.some(
                                         (doc) => doc.uploaded,
@@ -1959,75 +2073,66 @@ doc, index
                         <div class="totals-section">
                             <h4 class="mb-3">Voucher Summary</h4>
 
-                            <!-- Schedule Total Reference -->
+                            <!-- Schedule/Line Item Total Reference -->
                             <div v-if="scheduleInfo" class="surface-50 border-round mb-3 p-3">
                                 <div class="justify-content-between align-items-center flex">
-                                    <span class="text-500 font-semibold">Schedule Total:</span>
+                                    <span class="text-500 font-semibold">
+                                        {{ scheduleInfo.is_line_item ? 'Line Item Amount:' : 'Schedule Total:' }}
+                                    </span>
                                     <span class="text-primary font-bold">{{
                                         formatCurrency(scheduleTotal)
                                     }}</span>
                                 </div>
-                                <small class="text-500">Reference amount from schedule</small>
+                                <small class="text-500">
+                                    {{ scheduleInfo.is_line_item ? 'Reference amount from line item' : 'Reference amount from schedule' }}
+                                </small>
                             </div>
 
                             <div class="justify-content-between total-row mb-2 flex">
-                                <span class="text-500">Number of Vouchers Raised:</span>
-                                <span class="font-semibold">{{ props.schedule.voucher_count || 0 }}</span>
-                            </div>
-                            <div class="justify-content-between total-row mb-2 flex">
-                                <span class="text-500">Total Amount Raised:</span>
-                                <span class="font-semibold">{{ formatCurrency(props.schedule.amount_posted || 0) }}</span>
-                            </div>
-                            <div class="justify-content-between total-row mb-2 flex">
-                                <span class="text-500">Outstanding Balance:</span>
-                                <span class="font-semibold">{{ formatCurrency(scheduleTotal -
-                                    (props.schedule.amount_posted || 0)) }}</span>
-                            </div>
-                            <div class="justify-content-between total-row mb-2 flex">
                                 <span class="text-500">Voucher Subtotal:</span>
-                                <span class="font-semibold" :class="{
-                                    'text-green-500':
-                                        scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) >= 0,
-                                    'text-red-500':
-                                        scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) < 0,
-                                }">{{ formatCurrency(voucherSubtotal) }}</span>
+                                <span class="font-semibold">{{ formatCurrency(voucherSubtotal) }}</span>
                             </div>
                             <Divider />
                             <div class="justify-content-between total-row flex text-xl font-bold" :class="{
-                                'text-green-500':
-                                    scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) >= 0,
-                                'text-orange-500':
-                                    scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) < 0,
+                                'text-green-500': voucherTotalMatchesSchedule,
+                                'text-orange-500': !voucherTotalMatchesSchedule,
                             }">
                                 <span>Voucher Total:</span>
                                 <span>{{ formatCurrency(voucherTotal) }}</span>
                             </div>
 
                             <!-- Validation Status -->
-                            <div v-if="scheduleInfo" class="mt-2">
-                                <div v-if="scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) == 0"
-                                    class="align-items-center flex gap-2 text-green-500">
-                                    <i class="pi pi-check-circle"></i>
-                                    <small class="font-semibold">Total amount on raised vouchers now matches schedule
-                                        total</small>
-                                </div>
-                                <div v-if="scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) > 0 && voucherTotal > 0"
-                                    class="align-items-center flex gap-2 text-orange-400">
-                                    <i class="pi pi-exclamation-triangle"></i>
-                                    <small class="font-semibold">Total amount on raised vouchers is below the schedule
-                                        total.
-                                        <br />Please adjust the line items to match the schedule total.
-                                        <br />Alternatively, you may
-                                        have to add another voucher to this schedule.</small>
-                                </div>
-                                <div v-if="scheduleTotal - ((props.schedule.amount_posted || 0) + voucherSubtotal) < 0"
-                                    class="align-items-center flex gap-2 text-red-500">
-                                    <i class="pi pi-exclamation-triangle"></i>
-                                    <small class="font-semibold">You have exceeded the total amount on the schedule
-                                        total. <br />Please
-                                        adjust the line items to match schedule
-                                        total.</small>
-                                </div>
+                            <div v-if="scheduleInfo && !voucherTotalMatchesSchedule" class="mt-2">
+                                <Message severity="warn" :closable="false">
+                                    <div class="align-items-center flex gap-2">
+                                        <i class="pi pi-exclamation-triangle"></i>
+                                        <span>
+                                            <strong>Total Mismatch:</strong>
+                                            Voucher total ({{
+                                                formatCurrency(
+                                                    voucherTotal,
+                                                )
+                                            }}) must match {{ scheduleInfo.is_line_item ? 'line item' : 'schedule' }} amount
+                                            ({{
+                                                formatCurrency(
+                                                    scheduleTotal,
+                                                )
+                                            }})
+                                        </span>
+                                    </div>
+                                </Message>
+                            </div>
+
+                            <div v-if="scheduleInfo && voucherTotalMatchesSchedule" class="mt-2">
+                                <Message severity="success" :closable="false">
+                                    <div class="align-items-center flex gap-2">
+                                        <i class="pi pi-check-circle"></i>
+                                        <span>
+                                            <strong>Total Matches:</strong>
+                                            Voucher total matches {{ scheduleInfo.is_line_item ? 'line item' : 'schedule' }} amount
+                                        </span>
+                                    </div>
+                                </Message>
                             </div>
 
                             <InputNumber v-model="form.total_amount" mode="currency" currency="NGN" locale="en-NG"
@@ -2037,12 +2142,31 @@ doc, index
                 </div>
 
                 <!-- Action Buttons -->
-                <div class="justify-content-end mt-5 flex gap-2">
-                    <Button label="Save as Draft" icon="pi pi-save" severity="secondary" :loading="form.processing"
-                        @click="saveDraft" title="Save as draft (documents optional, can edit later)" />
-                    <Button label="Submit for Approval" icon="pi pi-send" severity="success" :loading="form.processing"
+                <div class="justify-content-end mt-5 flex gap-2 align-items-center">
+                    <Button 
+                        v-if="canSaveAsDraft"
+                        label="Save as Draft" 
+                        icon="pi pi-save" 
+                        severity="secondary" 
+                        :loading="form.processing"
+                        @click="saveDraft" 
+                        title="Save as draft (documents optional, can edit later)" 
+                    />
+                    
+                    <Button 
+                        v-if="canSubmitForApproval"
+                        label="Submit for Approval" 
+                        icon="pi pi-send" 
+                        severity="success" 
+                        :loading="form.processing"
                         @click="submitForApproval"
-                        title="Submit for approval to Internal Audit (requires all documents)" />
+                        title="Submit for approval to Internal Audit (requires all documents)" 
+                    />
+                    
+                    <small v-if="isSubordinate" class="text-500 align-self-center">
+                        <i class="pi pi-info-circle mr-1"></i>
+                        Only DFA Main can submit for approval
+                    </small>
                 </div>
             </template>
         </Card>
@@ -2138,20 +2262,6 @@ doc, index
 
 .w-10rem {
     width: 10rem;
-}
-
-.amount-in-words {
-    background: var(--p-surface-0);
-    border: 1px solid var(--p-surface-200);
-    border-radius: 4px;
-    padding: 0.75rem;
-    margin-top: 1rem;
-}
-
-.amount-in-words-label {
-    color: var(--p-primary-color);
-    font-weight: 600;
-    margin-bottom: 0.5rem;
 }
 
 :deep(.p-datatable-table) {

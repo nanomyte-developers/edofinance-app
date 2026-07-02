@@ -21,6 +21,7 @@ import ProgressSpinner from 'primevue/progressspinner';
 import Dropdown from 'primevue/dropdown';
 import Calendar from 'primevue/calendar';
 import RadioButton from 'primevue/radiobutton';
+import Timeline from 'primevue/timeline';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 import * as XLSX from 'xlsx';
@@ -75,6 +76,7 @@ const showPaymentModal = ref(false);
 const showWorkflowModal = ref(false);
 const showDocumentViewer = ref(false);
 const showConfirmForwardModal = ref(false);
+const showLiabilityPrintDialog = ref(false);
 
 const currentVoucher = ref(null);
 const rejectionReason = ref('');
@@ -86,6 +88,18 @@ const forwardComment = ref('');
 const workflowHistory = ref([]);
 const documentUrl = ref('');
 const currentDocument = ref(null);
+const liabilityPrintContentRef = ref(null);
+
+const currentDateTime = ref(
+    new Date().toLocaleString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+    })
+);
 
 // Destination options
 const destinationOptions = [
@@ -199,6 +213,37 @@ const financialStatsData = computed(() => [
     },
 ]);
 
+// Liability Print Data - For assigned vouchers
+const liabilityPrintData = computed(() => {
+    // Get vouchers that are liability (approved by FA today)
+    return vouchers.value.filter(v => {
+        if (v.final_approved_at) {
+            const today = new Date();
+            const date = new Date(v.final_approved_at);
+            return date.getFullYear() === today.getFullYear() &&
+                   date.getMonth() === today.getMonth() &&
+                   date.getDate() === today.getDate();
+        }
+        return false;
+    });
+});
+
+const totalLiabilityAmount = computed(() => {
+    return liabilityPrintData.value.reduce((sum, v) => sum + (Number(v.total_amount) || 0), 0);
+});
+
+const hasCapitalVouchers = computed(() => {
+    return liabilityPrintData.value.some(v => 
+        v.voucher_type?.toLowerCase() === 'capital'
+    );
+});
+
+const liabilityEmptyRows = computed(() => {
+    const minRows = 15;
+    const dataRows = liabilityPrintData.value.length + 1;
+    return Math.max(0, minRows - dataRows);
+});
+
 // Compute total amount from filtered vouchers
 const totalAmount = computed(() => {
     if (!vouchers.value || vouchers.value.length === 0) return 0;
@@ -230,6 +275,22 @@ const formatCurrency = (value) => {
     }).format(numValue);
 };
 
+const formatCurrencyAmount = (value) => {
+    if (value === null || value === undefined || value === '') return '';
+    const num = parseFloat(value) || 0;
+    const parts = num.toFixed(2).split('.');
+    return new Intl.NumberFormat('en-NG').format(parts[0]) + '.' + parts[1];
+};
+
+const formatCurrencyForPrint = (value) => {
+    const numValue = Number(value) || 0;
+    return new Intl.NumberFormat('en-NG', {
+        style: 'currency',
+        currency: 'NGN',
+        minimumFractionDigits: 2,
+    }).format(numValue);
+};
+
 const formatDate = (date) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString('en-GB', {
@@ -248,6 +309,20 @@ const formatDateTime = (date) => {
         hour: '2-digit',
         minute: '2-digit',
     });
+};
+
+const formatShortDate = (date) => {
+    if (!date) return '';
+    try {
+        const d = new Date(date);
+        const day = d.getDate().toString().padStart(2, '0');
+        const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+        const month = monthNames[d.getMonth()];
+        const year = d.getFullYear().toString().slice(-2);
+        return `${day}-${month}-${year}`;
+    } catch (error) {
+        return '';
+    }
 };
 
 const formatDateForApi = (date) => {
@@ -341,6 +416,94 @@ const getPaymentStatusLabel = (status) => {
 const getDestinationLabel = (value) => {
     const option = destinationOptions.find(d => d.value === value);
     return option ? option.label : value;
+};
+
+// =============================================
+// WORKFLOW HELPER FUNCTIONS
+// =============================================
+
+// Get action severity for workflow
+const getActionSeverity = (action) => {
+    const actionMap = {
+        'Approved': 'success',
+        'Declined': 'danger',
+        'Rejected': 'danger',
+        'Forwarded': 'info',
+        'Submitted': 'info',
+        'Created': 'info',
+        'Updated': 'warning',
+        'Saved': 'secondary',
+        'Sent Back': 'warning',
+        'Audit Approved': 'success',
+        'FA Approved': 'success',
+        'EC Approved': 'success',
+        'AG Approved': 'success',
+        'MAS Approved': 'success',
+    };
+    return actionMap[action] || 'info';
+};
+
+// Get action icon for workflow
+const getActionIcon = (action) => {
+    const iconMap = {
+        'Approved': 'pi-check-circle',
+        'Declined': 'pi-times-circle',
+        'Rejected': 'pi-times-circle',
+        'Forwarded': 'pi-send',
+        'Submitted': 'pi-upload',
+        'Created': 'pi-plus-circle',
+        'Updated': 'pi-pencil',
+        'Saved': 'pi-save',
+        'Sent Back': 'pi-undo',
+        'Audit Approved': 'pi-check-circle',
+        'FA Approved': 'pi-check-circle',
+        'EC Approved': 'pi-check-circle',
+        'AG Approved': 'pi-check-circle',
+        'MAS Approved': 'pi-check-circle',
+    };
+    return iconMap[action] || 'pi-circle';
+};
+
+// Get action color for workflow
+const getActionColor = (action) => {
+    const colorMap = {
+        'Approved': 'text-green-500 bg-green-100',
+        'Declined': 'text-red-500 bg-red-100',
+        'Rejected': 'text-red-500 bg-red-100',
+        'Forwarded': 'text-blue-500 bg-blue-100',
+        'Submitted': 'text-cyan-500 bg-cyan-100',
+        'Created': 'text-purple-500 bg-purple-100',
+        'Updated': 'text-orange-500 bg-orange-100',
+        'Saved': 'text-gray-500 bg-gray-100',
+        'Sent Back': 'text-yellow-500 bg-yellow-100',
+        'Audit Approved': 'text-green-500 bg-green-100',
+        'FA Approved': 'text-green-500 bg-green-100',
+        'EC Approved': 'text-green-500 bg-green-100',
+        'AG Approved': 'text-green-500 bg-green-100',
+        'MAS Approved': 'text-green-500 bg-green-100',
+    };
+    return colorMap[action] || 'text-gray-500 bg-gray-100';
+};
+
+// Get action border color for workflow
+const getActionBorderColor = (action) => {
+    const colorMap = {
+        'Approved': 'border-green-500',
+        'Declined': 'border-red-500',
+        'Rejected': 'border-red-500',
+        'Forwarded': 'border-blue-500',
+        'Submitted': 'border-cyan-500',
+        'Created': 'border-purple-500',
+        'Updated': 'border-orange-500',
+        'Saved': 'border-gray-500',
+        'Sent Back': 'border-yellow-500',
+        'Audit Approved': 'border-green-500',
+        'FA Approved': 'border-green-500',
+        'EC Approved': 'border-green-500',
+        'AG Approved': 'border-green-500',
+        'MAS Approved': 'border-green-500',
+    };
+    return colorMap[action] || 'border-gray-300';
 };
 
 // Load vouchers
@@ -600,13 +763,272 @@ const openPaymentModal = (voucher) => {
     showPaymentModal.value = true;
 };
 
-const openWorkflowModal = async (voucher) => {
+// Liability Print Functions
+const openLiabilityPrintDialog = () => {
+    if (liabilityPrintData.value.length === 0) {
+        toast.add({
+            severity: 'warn',
+            summary: 'No Liabilities',
+            detail: 'There are no liability vouchers to print for today.',
+            life: 3000,
+        });
+        return;
+    }
+    showLiabilityPrintDialog.value = true;
+};
+
+const closeLiabilityPrintDialog = () => {
+    showLiabilityPrintDialog.value = false;
+};
+
+const printLiabilityContent = () => {
+    try {
+        const printElement = document.getElementById('liability-print-content');
+        if (!printElement) {
+            toast.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Print content not found.',
+                life: 3000,
+            });
+            return;
+        }
+
+        const printWindow = window.open('', '_blank', 'width=1200,height=800,scrollbars=yes');
+        if (!printWindow) {
+            toast.add({
+                severity: 'error',
+                summary: 'Popup Blocked',
+                detail: 'Please allow popups for this site to print.',
+                life: 5000,
+            });
+            return;
+        }
+
+        const contentHTML = printElement.innerHTML;
+        const title = `Liability_Printout_${new Date().toISOString().split('T')[0]}`;
+
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>${title}</title>
+                <meta charset="UTF-8">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body {
+                        font-family: Arial, sans-serif;
+                        font-size: 10px;
+                        padding: 20px;
+                        background: white;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    
+                    .print-header {
+                        text-align: center;
+                        margin-bottom: 15px;
+                        border-bottom: 2px solid #000;
+                        padding-bottom: 10px;
+                    }
+                    .print-title {
+                        font-size: 16px;
+                        font-weight: bold;
+                        margin: 5px 0;
+                        text-transform: uppercase;
+                    }
+                    .print-subtitle {
+                        font-size: 12px;
+                        margin: 3px 0;
+                    }
+                    .print-info {
+                        font-size: 10px;
+                        margin: 5px 0;
+                        display: flex;
+                        justify-content: space-between;
+                    }
+                    
+                    .print-ledger-table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        font-size: 9px;
+                        table-layout: fixed;
+                        border: 1px solid #000;
+                        margin-bottom: 20px;
+                    }
+                    .print-ledger-table th,
+                    .print-ledger-table td {
+                        border: 1px solid #000;
+                        padding: 4px 6px;
+                        vertical-align: middle;
+                        text-align: center;
+                        height: 28px;
+                    }
+                    .print-ledger-table th {
+                        background-color: #f0f0f0 !important;
+                        font-weight: bold;
+                        text-transform: uppercase;
+                        font-size: 8px;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    .print-ledger-table .amount-cell {
+                        text-align: right;
+                        font-family: 'Courier New', monospace;
+                        font-weight: bold;
+                        padding-right: 8px;
+                    }
+                    .print-ledger-table .purpose-cell {
+                        text-align: left;
+                        font-size: 8px;
+                        word-wrap: break-word;
+                        overflow-wrap: break-word;
+                        white-space: normal;
+                        line-height: 1.3;
+                    }
+                    .print-ledger-table .text-left { text-align: left; }
+                    .print-ledger-table .text-right { text-align: right; }
+                    .print-ledger-table .text-center { text-align: center; }
+                    .print-ledger-table .font-bold { font-weight: bold; }
+                    
+                    .print-ledger-table .total-row {
+                        background-color: #fff3e0 !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    .print-ledger-table .empty-row { height: 28px; }
+                    .print-ledger-table .data-row:hover { background-color: #f5f5f5 !important; }
+                    
+                    .print-ledger-table .type-badge {
+                        display: inline-block;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-weight: bold;
+                        font-size: 7px;
+                        background-color: #2196f3;
+                        color: white;
+                    }
+                    
+                    .print-ledger-table .status-badge {
+                        display: inline-block;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-weight: bold;
+                        font-size: 7px;
+                        background-color: #ff9800;
+                        color: white;
+                    }
+                    
+                    .print-ledger-table .sno-col { width: 5%; }
+                    .print-ledger-table .date-col { width: 8%; }
+                    .print-ledger-table .head-code-col { width: 10%; }
+                    .print-ledger-table .voucher-col { width: 10%; }
+                    .print-ledger-table .type-col { width: 8%; }
+                    .print-ledger-table .mda-col { width: 12%; }
+                    .print-ledger-table .payee-col { width: 10%; }
+                    .print-ledger-table .purpose-col { width: 17%; }
+                    .print-ledger-table .amount-col { width: 10%; }
+                    
+                    .print-footer {
+                        margin-top: 15px;
+                        padding-top: 10px;
+                        border-top: 1px solid #000;
+                        font-size: 9px;
+                        display: flex;
+                        justify-content: space-between;
+                    }
+                    .uppercase { text-transform: uppercase; }
+                    .italic { font-style: italic; }
+                    
+                    @page {
+                        size: A4 landscape;
+                        margin: 10mm;
+                    }
+                    
+                    @media print {
+                        body { padding: 0; }
+                        .print-ledger-table th { background-color: #f0f0f0 !important; }
+                        .print-ledger-table .total-row { background-color: #fff3e0 !important; }
+                    }
+                </style>
+            </head>
+            <body>
+                ${contentHTML}
+                <script>
+                    window.onload = function() {
+                        setTimeout(function() {
+                            window.print();
+                            setTimeout(function() {
+                                window.close();
+                            }, 500);
+                        }, 300);
+                    };
+                <\/script>
+            </body>
+            </html>
+        `);
+
+        printWindow.document.close();
+
+    } catch (error) {
+        console.error('Print error:', error);
+        toast.add({
+            severity: 'error',
+            summary: 'Print Error',
+            detail: 'Failed to print. Please try again.',
+            life: 5000,
+        });
+    }
+};
+
+// =============================================
+// FIXED: Open workflow modal using voucher approvals directly
+// =============================================
+const openWorkflowModal = (voucher) => {
+    console.log('=== OPEN WORKFLOW MODAL ===');
+    console.log('Voucher:', voucher);
+    console.log('Voucher approvals:', voucher.approvals);
+    
     currentVoucher.value = voucher;
     showWorkflowModal.value = true;
     
     try {
-        const response = await axios.get(`/vouchers/${voucher.id}/approvals`);
-        workflowHistory.value = response.data || [];
+        let approvals = [];
+        
+        // Check multiple possible locations for approvals
+        if (voucher.approvals && Array.isArray(voucher.approvals)) {
+            approvals = voucher.approvals;
+        } else if (voucher.workflow && Array.isArray(voucher.workflow)) {
+            approvals = voucher.workflow;
+        } else if (voucher.approval_history && Array.isArray(voucher.approval_history)) {
+            approvals = voucher.approval_history;
+        }
+        
+        // If still no approvals, check if it's a string that needs parsing
+        if (approvals.length === 0 && typeof voucher.approvals === 'string') {
+            try {
+                approvals = JSON.parse(voucher.approvals);
+            } catch (e) {
+                console.warn('Could not parse approvals string:', e);
+            }
+        }
+        
+        console.log('Final approvals array:', approvals);
+        console.log('Approvals count:', approvals.length);
+        
+        // Sort by created_at descending (most recent first)
+        workflowHistory.value = [...approvals].sort((a, b) => {
+            const dateA = new Date(a.action_at || a.created_at || a.created_at);
+            const dateB = new Date(b.action_at || b.created_at || b.created_at);
+            return dateB - dateA;
+        });
+        
+        console.log('Workflow History loaded:', workflowHistory.value.length, 'entries');
+        console.log('Workflow History data:', workflowHistory.value);
+        
+        if (workflowHistory.value.length === 0) {
+            console.warn('No workflow history found for voucher:', voucher.voucher_number);
+        }
     } catch (error) {
         console.error('Error loading workflow:', error);
         workflowHistory.value = [];
@@ -767,6 +1189,49 @@ const handleReject = () => {
     });
 };
 
+// Handle mark as paid
+const handleMarkAsPaid = () => {
+    if (!paymentReference.value) {
+        toast.add({
+            severity: 'warn',
+            summary: 'Required',
+            detail: 'Please enter a payment reference number.',
+            life: 3000,
+        });
+        return;
+    }
+
+    isProcessing.value = true;
+
+    router.post(`/expenditure-control/vouchers/${currentVoucher.value.id}/mark-paid`, {
+        payment_reference: paymentReference.value,
+        paymentComment: paymentComment.value || '',
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            showPaymentModal.value = false;
+            isProcessing.value = false;
+            toast.add({
+                severity: 'success',
+                summary: 'Payment Recorded',
+                detail: `Voucher ${currentVoucher.value.voucher_number} marked as paid.`,
+                life: 5000,
+            });
+            loadVouchers();
+        },
+        onError: (errors) => {
+            isProcessing.value = false;
+            console.error('Payment error:', errors);
+            toast.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: errors.message || 'Failed to mark voucher as paid.',
+                life: 5000,
+            });
+        },
+    });
+};
+
 // View voucher details
 const viewVoucherDetails = (voucher) => {
     router.visit(`/expenditure-control/vouchers/${voucher.id}`);
@@ -921,60 +1386,109 @@ onMounted(() => {
             </div>
         </div>
 
+        <!-- Liability Banner -->
+        <div v-if="activeTab === 'liability'" class="mb-4">
+            <Message severity="warn" :closable="false" class="liability-banner">
+                <template #messageicon>
+                    <i class="pi pi-calendar text-2xl"></i>
+                </template>
+                <div class="flex align-items-center justify-content-between w-full flex-wrap">
+                    <div class="flex align-items-center gap-3">
+                        <div class="bg-orange-500 text-white font-bold px-4 py-2 border-round text-lg">
+                            LIABILITY AS AT {{ new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() }}
+                        </div>
+                        <div class="flex align-items-center gap-2">
+                            <Badge :value="`${liabilityPrintData.length} vouchers`" severity="warn" size="large" />
+                            <span class="text-sm text-600">
+                                <i class="pi pi-info-circle mr-1"></i>
+                                Vouchers approved by Final Accounts today
+                            </span>
+                        </div>
+                    </div>
+                    <div class="text-sm font-semibold text-orange-700">
+                        Total Liability: {{ formatCurrency(totalLiabilityAmount) }}
+                    </div>
+                </div>
+            </Message>
+        </div>
+
         <!-- Tab Navigation -->
         <div class="mb-4">
-            <div class="flex align-items-center gap-3 flex-wrap">
+            <div class="flex align-items-center justify-content-between flex-wrap gap-3">
+                <div class="flex align-items-center gap-3 flex-wrap">
+                    <Button
+                        :label="`All Assigned (${totalRecords || 0})`"
+                        :severity="activeTab === 'all' ? 'primary' : 'secondary'"
+                        :outlined="activeTab !== 'all'"
+                        @click="switchTab('all')"
+                        size="small"
+                    />
+                    <Button
+                        :label="`Pending Review (${stats.pending_review || 0})`"
+                        :severity="activeTab === 'pending' ? 'primary' : 'secondary'"
+                        :outlined="activeTab !== 'pending'"
+                        @click="switchTab('pending')"
+                        size="small"
+                    >
+                        <template #icon>
+                            <i class="pi pi-clock"></i>
+                        </template>
+                    </Button>
+                    <Button
+                        :label="`Approved (${stats.approved_count || 0})`"
+                        :severity="activeTab === 'approved' ? 'primary' : 'secondary'"
+                        :outlined="activeTab !== 'approved'"
+                        @click="switchTab('approved')"
+                        size="small"
+                    >
+                        <template #icon>
+                            <i class="pi pi-check-circle"></i>
+                        </template>
+                    </Button>
+                    <Button
+                        :label="`Rejected (${stats.rejected_count || 0})`"
+                        :severity="activeTab === 'rejected' ? 'primary' : 'secondary'"
+                        :outlined="activeTab !== 'rejected'"
+                        @click="switchTab('rejected')"
+                        size="small"
+                    >
+                        <template #icon>
+                            <i class="pi pi-times-circle"></i>
+                        </template>
+                    </Button>
+                    <Button
+                        :label="`Forwarded (${stats.forwarded_count || 0})`"
+                        :severity="activeTab === 'forwarded' ? 'primary' : 'secondary'"
+                        :outlined="activeTab !== 'forwarded'"
+                        @click="switchTab('forwarded')"
+                        size="small"
+                    >
+                        <template #icon>
+                            <i class="pi pi-send"></i>
+                        </template>
+                    </Button>
+                    <Button
+                        :label="`Liability (${liabilityPrintData.length})`"
+                        :severity="activeTab === 'liability' ? 'primary' : 'secondary'"
+                        :outlined="activeTab !== 'liability'"
+                        @click="switchTab('liability')"
+                        size="small"
+                    >
+                        <template #icon>
+                            <i class="pi pi-calendar"></i>
+                        </template>
+                    </Button>
+                </div>
+                <!-- Print Liability Button -->
                 <Button
-                    :label="`All Assigned (${totalRecords || 0})`"
-                    :severity="activeTab === 'all' ? 'primary' : 'secondary'"
-                    :outlined="activeTab !== 'all'"
-                    @click="switchTab('all')"
+                    v-if="activeTab === 'liability' && liabilityPrintData.length > 0"
+                    label="Print Liability"
+                    icon="pi pi-print"
+                    severity="warning"
                     size="small"
+                    @click="openLiabilityPrintDialog"
+                    class="liability-print-btn"
                 />
-                <Button
-                    :label="`Pending Review (${stats.pending_review || 0})`"
-                    :severity="activeTab === 'pending' ? 'primary' : 'secondary'"
-                    :outlined="activeTab !== 'pending'"
-                    @click="switchTab('pending')"
-                    size="small"
-                >
-                    <template #icon>
-                        <i class="pi pi-clock"></i>
-                    </template>
-                </Button>
-                <Button
-                    :label="`Approved (${stats.approved_count || 0})`"
-                    :severity="activeTab === 'approved' ? 'primary' : 'secondary'"
-                    :outlined="activeTab !== 'approved'"
-                    @click="switchTab('approved')"
-                    size="small"
-                >
-                    <template #icon>
-                        <i class="pi pi-check-circle"></i>
-                    </template>
-                </Button>
-                <Button
-                    :label="`Rejected (${stats.rejected_count || 0})`"
-                    :severity="activeTab === 'rejected' ? 'primary' : 'secondary'"
-                    :outlined="activeTab !== 'rejected'"
-                    @click="switchTab('rejected')"
-                    size="small"
-                >
-                    <template #icon>
-                        <i class="pi pi-times-circle"></i>
-                    </template>
-                </Button>
-                <Button
-                    :label="`Forwarded (${stats.forwarded_count || 0})`"
-                    :severity="activeTab === 'forwarded' ? 'primary' : 'secondary'"
-                    :outlined="activeTab !== 'forwarded'"
-                    @click="switchTab('forwarded')"
-                    size="small"
-                >
-                    <template #icon>
-                        <i class="pi pi-send"></i>
-                    </template>
-                </Button>
             </div>
         </div>
 
@@ -984,8 +1498,9 @@ onMounted(() => {
                 <div class="flex align-items-center justify-content-between flex-wrap gap-3">
                     <div class="flex align-items-center gap-2">
                         <i class="pi pi-list text-primary"></i>
-                        <span>Assigned Vouchers</span>
+                        <span>{{ activeTab === 'liability' ? 'Liability Vouchers' : 'Assigned Vouchers' }}</span>
                         <Badge :value="totalRecords" severity="info" />
+                        <Tag v-if="activeTab === 'liability'" value="Today's Liabilities" severity="warning" size="small" />
                     </div>
                     <div class="flex gap-2 flex-wrap">
                         <Button 
@@ -1106,6 +1621,10 @@ onMounted(() => {
                             <i class="pi pi-info-circle mr-1"></i>
                             {{ totalRecords }} record(s) found
                         </span>
+                        <span v-if="activeTab === 'liability'" class="text-sm text-orange-500 font-medium">
+                            <i class="pi pi-calendar mr-1"></i>
+                            Showing only vouchers approved by Final Accounts today ({{ new Date().toLocaleDateString() }})
+                        </span>
                     </div>
                 </div>
 
@@ -1116,7 +1635,7 @@ onMounted(() => {
                     stripedRows
                     responsiveLayout="scroll"
                     class="p-datatable-sm"
-                    :emptyMessage="activeTab === 'pending' ? 'No pending vouchers assigned to you.' : activeTab === 'approved' ? 'No approved vouchers.' : activeTab === 'rejected' ? 'No rejected vouchers.' : activeTab === 'forwarded' ? 'No forwarded vouchers.' : 'No vouchers assigned to you.'"
+                    :emptyMessage="activeTab === 'pending' ? 'No pending vouchers assigned to you.' : activeTab === 'approved' ? 'No approved vouchers.' : activeTab === 'rejected' ? 'No rejected vouchers.' : activeTab === 'forwarded' ? 'No forwarded vouchers.' : activeTab === 'liability' ? 'No liability vouchers for today.' : 'No vouchers assigned to you.'"
                     :paginator="true"
                     :rowsPerPageOptions="[5, 10, 20, 50, 100]"
                     :loading="loading"
@@ -1156,6 +1675,18 @@ onMounted(() => {
                     <Column field="voucher_date" header="Date" headerStyle="width: 8%" :sortable="true">
                         <template #body="slotProps">
                             <span class="text-900">{{ formatDate(slotProps.data.voucher_date) }}</span>
+                        </template>
+                    </Column>
+
+                    <!-- FA Approved Date (for liability tab) -->
+                    <Column v-if="activeTab === 'liability'" field="fa_approved_at" header="FA Approved" headerStyle="width: 10%" :sortable="true">
+                        <template #body="slotProps">
+                            <div class="flex flex-column">
+                                <span class="text-900">{{ formatDate(slotProps.data.fa_approved_at) }}</span>
+                                <span v-if="isLiabilityVoucher(slotProps.data)" class="text-xs text-orange-500 font-medium">
+                                    <i class="pi pi-calendar mr-1"></i> Today's Liability
+                                </span>
+                            </div>
                         </template>
                     </Column>
 
@@ -1222,7 +1753,21 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- Actions - 3 up, 3 down layout (NO ASSIGN BUTTON) -->
+                    <!-- Liability Badge -->
+                    <Column v-if="activeTab === 'liability'" header="Liability" headerStyle="width: 6%">
+                        <template #body="slotProps">
+                            <Tag 
+                                v-if="isLiabilityVoucher(slotProps.data)"
+                                value="Today" 
+                                severity="warning" 
+                                size="small"
+                                icon="pi pi-calendar"
+                            />
+                            <span v-else class="text-500 text-sm">-</span>
+                        </template>
+                    </Column>
+
+                    <!-- Actions -->
                     <Column header="Actions" headerStyle="width: 12%" bodyClass="text-center">
                         <template #body="slotProps">
                             <div class="flex flex-column gap-1 align-items-center">
@@ -1298,7 +1843,7 @@ onMounted(() => {
                                         disabled
                                         v-tooltip.top="'Cannot reject'"
                                     />
-                                    <!-- Placeholder for alignment - empty space where assign button would be -->
+                                    <!-- Placeholder for alignment -->
                                     <div style="width: 2rem;"></div>
                                 </div>
                             </div>
@@ -1308,7 +1853,7 @@ onMounted(() => {
             </template>
         </Card>
 
-        <!-- Forward Modal (Choose Destination) - WITH RADIO BUTTONS -->
+        <!-- Forward Modal -->
         <Dialog
             v-model:visible="showForwardModal"
             :style="{ width: '550px' }"
@@ -1595,7 +2140,9 @@ onMounted(() => {
                 <div v-if="workflowHistory.length === 0" class="text-center p-4">
                     <i class="pi pi-clock text-400 text-3xl mb-2"></i>
                     <p class="text-600">No workflow history available</p>
+                    <p class="text-500 text-sm">Approval history will appear here once the voucher is processed.</p>
                 </div>
+
                 <Timeline
                     v-else
                     :value="workflowHistory"
@@ -1606,58 +2153,158 @@ onMounted(() => {
                     <template #marker="slotProps">
                         <span 
                             class="custom-marker p-shadow-2" 
-                            :class="{
-                                'bg-green-500': slotProps.item.action === 'Approved',
-                                'bg-red-500': slotProps.item.action === 'Declined',
-                                'bg-blue-500': slotProps.item.action === 'Forwarded',
-                                'bg-orange-500': slotProps.item.action === 'Sent Back',
-                                'bg-gray-500': slotProps.item.action === 'Saved'
-                            }"
+                            :class="getActionColor(slotProps.item.action)"
                         >
-                            <i :class="{
-                                'pi pi-check': slotProps.item.action === 'Approved',
-                                'pi pi-times': slotProps.item.action === 'Declined',
-                                'pi pi-send': slotProps.item.action === 'Forwarded',
-                                'pi pi-undo': slotProps.item.action === 'Sent Back',
-                                'pi pi-save': slotProps.item.action === 'Saved'
-                            }" class="text-white text-sm"></i>
+                            <i :class="getActionIcon(slotProps.item.action)" class="text-white text-sm"></i>
                         </span>
                     </template>
                     <template #content="slotProps">
-                        <Card class="workflow-card">
-                            <template #content>
-                                <div class="flex flex-column gap-2">
-                                    <div class="flex align-items-center justify-content-between flex-wrap">
-                                        <span class="font-semibold text-primary">
-                                            {{ slotProps.item.approval_role || 'System' }}
-                                        </span>
-                                        <Badge 
-                                            :value="slotProps.item.action" 
-                                            :severity="slotProps.item.action === 'Approved' ? 'success' : 
-                                                      slotProps.item.action === 'Declined' ? 'danger' :
-                                                      slotProps.item.action === 'Forwarded' ? 'info' :
-                                                      slotProps.item.action === 'Sent Back' ? 'warning' : 'secondary'"
-                                            size="small"
-                                        />
-                                    </div>
-                                    <div class="text-600 text-sm">
-                                        {{ formatDateTime(slotProps.item.action_at) }}
-                                    </div>
-                                    <div v-if="slotProps.item.comment" class="text-500 text-sm mt-1 p-2 bg-gray-50 border-round">
-                                        <i class="pi pi-comment mr-1"></i>
-                                        {{ slotProps.item.comment }}
-                                    </div>
-                                    <div v-if="slotProps.item.user" class="text-500 text-xs">
-                                        By: {{ slotProps.item.user.name }}
-                                    </div>
+                        <div class="workflow-card-item border-round border-1 p-3" :class="getActionBorderColor(slotProps.item.action)">
+                            <div class="flex flex-column gap-2">
+                                <div class="flex align-items-center justify-content-between flex-wrap">
+                                    <span class="font-semibold text-primary">
+                                        {{ slotProps.item.approval_role || 'System' }}
+                                    </span>
+                                    <Tag 
+                                        :value="slotProps.item.action" 
+                                        :severity="getActionSeverity(slotProps.item.action)"
+                                        size="small"
+                                    />
                                 </div>
-                            </template>
-                        </Card>
+                                <div class="text-600 text-sm">
+                                    <i class="pi pi-clock mr-1"></i>
+                                    {{ formatDateTime(slotProps.item.action_at || slotProps.item.created_at) }}
+                                </div>
+                                <div v-if="slotProps.item.comment" class="text-500 text-sm mt-1 p-2 bg-gray-50 border-round">
+                                    <i class="pi pi-comment mr-1"></i>
+                                    {{ slotProps.item.comment }}
+                                </div>
+                                <div v-if="slotProps.item.user" class="text-500 text-xs">
+                                    <i class="pi pi-user mr-1"></i>
+                                    By: {{ slotProps.item.user.name }}
+                                </div>
+                                <div v-if="slotProps.item.status" class="text-500 text-xs">
+                                    <i class="pi pi-info-circle mr-1"></i>
+                                    Status: {{ slotProps.item.status }}
+                                </div>
+                            </div>
+                        </div>
                     </template>
                 </Timeline>
             </div>
             <template #footer>
                 <Button label="Close" icon="pi pi-times" @click="closeWorkflowModal" text />
+            </template>
+        </Dialog>
+
+        <!-- Liability Print Dialog -->
+        <Dialog
+            v-model:visible="showLiabilityPrintDialog"
+            :style="{ width: '95vw', maxWidth: '1400px', height: '95vh' }"
+            header="Liability Printout - Assigned Vouchers"
+            :modal="true"
+            :closable="true"
+            @hide="closeLiabilityPrintDialog"
+            class="print-dialog"
+        >
+            <div class="print-content-wrapper" id="liability-print-wrapper">
+                <div class="print-content" id="liability-print-content" ref="liabilityPrintContentRef">
+                    <!-- Print Header -->
+                    <div class="print-header">
+                        <div class="print-title">OFFICE OF THE ACCOUNTANT GENERAL</div>
+                        <div class="print-subtitle">EXPENDITURE AND CONTROL DEPARTMENT</div>
+                        <div class="print-subtitle">TREASURY HOUSE</div>
+                        <div class="print-subtitle">SECRETARIAT COMPLEX</div>
+                        <h2 class="print-title">LIABILITY AS AT {{ new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() }}</h2>
+                        <div class="print-subtitle font-bold uppercase">
+                            ASSIGNED VOUCHERS
+                        </div>
+                        <div class="print-info">
+                            <span>Generated: {{ currentDateTime }}</span>
+                            <span>Total Liabilities: {{ liabilityPrintData.length }} vouchers</span>
+                            <span>Total Amount: {{ formatCurrencyForPrint(totalLiabilityAmount) }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Liability Table with Conditional HEAD/CODE Column -->
+                    <table class="print-ledger-table" :class="{ 'no-head-code': !hasCapitalVouchers }" id="liability-print-table">
+                        <thead>
+                            <tr>
+                                <th class="sno-col">S/NO</th>
+                                <th class="date-col">DATE</th>
+                                <th class="head-code-col" v-if="hasCapitalVouchers">HEAD/CODE</th>
+                                <th class="voucher-col">VOUCHER NO</th>
+                                <th class="type-col">TYPE</th>
+                                <th class="mda-col">MDA</th>
+                                <th class="payee-col">PAYEE</th>
+                                <th class="purpose-col">PURPOSE</th>
+                                <th class="amount-col">AMOUNT</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(voucher, index) in liabilityPrintData" :key="voucher.id" class="data-row">
+                                <td class="text-center">{{ index + 1 }}</td>
+                                <td class="text-center">{{ formatShortDate(voucher.voucher_date) }}</td>
+                                <td class="text-center" v-if="hasCapitalVouchers">
+                                    {{ voucher.voucher_type?.toLowerCase() === 'capital' ? (voucher.mda?.code || 'N/A') : '-' }}
+                                </td>
+                                <td class="text-center">{{ voucher.voucher_number || 'N/A' }}</td>
+                                <td class="text-center">
+                                    <span class="type-badge">{{ voucher.voucher_type?.toUpperCase() || 'N/A' }}</span>
+                                </td>
+                                <td class="text-left">{{ voucher.mda?.name || 'N/A' }}</td>
+                                <td class="text-left">{{ voucher.payee_name || 'N/A' }}</td>
+                                <td class="text-left purpose-cell">{{ voucher.narration || 'N/A' }}</td>
+                                <td class="amount-cell">{{ formatCurrencyAmount(voucher.total_amount) }}</td>
+                            </tr>
+
+                            <!-- Empty Rows -->
+                            <tr v-for="n in liabilityEmptyRows" :key="'empty-' + n" class="empty-row">
+                                <td></td>
+                                <td></td>
+                                <td v-if="hasCapitalVouchers"></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                            </tr>
+
+                            <!-- Total Row -->
+                            <tr class="total-row">
+                                <td :colspan="hasCapitalVouchers ? 8 : 7" class="text-right font-bold">TOTAL LIABILITY</td>
+                                <td class="amount-cell font-bold">{{ formatCurrencyAmount(totalLiabilityAmount) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <!-- Print Footer -->
+                    <div class="print-footer">
+                        <span>Page 1</span>
+                        <div class="text-right uppercase italic">
+                            PREPARED BY EXPENDITURE AND CONTROL DEPARTMENT<br />
+                            OFFICE OF THE ACCOUNTANT-GENERAL, BENIN CITY
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <template #footer>
+                <div class="flex gap-2 justify-content-end">
+                    <Button 
+                        label="Cancel" 
+                        icon="pi pi-times" 
+                        @click="closeLiabilityPrintDialog" 
+                        class="p-button-secondary p-button-sm"
+                    />
+                    <Button 
+                        label="Print" 
+                        icon="pi pi-print" 
+                        @click="printLiabilityContent" 
+                        class="p-button-primary p-button-sm"
+                    />
+                </div>
             </template>
         </Dialog>
 
@@ -1702,6 +2349,44 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* Liability Banner */
+.liability-banner :deep(.p-message) {
+    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+    border: 3px solid #f97316;
+    border-radius: 0.75rem;
+    padding: 1rem 1.5rem;
+}
+
+.liability-banner :deep(.p-message-icon) {
+    color: #f97316;
+}
+
+.liability-banner :deep(.p-message-text) {
+    width: 100%;
+}
+
+/* Liability Print Button */
+.liability-print-btn {
+    background: linear-gradient(135deg, #f97316, #ea580c) !important;
+    border: none !important;
+    color: white !important;
+    font-weight: 600 !important;
+    padding: 0.5rem 1rem !important;
+    border-radius: 0.5rem !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 2px 8px rgba(249, 115, 22, 0.3) !important;
+}
+
+.liability-print-btn:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 16px rgba(249, 115, 22, 0.4) !important;
+    background: linear-gradient(135deg, #ea580c, #c2410c) !important;
+}
+
+.liability-print-btn:active {
+    transform: translateY(0) !important;
+}
+
 /* Stat Cards */
 .stat-card :deep(.p-card) {
     border-radius: 1rem;
@@ -1727,6 +2412,150 @@ onMounted(() => {
     border-radius: 0.75rem;
 }
 
+/* Print Dialog Styles */
+:deep(.print-dialog .p-dialog-content) {
+    overflow: auto;
+    padding: 0;
+    background: #f5f5f5;
+}
+
+.print-content-wrapper {
+    padding: 20px;
+    background: white;
+    min-height: 500px;
+}
+
+.print-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: white;
+    padding: 20px;
+}
+
+/* Print Styles inside dialog */
+.print-header {
+    text-align: center;
+    margin-bottom: 15px;
+    border-bottom: 2px solid #000;
+    padding-bottom: 10px;
+}
+
+.print-title {
+    font-size: 16px;
+    font-weight: bold;
+    margin: 5px 0;
+    text-transform: uppercase;
+}
+
+.print-subtitle {
+    font-size: 12px;
+    margin: 3px 0;
+}
+
+.print-info {
+    font-size: 10px;
+    margin: 5px 0;
+    display: flex;
+    justify-content: space-between;
+}
+
+.print-ledger-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9px;
+    table-layout: fixed;
+    border: 1px solid #000;
+    margin-bottom: 20px;
+}
+
+.print-ledger-table th,
+.print-ledger-table td {
+    border: 1px solid #000;
+    padding: 4px 6px;
+    vertical-align: middle;
+    text-align: center;
+    height: 28px;
+}
+
+.print-ledger-table th {
+    background-color: #f0f0f0 !important;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 8px;
+}
+
+.print-ledger-table .amount-cell {
+    text-align: right;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    padding-right: 8px;
+}
+
+.print-ledger-table .purpose-cell {
+    text-align: left;
+    font-size: 8px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    line-height: 1.3;
+}
+
+.print-ledger-table .text-left { text-align: left; }
+.print-ledger-table .text-right { text-align: right; }
+.print-ledger-table .text-center { text-align: center; }
+.print-ledger-table .font-bold { font-weight: bold; }
+
+.print-ledger-table .total-row {
+    background-color: #fff3e0 !important;
+}
+
+.print-ledger-table .empty-row {
+    height: 28px;
+}
+
+.print-ledger-table .type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 7px;
+    background-color: #2196f3;
+    color: white;
+}
+
+.print-ledger-table .status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 7px;
+    background-color: #ff9800;
+    color: white;
+}
+
+/* Column widths */
+.print-ledger-table .sno-col { width: 5%; }
+.print-ledger-table .date-col { width: 8%; }
+.print-ledger-table .head-code-col { width: 10%; }
+.print-ledger-table .voucher-col { width: 10%; }
+.print-ledger-table .type-col { width: 8%; }
+.print-ledger-table .mda-col { width: 12%; }
+.print-ledger-table .payee-col { width: 10%; }
+.print-ledger-table .purpose-col { width: 17%; }
+.print-ledger-table .amount-col { width: 10%; }
+
+.print-footer {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #000;
+    font-size: 9px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.uppercase { text-transform: uppercase; }
+.italic { font-style: italic; }
+
 /* Table footer styling */
 :deep(.p-datatable-tfoot) {
     background: #f8fafc;
@@ -1739,15 +2568,31 @@ onMounted(() => {
 }
 
 /* Workflow Timeline */
-.workflow-card :deep(.p-card) {
-    box-shadow: none;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.5rem;
-    margin: 0.5rem 0;
+.workflow-card-item {
+    background: white;
+    transition: all 0.2s ease;
 }
 
-.workflow-card :deep(.p-card-content) {
-    padding: 0.75rem;
+.workflow-card-item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.workflow-timeline::-webkit-scrollbar {
+    width: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
 }
 
 .custom-marker {
@@ -1769,6 +2614,20 @@ onMounted(() => {
     margin-left: 1rem;
 }
 
+.custom-timeline :deep(.p-timeline-event-marker) {
+    background: transparent !important;
+    border: none !important;
+}
+
+.workflow-dialog :deep(.p-dialog-header) {
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.workflow-dialog :deep(.p-dialog-content) {
+    padding: 1rem;
+}
+
 /* Dialogs */
 .forward-dialog :deep(.p-dialog-header),
 .confirm-dialog :deep(.p-dialog-header),
@@ -1788,13 +2647,17 @@ onMounted(() => {
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
-    .table-container :deep(.p-datatable) {
+    :deep(.p-datatable) {
         font-size: 0.875rem;
     }
     
-    .table-container :deep(.p-datatable-thead > tr > th),
-    .table-container :deep(.p-datatable-tbody > tr > td) {
+    :deep(.p-datatable-thead > tr > th),
+    :deep(.p-datatable-tbody > tr > td) {
         padding: 0.5rem;
+    }
+
+    .liability-banner :deep(.p-message) {
+        padding: 0.75rem 1rem;
     }
 }
 </style>

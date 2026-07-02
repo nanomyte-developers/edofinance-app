@@ -41,7 +41,7 @@ class VoucherService
                     'payee_name' => $data['payee_name'],
                     'total_amount' => $totalAmount ?? 0,
                     'status' => $data['status'] ?? 'Draft',
-                    'voucher_type' => $data['voucher_type'] ?? 'standard',
+                    'voucher_type' => $data['voucher_type'] ?? 'capital',
                     'created_by_user_id' => auth()->id(),
                     'bank_activity_id' => $data['bank_activity_id'] ?? null,
                 ];
@@ -50,6 +50,11 @@ class VoucherService
                 if (isset($data['schedule_id']) && !empty($data['schedule_id'])) {
                     $voucherData['schedule_id'] = $data['schedule_id'];
                 }
+                
+                // Line item_id from the schedule table if provided
+                if (isset($data['schedule_item_id']) && !empty($data['item_id'])) {
+                    $voucherData['schedule_item_id'] = $data['item_id'];
+                }
 
                 $voucher = Voucher::create($voucherData);
 
@@ -57,6 +62,7 @@ class VoucherService
                     'voucher_id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
                     'schedule_id' => $voucher->schedule_id,
+                    'schedule_item_id' => $voucher->schedule_item_id,
                     'voucher_type' => $voucher->voucher_type,
                 ]);
 
@@ -97,6 +103,7 @@ class VoucherService
                 Log::error('VoucherService Transaction Failed: ' . $e->getMessage(), [
                     'data' => $data,
                     'schedule_id' => $data['schedule_id'] ?? null,
+                    'schedule_item_id' => $data['item_id'] ?? null,
                     'trace' => $e->getTraceAsString()
                 ]);
                 throw $e;

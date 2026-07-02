@@ -1,4 +1,5 @@
 <!-- resources/js/pages/admin/expenditure-control/ag.vue -->
+<!-- resources/js/pages/admin/expenditure-control/ag.vue -->
 <script setup>
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
@@ -20,6 +21,8 @@ import Toast from 'primevue/toast';
 import ProgressSpinner from 'primevue/progressspinner';
 import Dropdown from 'primevue/dropdown';
 import Calendar from 'primevue/calendar';
+import Timeline from 'primevue/timeline';
+import Divider from 'primevue/divider';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 import * as XLSX from 'xlsx';
@@ -350,6 +353,94 @@ const getPaymentStatusLabel = (status) => {
     return labels[status] || status;
 };
 
+// =============================================
+// WORKFLOW HELPER FUNCTIONS
+// =============================================
+
+// Get action severity for workflow
+const getActionSeverity = (action) => {
+    const actionMap = {
+        'Approved': 'success',
+        'Declined': 'danger',
+        'Rejected': 'danger',
+        'Forwarded': 'info',
+        'Submitted': 'info',
+        'Created': 'info',
+        'Updated': 'warning',
+        'Saved': 'secondary',
+        'Sent Back': 'warning',
+        'Audit Approved': 'success',
+        'FA Approved': 'success',
+        'EC Approved': 'success',
+        'AG Approved': 'success',
+        'MAS Approved': 'success',
+    };
+    return actionMap[action] || 'info';
+};
+
+// Get action icon for workflow
+const getActionIcon = (action) => {
+    const iconMap = {
+        'Approved': 'pi-check-circle',
+        'Declined': 'pi-times-circle',
+        'Rejected': 'pi-times-circle',
+        'Forwarded': 'pi-send',
+        'Submitted': 'pi-upload',
+        'Created': 'pi-plus-circle',
+        'Updated': 'pi-pencil',
+        'Saved': 'pi-save',
+        'Sent Back': 'pi-undo',
+        'Audit Approved': 'pi-check-circle',
+        'FA Approved': 'pi-check-circle',
+        'EC Approved': 'pi-check-circle',
+        'AG Approved': 'pi-check-circle',
+        'MAS Approved': 'pi-check-circle',
+    };
+    return iconMap[action] || 'pi-circle';
+};
+
+// Get action color for workflow
+const getActionColor = (action) => {
+    const colorMap = {
+        'Approved': 'text-green-500 bg-green-100',
+        'Declined': 'text-red-500 bg-red-100',
+        'Rejected': 'text-red-500 bg-red-100',
+        'Forwarded': 'text-blue-500 bg-blue-100',
+        'Submitted': 'text-cyan-500 bg-cyan-100',
+        'Created': 'text-purple-500 bg-purple-100',
+        'Updated': 'text-orange-500 bg-orange-100',
+        'Saved': 'text-gray-500 bg-gray-100',
+        'Sent Back': 'text-yellow-500 bg-yellow-100',
+        'Audit Approved': 'text-green-500 bg-green-100',
+        'FA Approved': 'text-green-500 bg-green-100',
+        'EC Approved': 'text-green-500 bg-green-100',
+        'AG Approved': 'text-green-500 bg-green-100',
+        'MAS Approved': 'text-green-500 bg-green-100',
+    };
+    return colorMap[action] || 'text-gray-500 bg-gray-100';
+};
+
+// Get action border color for workflow
+const getActionBorderColor = (action) => {
+    const colorMap = {
+        'Approved': 'border-green-500',
+        'Declined': 'border-red-500',
+        'Rejected': 'border-red-500',
+        'Forwarded': 'border-blue-500',
+        'Submitted': 'border-cyan-500',
+        'Created': 'border-purple-500',
+        'Updated': 'border-orange-500',
+        'Saved': 'border-gray-500',
+        'Sent Back': 'border-yellow-500',
+        'Audit Approved': 'border-green-500',
+        'FA Approved': 'border-green-500',
+        'EC Approved': 'border-green-500',
+        'AG Approved': 'border-green-500',
+        'MAS Approved': 'border-green-500',
+    };
+    return colorMap[action] || 'border-gray-300';
+};
+
 // Check if voucher is ready for AG approval (EC approved)
 const isReadyForApproval = (voucher) => {
     return voucher.status?.toLowerCase() === 'ec_approved';
@@ -623,13 +714,31 @@ const openRejectModal = (voucher) => {
     showRejectionModal.value = true;
 };
 
-const openWorkflowModal = async (voucher) => {
+// =============================================
+// FIXED: Open workflow modal using voucher approvals directly
+// =============================================
+const openWorkflowModal = (voucher) => {
+    console.log('=== OPEN WORKFLOW MODAL (AG) ===');
+    console.log('Voucher:', voucher);
+    console.log('Voucher approvals:', voucher.approvals);
+    
     currentVoucher.value = voucher;
     showWorkflowModal.value = true;
     
     try {
-        const response = await axios.get(`/vouchers/${voucher.id}/approvals`);
-        workflowHistory.value = response.data || [];
+        // Use approvals from the voucher directly
+        const approvals = voucher.approvals || [];
+        
+        console.log('Approvals count:', approvals.length);
+        
+        // Sort by created_at descending (most recent first)
+        workflowHistory.value = [...approvals].sort((a, b) => {
+            const dateA = new Date(a.action_at || a.created_at);
+            const dateB = new Date(b.action_at || b.created_at);
+            return dateB - dateA;
+        });
+        
+        console.log('Workflow History loaded:', workflowHistory.value.length, 'entries');
     } catch (error) {
         console.error('Error loading workflow:', error);
         workflowHistory.value = [];
@@ -1576,83 +1685,77 @@ onMounted(() => {
         </Dialog>
 
         <!-- Workflow Timeline Modal -->
-        <Dialog
-            v-model:visible="showWorkflowModal"
-            :style="{ width: '650px', maxHeight: '80vh' }"
-            :header="`Workflow History - ${currentVoucher?.voucher_number}`"
-            :modal="true"
-            class="workflow-dialog"
-            @update:visible="closeWorkflowModal"
+        <!-- Workflow Timeline Modal - UPDATED -->
+<Dialog
+    v-model:visible="showWorkflowModal"
+    :style="{ width: '650px', maxHeight: '80vh' }"
+    :header="`Workflow History - ${currentVoucher?.voucher_number}`"
+    :modal="true"
+    class="workflow-dialog"
+    @update:visible="closeWorkflowModal"
+>
+    <div class="workflow-timeline" style="max-height: 60vh; overflow-y: auto;">
+        <!-- No History State -->
+        <div v-if="workflowHistory.length === 0" class="text-center p-4">
+            <i class="pi pi-clock text-400 text-3xl mb-2"></i>
+            <p class="text-600">No workflow history available</p>
+            <p class="text-500 text-sm">Approval history will appear here once the voucher is processed.</p>
+        </div>
+
+        <!-- Timeline -->
+        <Timeline
+            v-else
+            :value="workflowHistory"
+            layout="vertical"
+            align="left"
+            class="custom-timeline"
         >
-            <div class="workflow-timeline" style="max-height: 60vh; overflow-y: auto;">
-                <div v-if="workflowHistory.length === 0" class="text-center p-4">
-                    <i class="pi pi-clock text-400 text-3xl mb-2"></i>
-                    <p class="text-600">No workflow history available</p>
-                </div>
-                <Timeline
-                    v-else
-                    :value="workflowHistory"
-                    layout="vertical"
-                    align="left"
-                    class="custom-timeline"
+            <template #marker="slotProps">
+                <span 
+                    class="custom-marker p-shadow-2" 
+                    :class="getActionColor(slotProps.item.action)"
                 >
-                    <template #marker="slotProps">
-                        <span 
-                            class="custom-marker p-shadow-2" 
-                            :class="{
-                                'bg-green-500': slotProps.item.action === 'Approved',
-                                'bg-red-500': slotProps.item.action === 'Declined',
-                                'bg-blue-500': slotProps.item.action === 'Forwarded',
-                                'bg-orange-500': slotProps.item.action === 'Sent Back',
-                                'bg-gray-500': slotProps.item.action === 'Saved'
-                            }"
-                        >
-                            <i :class="{
-                                'pi pi-check': slotProps.item.action === 'Approved',
-                                'pi pi-times': slotProps.item.action === 'Declined',
-                                'pi pi-send': slotProps.item.action === 'Forwarded',
-                                'pi pi-undo': slotProps.item.action === 'Sent Back',
-                                'pi pi-save': slotProps.item.action === 'Saved'
-                            }" class="text-white text-sm"></i>
-                        </span>
-                    </template>
-                    <template #content="slotProps">
-                        <Card class="workflow-card">
-                            <template #content>
-                                <div class="flex flex-column gap-2">
-                                    <div class="flex align-items-center justify-content-between flex-wrap">
-                                        <span class="font-semibold text-primary">
-                                            {{ slotProps.item.approval_role || 'System' }}
-                                        </span>
-                                        <Badge 
-                                            :value="slotProps.item.action" 
-                                            :severity="slotProps.item.action === 'Approved' ? 'success' : 
-                                                      slotProps.item.action === 'Declined' ? 'danger' :
-                                                      slotProps.item.action === 'Forwarded' ? 'info' :
-                                                      slotProps.item.action === 'Sent Back' ? 'warning' : 'secondary'"
-                                            size="small"
-                                        />
-                                    </div>
-                                    <div class="text-600 text-sm">
-                                        {{ formatDateTime(slotProps.item.action_at) }}
-                                    </div>
-                                    <div v-if="slotProps.item.comment" class="text-500 text-sm mt-1 p-2 bg-gray-50 border-round">
-                                        <i class="pi pi-comment mr-1"></i>
-                                        {{ slotProps.item.comment }}
-                                    </div>
-                                    <div v-if="slotProps.item.user" class="text-500 text-xs">
-                                        By: {{ slotProps.item.user.name }}
-                                    </div>
-                                </div>
-                            </template>
-                        </Card>
-                    </template>
-                </Timeline>
-            </div>
-            <template #footer>
-                <Button label="Close" icon="pi pi-times" @click="closeWorkflowModal" text />
+                    <i :class="getActionIcon(slotProps.item.action)" class="text-white text-sm"></i>
+                </span>
             </template>
-        </Dialog>
+            <template #content="slotProps">
+                <div class="workflow-card-item border-round border-1 p-3" :class="getActionBorderColor(slotProps.item.action)">
+                    <div class="flex flex-column gap-2">
+                        <div class="flex align-items-center justify-content-between flex-wrap">
+                            <span class="font-semibold text-primary">
+                                {{ slotProps.item.approval_role || 'System' }}
+                            </span>
+                            <Tag 
+                                :value="slotProps.item.action" 
+                                :severity="getActionSeverity(slotProps.item.action)"
+                                size="small"
+                            />
+                        </div>
+                        <div class="text-600 text-sm">
+                            <i class="pi pi-clock mr-1"></i>
+                            {{ formatDateTime(slotProps.item.action_at || slotProps.item.created_at) }}
+                        </div>
+                        <div v-if="slotProps.item.comment" class="text-500 text-sm mt-1 p-2 bg-gray-50 border-round">
+                            <i class="pi pi-comment mr-1"></i>
+                            {{ slotProps.item.comment }}
+                        </div>
+                        <div v-if="slotProps.item.user" class="text-500 text-xs">
+                            <i class="pi pi-user mr-1"></i>
+                            By: {{ slotProps.item.user.name }}
+                        </div>
+                        <div v-if="slotProps.item.status" class="text-500 text-xs">
+                            <i class="pi pi-info-circle mr-1"></i>
+                            Status: {{ slotProps.item.status }}
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </Timeline>
+    </div>
+    <template #footer>
+        <Button label="Close" icon="pi pi-times" @click="closeWorkflowModal" text />
+    </template>
+</Dialog>
 
         <!-- Document Viewer Dialog -->
         <Dialog
@@ -1748,15 +1851,32 @@ onMounted(() => {
 }
 
 /* Workflow Timeline */
-.workflow-card :deep(.p-card) {
-    box-shadow: none;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.5rem;
-    margin: 0.5rem 0;
+/* Workflow Timeline - Add to styles */
+.workflow-card-item {
+    background: white;
+    transition: all 0.2s ease;
 }
 
-.workflow-card :deep(.p-card-content) {
-    padding: 0.75rem;
+.workflow-card-item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.workflow-timeline::-webkit-scrollbar {
+    width: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
 }
 
 .custom-marker {
@@ -1776,6 +1896,20 @@ onMounted(() => {
 
 .custom-timeline :deep(.p-timeline-event-content) {
     margin-left: 1rem;
+}
+
+.custom-timeline :deep(.p-timeline-event-marker) {
+    background: transparent !important;
+    border: none !important;
+}
+
+.workflow-dialog :deep(.p-dialog-header) {
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.workflow-dialog :deep(.p-dialog-content) {
+    padding: 1rem;
 }
 
 .approval-dialog :deep(.p-dialog-header),

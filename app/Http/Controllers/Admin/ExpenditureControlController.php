@@ -4,16 +4,17 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Mda;
+use App\Models\User;
 use App\Models\Voucher;
 use App\Models\VoucherApproval;
-use App\Models\User;
 use App\Services\ActivityLogger;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Inertia\Inertia;
 use Illuminate\Support\Facades\Schema;
+use Inertia\Inertia;
 
 class ExpenditureControlController extends Controller
 {
@@ -624,221 +625,10 @@ class ExpenditureControlController extends Controller
      * Display list of vouchers pending Expenditure Control review
      * These are vouchers forwarded by Final Accounts (Step 4)
      */
-    public function index(Request $request)
-    {
-        try {
-            $perPage = $request->input('per_page', 15);
-            $search = $request->input('search', '');
-            $voucherType = $request->input('voucher_type', '');
-            $status = $request->input('status', '');
-            $paymentStatus = $request->input('payment_status', '');
-            $dateFrom = $request->input('date_from', '');
-            $dateTo = $request->input('date_to', '');
-            
-            // Check if the assigned_to_user_id column exists
-            $hasAssignment = Schema::hasColumn('vouchers', 'assigned_to_user_id');
-            
-            // Build the query with conditional eager loading
-            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals']);
-            
-            // Only load assignedTo relationship if the column exists and relationship is defined
-            if ($hasAssignment && method_exists(Voucher::class, 'assignedTo')) {
-                $query->with('assignedTo');
-            }
-            
-            $query->where('status', 'forwarded')
-                  ->where('is_final_accounts', 1)
-                  ->orderBy('created_at', 'desc');
-            
-            // Apply search filter
-            if ($search) {
-                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
-                foreach ($words as $word) {
-                    $query->where(function ($q) use ($word) {
-                        $q->where('voucher_number', 'like', "%{$word}%")
-                          ->orWhere('narration', 'like', "%{$word}%")
-                          ->orWhere('payee_name', 'like', "%{$word}%")
-                          ->orWhereHas('mda', function ($mdaQuery) use ($word) {
-                              $mdaQuery->where('name', 'like', "%{$word}%");
-                          });
-                    });
-                }
-            }
-            
-            // Apply voucher type filter
-            if ($voucherType) {
-                $query->where('voucher_type', $voucherType);
-            }
-            
-            // Apply status filter
-            if ($status) {
-                $query->where('status', $status);
-            }
-            
-            // Apply payment status filter
-            if ($paymentStatus) {
-                if ($paymentStatus === 'paid') {
-                    $query->where('status', 'closed')->whereNotNull('mas_approved_at');
-                } elseif ($paymentStatus === 'awaiting_mas') {
-                    $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
-                } elseif ($paymentStatus === 'awaiting_ag') {
-                    $query->where('status', 'ec_approved')->whereNull('ag_approved_at');
-                }
-            }
-            
-            // Apply date range filter
-            if ($dateFrom) {
-                $query->whereDate('voucher_date', '>=', $dateFrom);
-            }
-            if ($dateTo) {
-                $query->whereDate('voucher_date', '<=', $dateTo);
-            }
-            
-            $vouchers = $query->paginate($perPage);
-            
-            // Transform the data for the frontend
-            $transformedVouchers = $vouchers->through(function ($voucher) use ($hasAssignment) {
-                // Get approval records for display
-                $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
-                $iaApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_IA)->first();
-                $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
-                $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
-                $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
-                
-                // Determine payment status
-                $paymentStatus = 'unknown';
-                if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
-                    $paymentStatus = 'paid';
-                } elseif ($voucher->status === 'ag_approved') {
-                    $paymentStatus = 'awaiting_mas';
-                } elseif ($voucher->status === 'ec_approved') {
-                    $paymentStatus = 'awaiting_ag';
-                }
-                
-                $data = [
-                    'id' => $voucher->id,
-                    'voucher_number' => $voucher->voucher_number,
-                    'voucher_date' => $voucher->voucher_date?->toDateString(),
-                    'narration' => $voucher->narration,
-                    'total_amount' => (float) $voucher->total_amount,
-                    'payee_name' => $voucher->payee_name,
-                    'status' => $voucher->status,
-                    'voucher_type' => $voucher->voucher_type,
-                    'created_at' => $voucher->created_at?->toDateTimeString(),
-                    'payment_status' => $paymentStatus,
-                    'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
-                    'ia_approved_at' => $iaApproval?->approved_at?->toDateTimeString(),
-                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
-                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
-                    'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
-                    'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
-                    'mda' => $voucher->mda ? [
-                        'id' => $voucher->mda->id,
-                        'name' => $voucher->mda->name,
-                        'code' => $voucher->mda->code,
-                    ] : null,
-                    'bank_activity' => $voucher->bankActivity ? [
-                        'id' => $voucher->bankActivity->id,
-                        'bank_name' => $voucher->bankActivity->bank_name,
-                        'account_number' => $voucher->bankActivity->account_number,
-                        'tag' => $voucher->bankActivity->tag,
-                        'title' => $voucher->bankActivity->title,
-                    ] : null,
-                    'items' => $voucher->items->map(function ($item) {
-                        return [
-                            'id' => $item->id,
-                            'description' => $item->description,
-                            'quantity' => (float) $item->quantity,
-                            'unit_price' => (float) $item->unit_price,
-                            'sub_total' => (float) $item->sub_total,
-                            'programme_code' => $item->programme_code,
-                            'programme_name' => $item->programme_name,
-                        ];
-                    }),
-                ];
-                
-                // Only add assigned_to if the column exists and relationship is loaded
-                if ($hasAssignment && method_exists(Voucher::class, 'assignedTo') && $voucher->relationLoaded('assignedTo') && $voucher->assignedTo) {
-                    $data['assigned_to'] = [
-                        'id' => $voucher->assignedTo->id,
-                        'name' => $voucher->assignedTo->name,
-                        'email' => $voucher->assignedTo->email ?? null,
-                    ];
-                } else {
-                    $data['assigned_to'] = null;
-                }
-
-                $data['available_destinations'] = $this->getAvailableDestinations($voucher);
-                $data['workflow'] = $this->getVoucherWorkflow($voucher);
-                // return $data;
-                
-                return $data;
-            });
-            
-            // Get statistics
-            $stats = [
-                'pending_count' => Voucher::where('status', 'forwarded')->where('is_final_accounts', 1)->count(),
-                'approved_today' => Voucher::where('status', 'ec_approved')->whereDate('updated_at', today())->count(),
-                'rejected_today' => Voucher::where('status', 'sent_back')->whereDate('updated_at', today())->count(),
-                'total_processed' => Voucher::whereIn('status', ['ec_approved', 'ec_rejected'])->count(),
-                'paid_count' => Voucher::where('status', 'closed')->whereNotNull('mas_approved_at')->count(),
-                'pending_mas_count' => Voucher::where('status', 'ag_approved')->whereNull('mas_approved_at')->count(),
-                'pending_ag_count' => Voucher::where('status', 'ec_approved')->whereNull('ag_approved_at')->count(),
-                'total_amount_paid' => (float) Voucher::where('status', 'closed')->whereNotNull('mas_approved_at')->sum('total_amount'),
-                'total_amount_pending' => (float) Voucher::whereIn('status', ['ec_approved', 'ag_approved'])->sum('total_amount'),
-            ];
-            
-            // Get users for assignment - FIX: Use Spatie roles
-            $users = $this->getUsersForAssignment();
-            
-            return Inertia::render('admin/expenditureControl/index', [
-                'vouchers' => [
-                    'data' => $transformedVouchers,
-                    'total' => $vouchers->total(),
-                    'per_page' => $vouchers->perPage(),
-                    'current_page' => $vouchers->currentPage(),
-                    'from' => $vouchers->firstItem(),
-                    'to' => $vouchers->lastItem(),
-                ],
-                'stats' => $stats,
-                'users' => $users,
-            ]);
-            
-        } catch (\Exception $e) {
-            Log::error('Expenditure Control Index Error: ' . $e->getMessage());
-            return Inertia::render('admin/expenditureControl/index', [
-                'vouchers' => [
-                    'data' => [],
-                    'total' => 0,
-                    'per_page' => 15,
-                    'current_page' => 1,
-                    'from' => 0,
-                    'to' => 0,
-                ],
-                'stats' => [
-                    'pending_count' => 0, 
-                    'approved_today' => 0, 
-                    'rejected_today' => 0, 
-                    'total_processed' => 0,
-                    'paid_count' => 0,
-                    'pending_mas_count' => 0,
-                    'pending_ag_count' => 0,
-                    'total_amount_paid' => 0,
-                    'total_amount_pending' => 0,
-                ],
-                'users' => [],
-            ]);
-        }
-    }
-
-    /**
-     * Search for vouchers (API endpoint for AJAX calls)
-     */
-    // public function search(Request $request)
+    // public function index(Request $request)
     // {
     //     try {
-    //         $perPage = (int) $request->input('per_page', 15);
-    //         $page = (int) $request->input('page', 1);
+    //         $perPage = $request->input('per_page', 15);
     //         $search = $request->input('search', '');
     //         $voucherType = $request->input('voucher_type', '');
     //         $status = $request->input('status', '');
@@ -849,8 +639,8 @@ class ExpenditureControlController extends Controller
     //         // Check if the assigned_to_user_id column exists
     //         $hasAssignment = Schema::hasColumn('vouchers', 'assigned_to_user_id');
             
-    //         // Build query with conditional eager loading
-    //         $query = Voucher::with(['mda', 'bankActivity', 'items', 'creator', 'approvals']);
+    //         // Build the query with conditional eager loading
+    //         $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals']);
             
     //         // Only load assignedTo relationship if the column exists and relationship is defined
     //         if ($hasAssignment && method_exists(Voucher::class, 'assignedTo')) {
@@ -905,10 +695,17 @@ class ExpenditureControlController extends Controller
     //             $query->whereDate('voucher_date', '<=', $dateTo);
     //         }
             
-    //         $vouchers = $query->paginate($perPage, ['*'], 'page', $page);
+    //         $vouchers = $query->paginate($perPage);
             
     //         // Transform the data for the frontend
-    //         $transformedVouchers = $vouchers->map(function ($voucher) use ($hasAssignment) {
+    //         $transformedVouchers = $vouchers->through(function ($voucher) use ($hasAssignment) {
+    //             // Get approval records for display
+    //             $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+    //             $iaApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_IA)->first();
+    //             $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
+    //             $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+    //             $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+                
     //             // Determine payment status
     //             $paymentStatus = 'unknown';
     //             if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
@@ -930,6 +727,11 @@ class ExpenditureControlController extends Controller
     //                 'voucher_type' => $voucher->voucher_type,
     //                 'created_at' => $voucher->created_at?->toDateTimeString(),
     //                 'payment_status' => $paymentStatus,
+    //                 'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+    //                 'ia_approved_at' => $iaApproval?->approved_at?->toDateTimeString(),
+    //                 'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+    //                 'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+    //                 'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
     //                 'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
     //                 'mda' => $voucher->mda ? [
     //                     'id' => $voucher->mda->id,
@@ -941,6 +743,7 @@ class ExpenditureControlController extends Controller
     //                     'bank_name' => $voucher->bankActivity->bank_name,
     //                     'account_number' => $voucher->bankActivity->account_number,
     //                     'tag' => $voucher->bankActivity->tag,
+    //                     'title' => $voucher->bankActivity->title,
     //                 ] : null,
     //                 'items' => $voucher->items->map(function ($item) {
     //                     return [
@@ -949,6 +752,8 @@ class ExpenditureControlController extends Controller
     //                         'quantity' => (float) $item->quantity,
     //                         'unit_price' => (float) $item->unit_price,
     //                         'sub_total' => (float) $item->sub_total,
+    //                         'programme_code' => $item->programme_code,
+    //                         'programme_name' => $item->programme_name,
     //                     ];
     //                 }),
     //             ];
@@ -958,13 +763,35 @@ class ExpenditureControlController extends Controller
     //                 $data['assigned_to'] = [
     //                     'id' => $voucher->assignedTo->id,
     //                     'name' => $voucher->assignedTo->name,
+    //                     'email' => $voucher->assignedTo->email ?? null,
     //                 ];
     //             } else {
     //                 $data['assigned_to'] = null;
     //             }
+
+    //             $data['available_destinations'] = $this->getAvailableDestinations($voucher);
+    //             $data['workflow'] = $this->getVoucherWorkflow($voucher);
+    //             // return $data;
                 
     //             return $data;
-    //         })->values()->toArray();
+    //         });
+
+    //         // Make sure approvals are included
+    //         $approvals = $vouchers->approvals->map(function ($approval) {
+    //             return [
+    //                 'id' => $approval->id,
+    //                 'action' => $approval->action,
+    //                 'comment' => $approval->comment,
+    //                 'action_at' => $approval->action_at?->toDateTimeString(),
+    //                 'created_at' => $approval->created_at?->toDateTimeString(),
+    //                 'approval_role' => $approval->approval_role,
+    //                 'status' => $approval->status,
+    //                 'user' => $approval->user ? [
+    //                     'id' => $approval->user->id,
+    //                     'name' => $approval->user->name,
+    //                 ] : null,
+    //             ];
+    //         });
             
     //         // Get statistics
     //         $stats = [
@@ -982,42 +809,35 @@ class ExpenditureControlController extends Controller
     //         // Get users for assignment - FIX: Use Spatie roles
     //         $users = $this->getUsersForAssignment();
             
-    //         return response()->json([
-    //             'success' => true,
+    //         return Inertia::render('admin/expenditureControl/index', [
     //             'vouchers' => [
     //                 'data' => $transformedVouchers,
     //                 'total' => $vouchers->total(),
     //                 'per_page' => $vouchers->perPage(),
     //                 'current_page' => $vouchers->currentPage(),
-    //                 'last_page' => $vouchers->lastPage(),
     //                 'from' => $vouchers->firstItem(),
     //                 'to' => $vouchers->lastItem(),
     //             ],
     //             'stats' => $stats,
     //             'users' => $users,
+    //             'approvals' => $approvals,
     //         ]);
             
     //     } catch (\Exception $e) {
-    //         Log::error('Expenditure Control Search Error: ' . $e->getMessage(), [
-    //             'trace' => $e->getTraceAsString()
-    //         ]);
-            
-    //         return response()->json([
-    //             'success' => false,
-    //             'error' => $e->getMessage(),
+    //         Log::error('Expenditure Control Index Error: ' . $e->getMessage());
+    //         return Inertia::render('admin/expenditureControl/index', [
     //             'vouchers' => [
     //                 'data' => [],
     //                 'total' => 0,
     //                 'per_page' => 15,
     //                 'current_page' => 1,
-    //                 'last_page' => 1,
     //                 'from' => 0,
     //                 'to' => 0,
     //             ],
     //             'stats' => [
-    //                 'pending_count' => 0,
-    //                 'approved_today' => 0,
-    //                 'rejected_today' => 0,
+    //                 'pending_count' => 0, 
+    //                 'approved_today' => 0, 
+    //                 'rejected_today' => 0, 
     //                 'total_processed' => 0,
     //                 'paid_count' => 0,
     //                 'pending_mas_count' => 0,
@@ -1029,6 +849,244 @@ class ExpenditureControlController extends Controller
     //         ]);
     //     }
     // }
+
+    public function index(Request $request)
+{
+    try {
+        $perPage = $request->input('per_page', 15);
+        $search = $request->input('search', '');
+        $voucherType = $request->input('voucher_type', '');
+        $status = $request->input('status', '');
+        $paymentStatus = $request->input('payment_status', '');
+        $dateFrom = $request->input('date_from', '');
+        $dateTo = $request->input('date_to', '');
+        
+        // Check if the assigned_to_user_id column exists
+        $hasAssignment = Schema::hasColumn('vouchers', 'assigned_to_user_id');
+        
+        // Build the query with conditional eager loading
+        $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals', 'approvals.user']);
+        
+        // Only load assignedTo relationship if the column exists and relationship is defined
+        if ($hasAssignment && method_exists(Voucher::class, 'assignedTo')) {
+            $query->with('assignedTo');
+        }
+        
+        $query->where('status', 'forwarded')
+              ->where('is_final_accounts', 1)
+              ->orderBy('created_at', 'desc');
+        
+        // Apply search filter
+        if ($search) {
+            $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+            foreach ($words as $word) {
+                $query->where(function ($q) use ($word) {
+                    $q->where('voucher_number', 'like', "%{$word}%")
+                      ->orWhere('narration', 'like', "%{$word}%")
+                      ->orWhere('payee_name', 'like', "%{$word}%")
+                      ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                          $mdaQuery->where('name', 'like', "%{$word}%");
+                      });
+                });
+            }
+        }
+        
+        // Apply voucher type filter
+        if ($voucherType) {
+            $query->where('voucher_type', $voucherType);
+        }
+        
+        // Apply status filter
+        if ($status) {
+            $query->where('status', $status);
+        }
+        
+        // Apply payment status filter
+        if ($paymentStatus) {
+            if ($paymentStatus === 'paid') {
+                $query->where('status', 'closed')->whereNotNull('mas_approved_at');
+            } elseif ($paymentStatus === 'awaiting_mas') {
+                $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
+            } elseif ($paymentStatus === 'awaiting_ag') {
+                $query->where('status', 'ec_approved')->whereNull('ag_approved_at');
+            }
+        }
+        
+        // Apply date range filter
+        if ($dateFrom) {
+            $query->whereDate('voucher_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('voucher_date', '<=', $dateTo);
+        }
+        
+        $vouchers = $query->paginate($perPage);
+        
+        // Transform the data for the frontend
+        $transformedVouchers = $vouchers->through(function ($voucher) use ($hasAssignment) {
+            // Get approval records for display
+            $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+            $iaApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_IA)->first();
+            $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
+            $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+            $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+            
+            // Determine payment status
+            $paymentStatus = 'unknown';
+            if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
+                $paymentStatus = 'paid';
+            } elseif ($voucher->status === 'ag_approved') {
+                $paymentStatus = 'awaiting_mas';
+            } elseif ($voucher->status === 'ec_approved') {
+                $paymentStatus = 'awaiting_ag';
+            }
+            
+            // Transform approvals for this specific voucher
+            $approvals = $voucher->approvals->map(function ($approval) {
+                return [
+                    'id' => $approval->id,
+                    'action' => $approval->action,
+                    'comment' => $approval->comment,
+                    'action_at' => $approval->action_at?->toDateTimeString(),
+                    'created_at' => $approval->created_at?->toDateTimeString(),
+                    'approval_role' => $approval->approval_role,
+                    'status' => $approval->status,
+                    'user' => $approval->user ? [
+                        'id' => $approval->user->id,
+                        'name' => $approval->user->name,
+                    ] : null,
+                ];
+            });
+            
+            $data = [
+                'id' => $voucher->id,
+                'voucher_number' => $voucher->voucher_number,
+                'voucher_date' => $voucher->voucher_date?->toDateString(),
+                'narration' => $voucher->narration,
+                'total_amount' => (float) $voucher->total_amount,
+                'payee_name' => $voucher->payee_name,
+                'status' => $voucher->status,
+                'voucher_type' => $voucher->voucher_type,
+                'created_at' => $voucher->created_at?->toDateTimeString(),
+                'payment_status' => $paymentStatus,
+                'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                'ia_approved_at' => $iaApproval?->approved_at?->toDateTimeString(),
+                'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+                'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                'mda' => $voucher->mda ? [
+                    'id' => $voucher->mda->id,
+                    'name' => $voucher->mda->name,
+                    'code' => $voucher->mda->code,
+                ] : null,
+                'bank_activity' => $voucher->bankActivity ? [
+                    'id' => $voucher->bankActivity->id,
+                    'bank_name' => $voucher->bankActivity->bank_name,
+                    'account_number' => $voucher->bankActivity->account_number,
+                    'tag' => $voucher->bankActivity->tag,
+                    'title' => $voucher->bankActivity->title,
+                ] : null,
+                'items' => $voucher->items->map(function ($item) {
+                    return [
+                        'id' => $item->id,
+                        'description' => $item->description,
+                        'quantity' => (float) $item->quantity,
+                        'unit_price' => (float) $item->unit_price,
+                        'sub_total' => (float) $item->sub_total,
+                        'programme_code' => $item->programme_code,
+                        'programme_name' => $item->programme_name,
+                    ];
+                }),
+                'approvals' => $approvals, // Add approvals to each voucher
+            ];
+            
+            // Only add assigned_to if the column exists and relationship is loaded
+            if ($hasAssignment && method_exists(Voucher::class, 'assignedTo') && $voucher->relationLoaded('assignedTo') && $voucher->assignedTo) {
+                $data['assigned_to'] = [
+                    'id' => $voucher->assignedTo->id,
+                    'name' => $voucher->assignedTo->name,
+                    'email' => $voucher->assignedTo->email ?? null,
+                ];
+            } else {
+                $data['assigned_to'] = null;
+            }
+
+            $data['available_destinations'] = $this->getAvailableDestinations($voucher);
+            $data['workflow'] = $this->getVoucherWorkflow($voucher);
+            
+            return $data;
+        });
+        
+        // Get statistics
+        $stats = [
+            'pending_count' => Voucher::where('status', 'forwarded')->where('is_final_accounts', 1)->count(),
+            'approved_today' => Voucher::where('status', 'ec_approved')->whereDate('updated_at', today())->count(),
+            'rejected_today' => Voucher::where('status', 'sent_back')->whereDate('updated_at', today())->count(),
+            'total_processed' => Voucher::whereIn('status', ['ec_approved', 'ec_rejected'])->count(),
+            'paid_count' => Voucher::where('status', 'closed')->whereNotNull('mas_approved_at')->count(),
+            'pending_mas_count' => Voucher::where('status', 'ag_approved')->whereNull('mas_approved_at')->count(),
+            'pending_ag_count' => Voucher::where('status', 'ec_approved')->whereNull('ag_approved_at')->count(),
+            'total_amount_paid' => (float) Voucher::where('status', 'closed')->whereNotNull('mas_approved_at')->sum('total_amount'),
+            'total_amount_pending' => (float) Voucher::whereIn('status', ['ec_approved', 'ag_approved'])->sum('total_amount'),
+        ];
+        
+        // Get users for assignment - FIX: Use Spatie roles
+        $users = $this->getUsersForAssignment();
+        
+        // Get MDAs for filter
+        $mdas = Mda::orderBy('name')->get(['id', 'name', 'code']);
+        
+        return Inertia::render('admin/expenditureControl/index', [
+            'vouchers' => [
+                'data' => $transformedVouchers,
+                'total' => $vouchers->total(),
+                'per_page' => $vouchers->perPage(),
+                'current_page' => $vouchers->currentPage(),
+                'from' => $vouchers->firstItem(),
+                'to' => $vouchers->lastItem(),
+            ],
+            'stats' => $stats,
+            'users' => $users,
+            'mdas' => $mdas, // Add MDAs for filter
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('Expenditure Control Index Error: ' . $e->getMessage());
+        return Inertia::render('admin/expenditureControl/index', [
+            'vouchers' => [
+                'data' => [],
+                'total' => 0,
+                'per_page' => 15,
+                'current_page' => 1,
+                'from' => 0,
+                'to' => 0,
+            ],
+            'stats' => [
+                'pending_count' => 0, 
+                'approved_today' => 0, 
+                'rejected_today' => 0, 
+                'total_processed' => 0,
+                'paid_count' => 0,
+                'pending_mas_count' => 0,
+                'pending_ag_count' => 0,
+                'total_amount_paid' => 0,
+                'total_amount_pending' => 0,
+            ],
+            'users' => [],
+            'mdas' => [],
+        ]);
+    }
+}
+
+    public function getApprovals(Voucher $voucher)
+    {
+        return response()->json($voucher->approvals()->with('user')->get());
+    }
+
+    /**
+     * Search for vouchers (API endpoint for AJAX calls)
+     */
     public function search(Request $request)
     {
         try {
@@ -2252,7 +2310,7 @@ class ExpenditureControlController extends Controller
         try {
             $perPage = $request->input('per_page', 15);
             $search = $request->input('search', '');
-            $salaryType = $request->input('salary_type', '');
+            $salaryType = $request->input('voucher_type', '');
             $statusFilter = $request->input('status', '');
             
             // Get salary vouchers that are forwarded by FA and ready for EC
@@ -2263,7 +2321,7 @@ class ExpenditureControlController extends Controller
             
             // Apply salary type filter
             if ($salaryType) {
-                $query->where('salary_type', $salaryType);
+                $query->where('voucher_type', $salaryType);
             }
             
             // Apply status filter
@@ -2303,9 +2361,9 @@ class ExpenditureControlController extends Controller
                     'payee_name' => $voucher->payee_name,
                     'status' => $voucher->status,
                     'voucher_type' => $voucher->voucher_type,
-                    'salary_type' => $voucher->salary_type,
+                    'voucher_type' => $voucher->voucher_type,
                     'created_at' => $voucher->created_at?->toDateTimeString(),
-                    'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                    'final_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
                     'ia_approved_at' => $iaApproval?->approved_at?->toDateTimeString(),
                     'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
                     'forwarded_to_inspectorate_at' => $voucher->forwarded_to_inspectorate_at?->toDateTimeString(),
@@ -2428,7 +2486,7 @@ class ExpenditureControlController extends Controller
                 'payee_name' => $voucher->payee_name,
                 'status' => $voucher->status,
                 'voucher_type' => $voucher->voucher_type,
-                'salary_type' => $voucher->salary_type,
+                'voucher_type' => $voucher->voucher_type,
                 'mda' => $voucher->mda ? [
                     'id' => $voucher->mda->id,
                     'name' => $voucher->mda->name,
@@ -3048,7 +3106,7 @@ class ExpenditureControlController extends Controller
         try {
             $perPage = $request->input('per_page', 15);
             $search = $request->input('search', '');
-            $salaryType = $request->input('salary_type', '');
+            $salaryType = $request->input('voucher_type', '');
             $statusFilter = $request->input('status', '');
             
             $query = Voucher::with(['mda', 'bankActivity', 'items', 'creator', 'assignedTo'])
@@ -3058,7 +3116,7 @@ class ExpenditureControlController extends Controller
             
             // Apply salary type filter
             if ($salaryType) {
-                $query->where('salary_type', $salaryType);
+                $query->where('voucher_type', $salaryType);
             }
             
             // Apply status filter
@@ -3093,7 +3151,7 @@ class ExpenditureControlController extends Controller
                     'payee_name' => $voucher->payee_name,
                     'status' => $voucher->status,
                     'voucher_type' => $voucher->voucher_type,
-                    'salary_type' => $voucher->salary_type,
+                    // 'voucher_type' => $voucher->voucher_type,
                     'mda' => $voucher->mda ? [
                         'name' => $voucher->mda->name,
                         'code' => $voucher->mda->code,
@@ -3613,7 +3671,7 @@ class ExpenditureControlController extends Controller
             $userId = auth()->id();
             
             // Build query - only vouchers assigned to current user
-            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals'])
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals', 'approvals.user'])
                 ->where('assigned_to_user_id', $userId)
                 ->where('is_final_accounts', 1)
                 ->orderBy('created_at', 'desc');
@@ -3691,6 +3749,25 @@ class ExpenditureControlController extends Controller
                     $paymentStatus = 'awaiting_ag';
                 }
                 
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
+                
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
@@ -3732,6 +3809,10 @@ class ExpenditureControlController extends Controller
                             'programme_name' => $item->programme_name,
                         ];
                     }),
+                    // =============================================
+                    // ADD APPROVALS TO THE RETURN ARRAY
+                    // =============================================
+                    'approvals' => $approvals,
                     'available_destinations' => $this->getAvailableDestinations($voucher),
                     'workflow' => $this->getVoucherWorkflow($voucher),
                 ];
@@ -3818,7 +3899,7 @@ class ExpenditureControlController extends Controller
             $userId = auth()->id();
             
             // Build query - only vouchers assigned to current user
-            $query = Voucher::with(['mda', 'bankActivity', 'items', 'creator', 'approvals'])
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals', 'approvals.user'])
                 ->where('assigned_to_user_id', $userId)
                 ->where('is_final_accounts', 1)
                 ->orderBy('created_at', 'desc');
@@ -3882,6 +3963,10 @@ class ExpenditureControlController extends Controller
             
             // Transform the data for the frontend
             $transformedVouchers = $vouchers->map(function ($voucher) {
+                // Get approval records for display
+                $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+                $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+                
                 // Determine payment status
                 $paymentStatus = 'unknown';
                 if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
@@ -3891,6 +3976,25 @@ class ExpenditureControlController extends Controller
                 } elseif ($voucher->status === 'ec_approved') {
                     $paymentStatus = 'awaiting_ag';
                 }
+                
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
                 
                 return [
                     'id' => $voucher->id,
@@ -3904,7 +4008,8 @@ class ExpenditureControlController extends Controller
                     'voucher_type' => $voucher->voucher_type,
                     'created_at' => $voucher->created_at?->toDateTimeString(),
                     'payment_status' => $paymentStatus,
-                    'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                    'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
                     'mda' => $voucher->mda ? [
                         'id' => $voucher->mda->id,
                         'name' => $voucher->mda->name,
@@ -3915,6 +4020,7 @@ class ExpenditureControlController extends Controller
                         'bank_name' => $voucher->bankActivity->bank_name,
                         'account_number' => $voucher->bankActivity->account_number,
                         'tag' => $voucher->bankActivity->tag,
+                        'title' => $voucher->bankActivity->title,
                     ] : null,
                     'assigned_to' => $voucher->assignedTo ? [
                         'id' => $voucher->assignedTo->id,
@@ -3927,8 +4033,14 @@ class ExpenditureControlController extends Controller
                             'quantity' => (float) $item->quantity,
                             'unit_price' => (float) $item->unit_price,
                             'sub_total' => (float) $item->sub_total,
+                            'programme_code' => $item->programme_code,
+                            'programme_name' => $item->programme_name,
                         ];
                     }),
+                    // =============================================
+                    // ADD APPROVALS TO THE RETURN ARRAY
+                    // =============================================
+                    'approvals' => $approvals,
                 ];
             })->values()->toArray();
             
@@ -3999,6 +4111,1899 @@ class ExpenditureControlController extends Controller
                     'total_amount' => 0,
                 ],
             ]);
+        }
+    }
+
+    /**
+     * Display the recurrent expenditure ledger
+     * Only shows vouchers that are paid/closed
+     */
+    public function ledger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            $search = $request->input('search', '');
+            
+            // Build the query - ONLY recurrent vouchers that are paid/closed
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode', 'approvals'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'recurrent')
+                ->where('status', 'closed')
+                ->whereNotNull('mas_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            // Filter by MDA if provided
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            // Apply search filter
+            if ($search) {
+                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $query->where(function ($q) use ($word) {
+                        $q->where('voucher_number', 'like', "%{$word}%")
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
+                    });
+                }
+            }
+            
+            // Get vouchers ordered by date
+            $vouchers = $query->orderBy('voucher_date', 'asc')
+                ->orderBy('created_at', 'asc')
+                ->get();
+            
+            // Calculate running balance
+            $runningBalance = 0;
+            $entries = [];
+            $totalPayments = 0;
+            $economyCodeStats = [];
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount; // For payments, balance increases
+                $totalPayments += $amount;
+                
+                // Get approval info
+                $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+                $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+                $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
+                $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+                
+                // $entries[] = [
+                //     'id' => $voucher->id,
+                //     'transaction_date' => $voucher->voucher_date?->toDateString(),
+                //     'voucher_number' => $voucher->voucher_number,
+                //     'description' => $this->getLedgerDescription($voucher),
+                //     'payee_name' => $voucher->payee_name,
+                //     'amount' => $amount,
+                //     'running_balance' => $runningBalance,
+                //     'mda' => $voucher->mda ? [
+                //         'id' => $voucher->mda->id,
+                //         'name' => $voucher->mda->name,
+                //         'code' => $voucher->mda->code,
+                //     ] : null,
+                //     'bank_activity' => $voucher->bankActivity ? [
+                //         'id' => $voucher->bankActivity->id,
+                //         'bank_name' => $voucher->bankActivity->bank_name,
+                //         'account_number' => $voucher->bankActivity->account_number,
+                //     ] : null,
+                //     'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                //     'payment_reference' => $voucher->payment_reference,
+                //     'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                //     'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                //     'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+                //     'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                //     'items' => $voucher->items->map(function ($item) {
+                //         return [
+                //             'id' => $item->id,
+                //             'description' => $item->description,
+                //             'quantity' => (float) $item->quantity,
+                //             'unit_price' => (float) $item->unit_price,
+                //             'sub_total' => (float) $item->sub_total,
+                //             'programme_code' => $item->programme_code,
+                //             'programme_name' => $item->programme_name,
+                //             'economy_code_item' => $item->economyCodeItem ? [
+                //                 'id' => $item->economyCodeItem->id,
+                //                 'code' => $item->economyCodeItem->code,
+                //                 'name' => $item->economyCodeItem->name,
+                //             ] : null,
+                //         ];
+                //     }),
+                // ];
+                $entries[] = [
+                    'id' => $voucher->id,
+                    'transaction_date' => $voucher->voucher_date?->toDateString(),
+                    'voucher_number' => $voucher->voucher_number,
+                    'description' => $this->getLedgerDescription($voucher),
+                    'payee_name' => $voucher->payee_name,
+                    'amount' => $amount,
+                    'running_balance' => $runningBalance,
+                    'pay_point' => $voucher->pay_point ?? 'MAS', // Add pay point
+                    'schedule_id' => $voucher->schedule_id, // Add schedule ID
+                    'schedule_number' => $voucher->schedule?->schedule_number ?? null, // Add schedule number
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
+                    ] : null,
+                    'bank_activity' => $voucher->bankActivity ? [
+                        'id' => $voucher->bankActivity->id,
+                        'bank_name' => $voucher->bankActivity->bank_name,
+                        'account_number' => $voucher->bankActivity->account_number,
+                    ] : null,
+                    'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                    'payment_reference' => $voucher->payment_reference,
+                    'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+                    'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                    'items' => $voucher->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'description' => $item->description,
+                            'quantity' => (float) $item->quantity,
+                            'unit_price' => (float) $item->unit_price,
+                            'sub_total' => (float) $item->sub_total,
+                            'programme_code' => $item->programme_code,
+                            'programme_name' => $item->programme_name,
+                            'economy_code_item' => $item->economyCodeItem ? [
+                                'id' => $item->economyCodeItem->id,
+                                'code' => $item->economyCodeItem->code,
+                                'name' => $item->economyCodeItem->name,
+                            ] : null,
+                        ];
+                    }),
+                ];
+                
+                // Calculate economy code statistics
+                foreach ($voucher->items as $item) {
+                    $code = $item->economyCodeItem?->code ?? $item->programme_code ?? 'Other';
+                    $name = $item->economyCodeItem?->name ?? $item->programme_name ?? 'Other';
+                    $key = $code . ' - ' . $name;
+                    
+                    if (!isset($economyCodeStats[$key])) {
+                        $economyCodeStats[$key] = [
+                            'code' => $code,
+                            'name' => $name,
+                            'total' => 0,
+                            'count' => 0,
+                        ];
+                    }
+                    
+                    $economyCodeStats[$key]['total'] += (float) $item->sub_total;
+                    $economyCodeStats[$key]['count']++;
+                }
+            }
+            
+            // Get opening balance (total of all previous paid recurrent vouchers)
+            $openingBalance = $this->getRecurrentOpeningBalance($month, $year, $mdaId);
+            
+            // Get MDAs for filter
+            $mdas = Mda::orderBy('name')->get(['id', 'name', 'code']);
+            
+            // Get summary statistics
+            $summary = [
+                'opening_balance' => $openingBalance,
+                'total_payments' => $totalPayments,
+                'closing_balance' => $openingBalance + $totalPayments,
+                'total_vouchers' => $vouchers->count(),
+            ];
+            
+            return Inertia::render('admin/expenditureControl/recurrent-ledger', [
+                'entries' => $entries,
+                'summary' => $summary,
+                'month_name' => Carbon::createFromDate($year, $month, 1)->format('F'),
+                'year' => $year,
+                'month' => $month,
+                'mdas' => $mdas,
+                'filters' => [
+                    'mda_id' => $mdaId,
+                    'search' => $search,
+                ],
+                'economyCodeStats' => array_values($economyCodeStats),
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Recurrent Ledger Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return Inertia::render('admin/expenditureControl/recurrent-ledger', [
+                'entries' => [],
+                'summary' => [
+                    'opening_balance' => 0,
+                    'total_payments' => 0,
+                    'closing_balance' => 0,
+                    'total_vouchers' => 0,
+                ],
+                'month_name' => Carbon::now()->format('F'),
+                'year' => now()->year,
+                'month' => now()->month,
+                'mdas' => [],
+                'filters' => [],
+                'economyCodeStats' => [],
+            ]);
+        }
+    }
+
+    /**
+     * Get description for the ledger entry
+     */
+    private function getLedgerDescription($voucher)
+    {
+        $parts = [];
+        
+        if ($voucher->payee_name) {
+            $parts[] = $voucher->payee_name;
+        }
+        
+        if ($voucher->mda) {
+            $parts[] = $voucher->mda->name;
+        }
+        
+        if ($voucher->narration) {
+            $parts[] = $voucher->narration;
+        }
+        
+        return implode(' - ', $parts) ?: $voucher->voucher_number;
+    }
+
+    /**
+     * Get opening balance for recurrent expenditure ledger
+     * Sum of all paid recurrent vouchers before the selected month
+     */
+    private function getRecurrentOpeningBalance($month, $year, $mdaId = null)
+    {
+        $query = Voucher::where('voucher_type', 'recurrent')
+            ->where('status', 'closed')
+            ->whereNotNull('mas_approved_at')
+            ->where(function ($q) use ($month, $year) {
+                $q->whereMonth('voucher_date', '<', $month)
+                ->whereYear('voucher_date', '<=', $year);
+            });
+        
+        if ($mdaId) {
+            $query->where('mda_id', $mdaId);
+        }
+        
+        return (float) $query->sum('total_amount');
+    }
+
+    /**
+     * Search ledger entries (API endpoint for AJAX calls)
+     */
+    public function searchLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            $search = $request->input('search', '');
+            $perPage = (int) $request->input('per_page', 15);
+            $page = (int) $request->input('page', 1);
+            
+            // Build the query - ONLY recurrent vouchers that are paid/closed
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode', 'approvals'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'recurrent')
+                ->where('status', 'closed')
+                ->whereNotNull('mas_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            // Filter by MDA if provided
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            // Apply search filter
+            if ($search) {
+                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $query->where(function ($q) use ($word) {
+                        $q->where('voucher_number', 'like', "%{$word}%")
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
+                    });
+                }
+            }
+            
+            $vouchers = $query->orderBy('voucher_date', 'asc')
+                ->orderBy('created_at', 'asc')
+                ->paginate($perPage, ['*'], 'page', $page);
+            
+            // Calculate running balance
+            $runningBalance = $this->getRecurrentOpeningBalance($month, $year, $mdaId);
+            $entries = [];
+            $totalPayments = 0;
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                $totalPayments += $amount;
+                
+                // $entries[] = [
+                //     'id' => $voucher->id,
+                //     'transaction_date' => $voucher->voucher_date?->toDateString(),
+                //     'voucher_number' => $voucher->voucher_number,
+                //     'description' => $this->getLedgerDescription($voucher),
+                //     'payee_name' => $voucher->payee_name,
+                //     'amount' => $amount,
+                //     'running_balance' => $runningBalance,
+                //     'mda' => $voucher->mda ? [
+                //         'id' => $voucher->mda->id,
+                //         'name' => $voucher->mda->name,
+                //         'code' => $voucher->mda->code,
+                //     ] : null,
+                //     'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                //     'payment_reference' => $voucher->payment_reference,
+                // ];
+                // In the capitalLedger method, update the entries array to include:
+                // dd($entries[]);
+                $entries[] = [
+                    'id' => $voucher->id,
+                    'transaction_date' => $voucher->voucher_date?->toDateString(),
+                    'voucher_number' => $voucher->voucher_number,
+                    'description' => $this->getLedgerDescription($voucher),
+                    'payee_name' => $voucher->payee_name,
+                    'amount' => $amount,
+                    'running_balance' => $runningBalance,
+                    'pay_point' => $voucher->pay_point ?? 'MAS', // Add pay point
+                    'schedule_id' => $voucher->schedule_id, // Add schedule ID
+                    'schedule_number' => $voucher->schedule?->schedule_number ?? null, // Add schedule number
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
+                    ] : null,
+                    'bank_activity' => $voucher->bankActivity ? [
+                        'id' => $voucher->bankActivity->id,
+                        'bank_name' => $voucher->bankActivity->bank_name,
+                        'account_number' => $voucher->bankActivity->account_number,
+                    ] : null,
+                    'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                    'payment_reference' => $voucher->payment_reference,
+                    'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+                    'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                    'items' => $voucher->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'description' => $item->description,
+                            'quantity' => (float) $item->quantity,
+                            'unit_price' => (float) $item->unit_price,
+                            'sub_total' => (float) $item->sub_total,
+                            'programme_code' => $item->programme_code,
+                            'programme_name' => $item->programme_name,
+                            'economy_code_item' => $item->economyCodeItem ? [
+                                'id' => $item->economyCodeItem->id,
+                                'code' => $item->economyCodeItem->code,
+                                'name' => $item->economyCodeItem->name,
+                            ] : null,
+                        ];
+                    }),
+                ];
+            }
+            
+            $summary = [
+                'opening_balance' => $this->getRecurrentOpeningBalance($month, $year, $mdaId),
+                'total_payments' => $totalPayments,
+                'closing_balance' => $this->getRecurrentOpeningBalance($month, $year, $mdaId) + $totalPayments,
+                'total_vouchers' => $vouchers->total(),
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'entries' => $entries,
+                'summary' => $summary,
+                'paginator' => [
+                    'total' => $vouchers->total(),
+                    'per_page' => $vouchers->perPage(),
+                    'current_page' => $vouchers->currentPage(),
+                    'last_page' => $vouchers->lastPage(),
+                ],
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Ledger Search Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Export ledger to Excel
+     */
+    public function exportLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'recurrent')
+                ->where('status', 'closed')
+                ->whereNotNull('mas_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            $vouchers = $query->orderBy('voucher_date', 'asc')->get();
+            
+            // Prepare data for export
+            $exportData = [];
+            $runningBalance = $this->getRecurrentOpeningBalance($month, $year, $mdaId);
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                
+                $exportData[] = [
+                    'Date' => $voucher->voucher_date?->toDateString(),
+                    'Voucher #' => $voucher->voucher_number,
+                    'MDA' => $voucher->mda?->name,
+                    'Payee' => $voucher->payee_name,
+                    'Description' => $this->getLedgerDescription($voucher),
+                    'Amount' => $amount,
+                    'Running Balance' => $runningBalance,
+                    'Payment Date' => $voucher->mas_approved_at?->toDateString(),
+                    'Payment Ref' => $voucher->payment_reference,
+                ];
+            }
+            
+            // Generate Excel file
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            
+            // Headers
+            $headers = array_keys($exportData[0] ?? []);
+            foreach ($headers as $index => $header) {
+                $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+                $sheet->setCellValue($col . '1', $header);
+                $sheet->getStyle($col . '1')->getFont()->setBold(true);
+            }
+            
+            // Data
+            $row = 2;
+            foreach ($exportData as $data) {
+                $col = 1;
+                foreach ($data as $value) {
+                    $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col);
+                    $sheet->setCellValue($colLetter . $row, $value);
+                    $col++;
+                }
+                $row++;
+            }
+            
+            // Auto size columns
+            foreach (range('A', \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers))) as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
+            }
+            
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $filename = "Recurrent_Ledger_{$month}_{$year}.xlsx";
+            
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment;filename="' . $filename . '"');
+            header('Cache-Control: max-age=0');
+            
+            $writer->save('php://output');
+            exit;
+            
+        } catch (\Exception $e) {
+            Log::error('Ledger Export Error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to export ledger'], 500);
+        }
+    }
+
+    /**
+     * Display the capital expenditure ledger
+     * Only shows vouchers that are paid/closed for capital expenditure
+     */
+    public function capitalLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            $search = $request->input('search', '');
+            
+            // Build the query - ONLY capital vouchers that are paid/closed
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode', 'approvals'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'capital')
+                ->where('status', 'closed')
+                ->whereNotNull('mas_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            // Filter by MDA if provided
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            // Apply search filter
+            if ($search) {
+                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $query->where(function ($q) use ($word) {
+                        $q->where('voucher_number', 'like', "%{$word}%")
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
+                    });
+                }
+            }
+            
+            // Get vouchers ordered by date
+            $vouchers = $query->orderBy('voucher_date', 'asc')
+                ->orderBy('created_at', 'asc')
+                ->get();
+            
+            // Calculate running balance
+            $runningBalance = 0;
+            $entries = [];
+            $totalPayments = 0;
+            $economyCodeStats = [];
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                $totalPayments += $amount;
+                
+                // Get approval info
+                $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+                $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+                $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
+                $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+                
+                // $entries[] = [
+                //     'id' => $voucher->id,
+                //     'transaction_date' => $voucher->voucher_date?->toDateString(),
+                //     'voucher_number' => $voucher->voucher_number,
+                //     'description' => $this->getLedgerDescription($voucher),
+                //     'payee_name' => $voucher->payee_name,
+                //     'amount' => $amount,
+                //     'running_balance' => $runningBalance,
+                //     'mda' => $voucher->mda ? [
+                //         'id' => $voucher->mda->id,
+                //         'name' => $voucher->mda->name,
+                //         'code' => $voucher->mda->code,
+                //     ] : null,
+                //     'bank_activity' => $voucher->bankActivity ? [
+                //         'id' => $voucher->bankActivity->id,
+                //         'bank_name' => $voucher->bankActivity->bank_name,
+                //         'account_number' => $voucher->bankActivity->account_number,
+                //     ] : null,
+                //     'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                //     'payment_reference' => $voucher->payment_reference,
+                //     'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                //     'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                //     'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+                //     'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                //     'items' => $voucher->items->map(function ($item) {
+                //         return [
+                //             'id' => $item->id,
+                //             'description' => $item->description,
+                //             'quantity' => (float) $item->quantity,
+                //             'unit_price' => (float) $item->unit_price,
+                //             'sub_total' => (float) $item->sub_total,
+                //             'programme_code' => $item->programme_code,
+                //             'programme_name' => $item->programme_name,
+                //             'economy_code_item' => $item->economyCodeItem ? [
+                //                 'id' => $item->economyCodeItem->id,
+                //                 'code' => $item->economyCodeItem->code,
+                //                 'name' => $item->economyCodeItem->name,
+                //             ] : null,
+                //         ];
+                //     }),
+                // ];
+                // In the capitalLedger method, update the entries array to include:
+                $entries[] = [
+                    'id' => $voucher->id,
+                    'transaction_date' => $voucher->voucher_date?->toDateString(),
+                    'voucher_number' => $voucher->voucher_number,
+                    'description' => $this->getLedgerDescription($voucher),
+                    'payee_name' => $voucher->payee_name,
+                    'amount' => $amount,
+                    'running_balance' => $runningBalance,
+                    'pay_point' => $voucher->pay_point ?? 'MAS', // Add pay point
+                    'schedule_id' => $voucher->schedule_id, // Add schedule ID
+                    'schedule_number' => $voucher->schedule?->schedule_number ?? null, // Add schedule number
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
+                    ] : null,
+                    'bank_activity' => $voucher->bankActivity ? [
+                        'id' => $voucher->bankActivity->id,
+                        'bank_name' => $voucher->bankActivity->bank_name,
+                        'account_number' => $voucher->bankActivity->account_number,
+                    ] : null,
+                    'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                    'payment_reference' => $voucher->payment_reference,
+                    'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+                    'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                    'items' => $voucher->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'description' => $item->description,
+                            'quantity' => (float) $item->quantity,
+                            'unit_price' => (float) $item->unit_price,
+                            'sub_total' => (float) $item->sub_total,
+                            'programme_code' => $item->programme_code,
+                            'programme_name' => $item->programme_name,
+                            'economy_code_item' => $item->economyCodeItem ? [
+                                'id' => $item->economyCodeItem->id,
+                                'code' => $item->economyCodeItem->code,
+                                'name' => $item->economyCodeItem->name,
+                            ] : null,
+                        ];
+                    }),
+                ];
+                
+                // Calculate economy code statistics
+                foreach ($voucher->items as $item) {
+                    $code = $item->economyCodeItem?->code ?? $item->programme_code ?? 'Other';
+                    $name = $item->economyCodeItem?->name ?? $item->programme_name ?? 'Other';
+                    $key = $code . ' - ' . $name;
+                    
+                    if (!isset($economyCodeStats[$key])) {
+                        $economyCodeStats[$key] = [
+                            'code' => $code,
+                            'name' => $name,
+                            'total' => 0,
+                            'count' => 0,
+                        ];
+                    }
+                    
+                    $economyCodeStats[$key]['total'] += (float) $item->sub_total;
+                    $economyCodeStats[$key]['count']++;
+                }
+            }
+            
+            // Get opening balance (total of all previous paid capital vouchers)
+            $openingBalance = $this->getCapitalOpeningBalance($month, $year, $mdaId);
+            
+            // Get MDAs for filter
+            $mdas = Mda::orderBy('name')->get(['id', 'name', 'code']);
+            
+            // Get summary statistics
+            $summary = [
+                'opening_balance' => $openingBalance,
+                'total_payments' => $totalPayments,
+                'closing_balance' => $openingBalance + $totalPayments,
+                'total_vouchers' => $vouchers->count(),
+            ];
+            
+            return Inertia::render('admin/expenditureControl/capital-ledger', [
+                'entries' => $entries,
+                'summary' => $summary,
+                'month_name' => Carbon::createFromDate($year, $month, 1)->format('F'),
+                'year' => $year,
+                'month' => $month,
+                'mdas' => $mdas,
+                'filters' => [
+                    'mda_id' => $mdaId,
+                    'search' => $search,
+                ],
+                'economyCodeStats' => array_values($economyCodeStats),
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Capital Ledger Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return Inertia::render('admin/expenditureControl/capital-ledger', [
+                'entries' => [],
+                'summary' => [
+                    'opening_balance' => 0,
+                    'total_payments' => 0,
+                    'closing_balance' => 0,
+                    'total_vouchers' => 0,
+                ],
+                'month_name' => Carbon::now()->format('F'),
+                'year' => now()->year,
+                'month' => now()->month,
+                'mdas' => [],
+                'filters' => [],
+                'economyCodeStats' => [],
+            ]);
+        }
+    }
+
+    /**
+     * Get opening balance for capital expenditure ledger
+     * Sum of all paid capital vouchers before the selected month
+     */
+    private function getCapitalOpeningBalance($month, $year, $mdaId = null)
+    {
+        $query = Voucher::where('voucher_type', 'capital')
+            // ->whereNull('deleted_at')
+            ->where('status', 'closed')
+            ->whereNotNull('mas_approved_at')
+            ->where(function ($q) use ($month, $year) {
+                $q->whereMonth('voucher_date', '<', $month)
+                ->whereYear('voucher_date', '<=', $year);
+            });
+        
+        if ($mdaId) {
+            $query->where('mda_id', $mdaId);
+        }
+        
+        return (float) $query->sum('total_amount');
+    }
+
+    /**
+     * Search capital ledger entries (API endpoint for AJAX calls)
+     */
+    public function searchCapitalLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            $search = $request->input('search', '');
+            $perPage = (int) $request->input('per_page', 15);
+            $page = (int) $request->input('page', 1);
+            
+            // Build the query - ONLY capital vouchers that are paid/closed
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode', 'approvals'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'capital')
+                ->where('status', 'closed')
+                ->whereNotNull('mas_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            // Filter by MDA if provided
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            // Apply search filter
+            if ($search) {
+                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $query->where(function ($q) use ($word) {
+                        $q->where('voucher_number', 'like', "%{$word}%")
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
+                    });
+                }
+            }
+            
+            $vouchers = $query->orderBy('voucher_date', 'asc')
+                ->orderBy('created_at', 'asc')
+                ->paginate($perPage, ['*'], 'page', $page);
+            
+            // Calculate running balance
+            $runningBalance = $this->getCapitalOpeningBalance($month, $year, $mdaId);
+            $entries = [];
+            $totalPayments = 0;
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                $totalPayments += $amount;
+                
+                // $entries[] = [
+                //     'id' => $voucher->id,
+                //     'transaction_date' => $voucher->voucher_date?->toDateString(),
+                //     'voucher_number' => $voucher->voucher_number,
+                //     'description' => $this->getLedgerDescription($voucher),
+                //     'payee_name' => $voucher->payee_name,
+                //     'amount' => $amount,
+                //     'running_balance' => $runningBalance,
+                //     'mda' => $voucher->mda ? [
+                //         'id' => $voucher->mda->id,
+                //         'name' => $voucher->mda->name,
+                //         'code' => $voucher->mda->code,
+                //     ] : null,
+                //     'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                //     'payment_reference' => $voucher->payment_reference,
+                // ];
+                $entries[] = [
+                    'id' => $voucher->id,
+                    'transaction_date' => $voucher->voucher_date?->toDateString(),
+                    'voucher_number' => $voucher->voucher_number,
+                    'description' => $this->getLedgerDescription($voucher),
+                    'payee_name' => $voucher->payee_name,
+                    'amount' => $amount,
+                    'running_balance' => $runningBalance,
+                    'pay_point' => $voucher->pay_point ?? 'MAS', // Add pay point
+                    'schedule_id' => $voucher->schedule_id, // Add schedule ID
+                    'schedule_number' => $voucher->schedule?->schedule_number ?? null, // Add schedule number
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
+                    ] : null,
+                    'bank_activity' => $voucher->bankActivity ? [
+                        'id' => $voucher->bankActivity->id,
+                        'bank_name' => $voucher->bankActivity->bank_name,
+                        'account_number' => $voucher->bankActivity->account_number,
+                    ] : null,
+                    'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                    'payment_reference' => $voucher->payment_reference,
+                    'fa_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+                    'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+                    'items' => $voucher->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'description' => $item->description,
+                            'quantity' => (float) $item->quantity,
+                            'unit_price' => (float) $item->unit_price,
+                            'sub_total' => (float) $item->sub_total,
+                            'programme_code' => $item->programme_code,
+                            'programme_name' => $item->programme_name,
+                            'economy_code_item' => $item->economyCodeItem ? [
+                                'id' => $item->economyCodeItem->id,
+                                'code' => $item->economyCodeItem->code,
+                                'name' => $item->economyCodeItem->name,
+                            ] : null,
+                        ];
+                    }),
+                ];
+            }
+            
+            $summary = [
+                'opening_balance' => $this->getCapitalOpeningBalance($month, $year, $mdaId),
+                'total_payments' => $totalPayments,
+                'closing_balance' => $this->getCapitalOpeningBalance($month, $year, $mdaId) + $totalPayments,
+                'total_vouchers' => $vouchers->total(),
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'entries' => $entries,
+                'summary' => $summary,
+                'paginator' => [
+                    'total' => $vouchers->total(),
+                    'per_page' => $vouchers->perPage(),
+                    'current_page' => $vouchers->currentPage(),
+                    'last_page' => $vouchers->lastPage(),
+                ],
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Capital Ledger Search Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Export capital ledger to Excel
+     */
+    public function exportCapitalLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'capital')
+                ->where('status', 'closed')
+                ->whereNotNull('mas_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            $vouchers = $query->orderBy('voucher_date', 'asc')->get();
+            
+            // Prepare data for export
+            $exportData = [];
+            $runningBalance = $this->getCapitalOpeningBalance($month, $year, $mdaId);
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                
+                $exportData[] = [
+                    'Date' => $voucher->voucher_date?->toDateString(),
+                    'Voucher #' => $voucher->voucher_number,
+                    'MDA' => $voucher->mda?->name,
+                    'Payee' => $voucher->payee_name,
+                    'Description' => $this->getLedgerDescription($voucher),
+                    'Amount' => $amount,
+                    'Running Balance' => $runningBalance,
+                    'Payment Date' => $voucher->mas_approved_at?->toDateString(),
+                    'Payment Ref' => $voucher->payment_reference,
+                ];
+            }
+            
+            // Generate Excel file
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            
+            // Headers
+            $headers = array_keys($exportData[0] ?? []);
+            foreach ($headers as $index => $header) {
+                $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+                $sheet->setCellValue($col . '1', $header);
+                $sheet->getStyle($col . '1')->getFont()->setBold(true);
+            }
+            
+            // Data
+            $row = 2;
+            foreach ($exportData as $data) {
+                $col = 1;
+                foreach ($data as $value) {
+                    $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col);
+                    $sheet->setCellValue($colLetter . $row, $value);
+                    $col++;
+                }
+                $row++;
+            }
+            
+            // Auto size columns
+            foreach (range('A', \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers))) as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
+            }
+            
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $filename = "Capital_Ledger_{$month}_{$year}.xlsx";
+            
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment;filename="' . $filename . '"');
+            header('Cache-Control: max-age=0');
+            
+            $writer->save('php://output');
+            exit;
+            
+        } catch (\Exception $e) {
+            Log::error('Capital Ledger Export Error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to export ledger'], 500);
+        }
+    }
+
+    /**
+     * Display the salary expenditure ledger
+     * Only shows vouchers that are paid/closed for salary expenditure
+     */
+    public function salaryLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            $search = $request->input('search', '');
+            
+            // Build the query - ONLY salary vouchers that are paid/closed
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode', 'approvals', 'schedule'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'salary')
+                ->where('status', 'closed')
+                ->whereNotNull('tco_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            // Filter by MDA if provided
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            // Apply search filter
+            if ($search) {
+                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $query->where(function ($q) use ($word) {
+                        $q->where('voucher_number', 'like', "%{$word}%")
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhere('voucher_type', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
+                    });
+                }
+            }
+            
+            // Get vouchers ordered by date
+            $vouchers = $query->orderBy('voucher_date', 'asc')
+                ->orderBy('created_at', 'asc')
+                ->get();
+            
+            // Calculate running balance
+            $runningBalance = 0;
+            $entries = [];
+            $totalPayments = 0;
+            $economyCodeStats = [];
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                $totalPayments += $amount;
+                
+                // Get approval info
+                $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+                $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+                $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
+                $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+                $inspectorateApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_INSPECTORATE)->first();
+                $tcoApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_TCO)->first();
+                
+                $entries[] = [
+                    'id' => $voucher->id,
+                    'transaction_date' => $voucher->voucher_date?->toDateString(),
+                    'voucher_number' => $voucher->voucher_number,
+                    'voucher_type' => $voucher->voucher_type,
+                    'description' => $this->getLedgerDescription($voucher),
+                    'payee_name' => $voucher->payee_name,
+                    'amount' => $amount,
+                    'running_balance' => $runningBalance,
+                    'pay_point' => $voucher->pay_point ?? 'TCO', // Add pay point
+                    'schedule_id' => $voucher->schedule_id, // Add schedule ID
+                    'schedule_number' => $voucher->schedule?->schedule_number ?? null, // Add schedule number
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
+                    ] : null,
+                    'bank_activity' => $voucher->bankActivity ? [
+                        'id' => $voucher->bankActivity->id,
+                        'bank_name' => $voucher->bankActivity->bank_name,
+                        'account_number' => $voucher->bankActivity->account_number,
+                    ] : null,
+                    'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                    'payment_reference' => $voucher->payment_reference,
+                    'final_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+                    'tco_approved_at' => $tcoApproval?->approved_at?->toDateTimeString(),
+                    'items' => $voucher->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'description' => $item->description,
+                            'quantity' => (float) $item->quantity,
+                            'unit_price' => (float) $item->unit_price,
+                            'sub_total' => (float) $item->sub_total,
+                            'programme_code' => $item->programme_code,
+                            'programme_name' => $item->programme_name,
+                            'economy_code_item' => $item->economyCodeItem ? [
+                                'id' => $item->economyCodeItem->id,
+                                'code' => $item->economyCodeItem->code,
+                                'name' => $item->economyCodeItem->name,
+                            ] : null,
+                        ];
+                    }),
+                ];
+                
+                // Calculate economy code statistics
+                foreach ($voucher->items as $item) {
+                    $code = $item->economyCodeItem?->code ?? $item->programme_code ?? 'Other';
+                    $name = $item->economyCodeItem?->name ?? $item->programme_name ?? 'Other';
+                    $key = $code . ' - ' . $name;
+                    
+                    if (!isset($economyCodeStats[$key])) {
+                        $economyCodeStats[$key] = [
+                            'code' => $code,
+                            'name' => $name,
+                            'total' => 0,
+                            'count' => 0,
+                        ];
+                    }
+                    
+                    $economyCodeStats[$key]['total'] += (float) $item->sub_total;
+                    $economyCodeStats[$key]['count']++;
+                }
+            }
+            
+            // Get opening balance (total of all previous paid salary vouchers)
+            $openingBalance = $this->getSalaryOpeningBalance($month, $year, $mdaId);
+            
+            // Get MDAs for filter
+            $mdas = Mda::orderBy('name')->get(['id', 'name', 'code']);
+            
+            // Get summary statistics
+            $summary = [
+                'opening_balance' => $openingBalance,
+                'total_payments' => $totalPayments,
+                'closing_balance' => $openingBalance + $totalPayments,
+                'total_vouchers' => $vouchers->count(),
+            ];
+            
+            return Inertia::render('admin/expenditureControl/salary-ledger', [
+                'entries' => $entries,
+                'summary' => $summary,
+                'month_name' => Carbon::createFromDate($year, $month, 1)->format('F'),
+                'year' => $year,
+                'month' => $month,
+                'mdas' => $mdas,
+                'filters' => [
+                    'mda_id' => $mdaId,
+                    'search' => $search,
+                ],
+                'economyCodeStats' => array_values($economyCodeStats),
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Salary Ledger Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return Inertia::render('admin/expenditureControl/salary-ledger', [
+                'entries' => [],
+                'summary' => [
+                    'opening_balance' => 0,
+                    'total_payments' => 0,
+                    'closing_balance' => 0,
+                    'total_vouchers' => 0,
+                ],
+                'month_name' => Carbon::now()->format('F'),
+                'year' => now()->year,
+                'month' => now()->month,
+                'mdas' => [],
+                'filters' => [],
+                'economyCodeStats' => [],
+            ]);
+        }
+    }
+
+    /**
+     * Get opening balance for salary expenditure ledger
+     * Sum of all paid salary vouchers before the selected month
+     */
+    private function getSalaryOpeningBalance($month, $year, $mdaId = null)
+    {
+        $query = Voucher::where('voucher_type', 'salary')
+            ->where('status', 'closed')
+            ->whereNotNull('tco_approved_at')
+            ->where(function ($q) use ($month, $year) {
+                $q->whereMonth('voucher_date', '<', $month)
+                ->whereYear('voucher_date', '<=', $year);
+            });
+        
+        if ($mdaId) {
+            $query->where('mda_id', $mdaId);
+        }
+        
+        return (float) $query->sum('total_amount');
+    }
+
+    /**
+     * Search salary ledger entries (API endpoint for AJAX calls)
+     */
+    public function searchSalaryLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            $search = $request->input('search', '');
+            $perPage = (int) $request->input('per_page', 15);
+            $page = (int) $request->input('page', 1);
+            
+            // Build the query - ONLY salary vouchers that are paid/closed
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode', 'approvals', 'schedule'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'salary')
+                ->where('status', 'closed')
+                ->whereNotNull('tco_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            // Filter by MDA if provided
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            // Apply search filter
+            if ($search) {
+                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $query->where(function ($q) use ($word) {
+                        $q->where('voucher_number', 'like', "%{$word}%")
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhere('voucher_type', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
+                    });
+                }
+            }
+            
+            $vouchers = $query->orderBy('voucher_date', 'asc')
+                ->orderBy('created_at', 'asc')
+                ->paginate($perPage, ['*'], 'page', $page);
+            
+            // Calculate running balance
+            $runningBalance = $this->getSalaryOpeningBalance($month, $year, $mdaId);
+            $entries = [];
+            $totalPayments = 0;
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                $totalPayments += $amount;
+                
+                // $entries[] = [
+                //     'id' => $voucher->id,
+                //     'transaction_date' => $voucher->voucher_date?->toDateString(),
+                //     'voucher_number' => $voucher->voucher_number,
+                //     'description' => $this->getLedgerDescription($voucher),
+                //     'payee_name' => $voucher->payee_name,
+                //     'amount' => $amount,
+                //     'running_balance' => $runningBalance,
+                //     'pay_point' => $voucher->pay_point ?? 'TCO',
+                //     'schedule_id' => $voucher->schedule_id,
+                //     'schedule_number' => $voucher->schedule?->schedule_number ?? null,
+                //     'voucher_type' => $voucher->voucher_type,
+                //     'mda' => $voucher->mda ? [
+                //         'id' => $voucher->mda->id,
+                //         'name' => $voucher->mda->name,
+                //         'code' => $voucher->mda->code,
+                //     ] : null,
+                //     'payment_date' => $voucher->tco_approved_at?->toDateTimeString(),
+                //     'payment_reference' => $voucher->payment_reference,
+                // ];
+                // In the capitalLedger method, update the entries array to include:
+                $entries[] = [
+                    'id' => $voucher->id,
+                    'transaction_date' => $voucher->voucher_date?->toDateString(),
+                    'voucher_number' => $voucher->voucher_number,
+                    'voucher_type' => $voucher->voucher_type,
+                    'description' => $this->getLedgerDescription($voucher),
+                    'payee_name' => $voucher->payee_name,
+                    'amount' => $amount,
+                    'running_balance' => $runningBalance,
+                    'pay_point' => $voucher->pay_point ?? 'TCO', // Add pay point
+                    'schedule_id' => $voucher->schedule_id, // Add schedule ID
+                    'schedule_number' => $voucher->schedule?->schedule_number ?? null, // Add schedule number
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
+                    ] : null,
+                    'bank_activity' => $voucher->bankActivity ? [
+                        'id' => $voucher->bankActivity->id,
+                        'bank_name' => $voucher->bankActivity->bank_name,
+                        'account_number' => $voucher->bankActivity->account_number,
+                    ] : null,
+                    'payment_date' => $voucher->mas_approved_at?->toDateTimeString(),
+                    'payment_reference' => $voucher->payment_reference,
+                    'final_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                    'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+                    'tco_approved_at' => $tcoApproval?->approved_at?->toDateTimeString(),
+                    'items' => $voucher->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'description' => $item->description,
+                            'quantity' => (float) $item->quantity,
+                            'unit_price' => (float) $item->unit_price,
+                            'sub_total' => (float) $item->sub_total,
+                            'programme_code' => $item->programme_code,
+                            'programme_name' => $item->programme_name,
+                            'economy_code_item' => $item->economyCodeItem ? [
+                                'id' => $item->economyCodeItem->id,
+                                'code' => $item->economyCodeItem->code,
+                                'name' => $item->economyCodeItem->name,
+                            ] : null,
+                        ];
+                    }),
+                ];
+            }
+            
+            $summary = [
+                'opening_balance' => $this->getSalaryOpeningBalance($month, $year, $mdaId),
+                'total_payments' => $totalPayments,
+                'closing_balance' => $this->getSalaryOpeningBalance($month, $year, $mdaId) + $totalPayments,
+                'total_vouchers' => $vouchers->total(),
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'entries' => $entries,
+                'summary' => $summary,
+                'paginator' => [
+                    'total' => $vouchers->total(),
+                    'per_page' => $vouchers->perPage(),
+                    'current_page' => $vouchers->currentPage(),
+                    'last_page' => $vouchers->lastPage(),
+                ],
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Salary Ledger Search Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Export salary ledger to Excel
+     */
+    public function exportSalaryLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode', 'schedule'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'salary')
+                ->where('status', 'closed')
+                ->whereNotNull('tco_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            $vouchers = $query->orderBy('voucher_date', 'asc')->get();
+            
+            // Prepare data for export
+            $exportData = [];
+            $runningBalance = $this->getSalaryOpeningBalance($month, $year, $mdaId);
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                
+                $exportData[] = [
+                    'Date' => $voucher->voucher_date?->toDateString(),
+                    'Voucher #' => $voucher->voucher_number,
+                    'MDA' => $voucher->mda?->name,
+                    'Payee' => $voucher->payee_name,
+                    'Salary Type' => $voucher->voucher_type,
+                    'Description' => $this->getLedgerDescription($voucher),
+                    'Amount' => $amount,
+                    'Running Balance' => $runningBalance,
+                    'Payment Date' => $voucher->tco_approved_at?->toDateString(),
+                    'Payment Ref' => $voucher->payment_reference,
+                ];
+            }
+            
+            // Generate Excel file
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            
+            // Headers
+            $headers = array_keys($exportData[0] ?? []);
+            foreach ($headers as $index => $header) {
+                $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+                $sheet->setCellValue($col . '1', $header);
+                $sheet->getStyle($col . '1')->getFont()->setBold(true);
+            }
+            
+            // Data
+            $row = 2;
+            foreach ($exportData as $data) {
+                $col = 1;
+                foreach ($data as $value) {
+                    $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col);
+                    $sheet->setCellValue($colLetter . $row, $value);
+                    $col++;
+                }
+                $row++;
+            }
+            
+            // Auto size columns
+            foreach (range('A', \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers))) as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
+            }
+            
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $filename = "Salary_Ledger_{$month}_{$year}.xlsx";
+            
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment;filename="' . $filename . '"');
+            header('Cache-Control: max-age=0');
+            
+            $writer->save('php://output');
+            exit;
+            
+        } catch (\Exception $e) {
+            Log::error('Salary Ledger Export Error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to export ledger'], 500);
+        }
+    }
+
+    /**
+     * Display the pension expenditure ledger
+     * Only shows vouchers that are paid/closed for pension expenditure
+     */
+    public function pensionLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            $search = $request->input('search', '');
+            $pensionType = $request->input('pension_type', '');
+            
+            // Build the query - ONLY pension vouchers that are paid/closed (TCO approved)
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode', 'approvals', 'schedule'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'pension')
+                ->where('status', 'closed')
+                ->whereNotNull('tco_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            // Filter by MDA if provided
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            // Filter by Pension Type if provided
+            if ($pensionType) {
+                $query->where('pension_type', $pensionType);
+            }
+            
+            // Apply search filter
+            if ($search) {
+                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $query->where(function ($q) use ($word) {
+                        $q->where('voucher_number', 'like', "%{$word}%")
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhere('voucher_type', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
+                    });
+                }
+            }
+            
+            // Get vouchers ordered by date
+            $vouchers = $query->orderBy('voucher_date', 'asc')
+                ->orderBy('created_at', 'asc')
+                ->get();
+            
+            // Calculate running balance
+            $runningBalance = 0;
+            $entries = [];
+            $totalPayments = 0;
+            $economyCodeStats = [];
+            $pensionTypeStats = [];
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                $totalPayments += $amount;
+                
+                // Get approval info
+                $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+                $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+                $iApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_INSPECTORATE)->first();
+                $tcoApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_TCO)->first();
+                
+                $entries[] = [
+                    'id' => $voucher->id,
+                    'transaction_date' => $voucher->voucher_date?->toDateString(),
+                    'voucher_number' => $voucher->voucher_number,
+                    'voucher_type' => $voucher->voucher_type,
+                    'description' => $this->getLedgerDescription($voucher),
+                    'payee_name' => $voucher->payee_name,
+                    'amount' => $amount,
+                    'running_balance' => $runningBalance,
+                    'pay_point' => $voucher->pay_point ?? 'TCO',
+                    'schedule_id' => $voucher->schedule_id,
+                    'schedule_number' => $voucher->schedule?->schedule_number ?? null,
+                    'pension_type' => $voucher->pension_type ?? 'regular',
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
+                    ] : null,
+                    'bank_activity' => $voucher->bankActivity ? [
+                        'id' => $voucher->bankActivity->id,
+                        'bank_name' => $voucher->bankActivity->bank_name,
+                        'account_number' => $voucher->bankActivity->account_number,
+                    ] : null,
+                    'payment_date' => $voucher->tco_approved_at?->toDateTimeString(),
+                    'payment_reference' => $voucher->payment_reference,
+                    'final_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+                    'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+                    'i_approved_at' => $iApproval?->approved_at?->toDateTimeString(),
+                    'tco_approved_at' => $tcoApproval?->approved_at?->toDateTimeString(),
+                    'items' => $voucher->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'description' => $item->description,
+                            'quantity' => (float) $item->quantity,
+                            'unit_price' => (float) $item->unit_price,
+                            'sub_total' => (float) $item->sub_total,
+                            'programme_code' => $item->programme_code,
+                            'programme_name' => $item->programme_name,
+                            'economy_code_item' => $item->economyCodeItem ? [
+                                'id' => $item->economyCodeItem->id,
+                                'code' => $item->economyCodeItem->code,
+                                'name' => $item->economyCodeItem->name,
+                            ] : null,
+                        ];
+                    }),
+                ];
+                
+                // Calculate pension type statistics
+                $type = $voucher->pension_type ?? 'regular';
+                if (!isset($pensionTypeStats[$type])) {
+                    $pensionTypeStats[$type] = [
+                        'type' => $type,
+                        'total' => 0,
+                        'count' => 0,
+                    ];
+                }
+                $pensionTypeStats[$type]['total'] += $amount;
+                $pensionTypeStats[$type]['count']++;
+                
+                // Calculate economy code statistics
+                foreach ($voucher->items as $item) {
+                    $code = $item->economyCodeItem?->code ?? $item->programme_code ?? 'Other';
+                    $name = $item->economyCodeItem?->name ?? $item->programme_name ?? 'Other';
+                    $key = $code . ' - ' . $name;
+                    
+                    if (!isset($economyCodeStats[$key])) {
+                        $economyCodeStats[$key] = [
+                            'code' => $code,
+                            'name' => $name,
+                            'total' => 0,
+                            'count' => 0,
+                        ];
+                    }
+                    
+                    $economyCodeStats[$key]['total'] += (float) $item->sub_total;
+                    $economyCodeStats[$key]['count']++;
+                }
+            }
+            
+            // Get opening balance (total of all previous paid pension vouchers)
+            $openingBalance = $this->getPensionOpeningBalance($month, $year, $mdaId, $pensionType);
+            
+            // Get MDAs for filter
+            $mdas = Mda::orderBy('name')->get(['id', 'name', 'code']);
+            
+            // Get pension types for filter
+            $pensionTypes = [
+                ['label' => 'All Types', 'value' => ''],
+                ['label' => 'Regular', 'value' => 'regular'],
+                ['label' => 'Contributory', 'value' => 'contributory'],
+                ['label' => 'Arrears', 'value' => 'arrears'],
+                ['label' => 'Gratuity', 'value' => 'gratuity'],
+                ['label' => 'Death Benefit', 'value' => 'death_benefit'],
+                ['label' => 'Other', 'value' => 'other'],
+            ];
+            
+            // Get summary statistics
+            $summary = [
+                'opening_balance' => $openingBalance,
+                'total_payments' => $totalPayments,
+                'closing_balance' => $openingBalance + $totalPayments,
+                'total_vouchers' => $vouchers->count(),
+            ];
+            
+            return Inertia::render('admin/expenditureControl/pension-ledger', [
+                'entries' => $entries,
+                'summary' => $summary,
+                'month_name' => Carbon::createFromDate($year, $month, 1)->format('F'),
+                'year' => $year,
+                'month' => $month,
+                'mdas' => $mdas,
+                'pensionTypes' => $pensionTypes,
+                'filters' => [
+                    'mda_id' => $mdaId,
+                    'search' => $search,
+                    'pension_type' => $pensionType,
+                ],
+                'economyCodeStats' => array_values($economyCodeStats),
+                'pensionTypeStats' => array_values($pensionTypeStats),
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Pension Ledger Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return Inertia::render('admin/expenditureControl/pension-ledger', [
+                'entries' => [],
+                'summary' => [
+                    'opening_balance' => 0,
+                    'total_payments' => 0,
+                    'closing_balance' => 0,
+                    'total_vouchers' => 0,
+                ],
+                'month_name' => Carbon::now()->format('F'),
+                'year' => now()->year,
+                'month' => now()->month,
+                'mdas' => [],
+                'pensionTypes' => [],
+                'filters' => [],
+                'economyCodeStats' => [],
+                'pensionTypeStats' => [],
+            ]);
+        }
+    }
+
+    /**
+     * Get opening balance for pension expenditure ledger
+     * Sum of all paid pension vouchers before the selected month (TCO approved)
+     */
+    private function getPensionOpeningBalance($month, $year, $mdaId = null, $pensionType = null)
+    {
+        $query = Voucher::where('voucher_type', 'pension')
+            ->where('status', 'closed')
+            ->whereNotNull('tco_approved_at')
+            ->where(function ($q) use ($month, $year) {
+                $q->whereMonth('voucher_date', '<', $month)
+                ->whereYear('voucher_date', '<=', $year);
+            });
+        
+        if ($mdaId) {
+            $query->where('mda_id', $mdaId);
+        }
+        
+        if ($pensionType) {
+            $query->where('pension_type', $pensionType);
+        }
+        
+        return (float) $query->sum('total_amount');
+    }
+
+    /**
+     * Search pension ledger entries (API endpoint for AJAX calls)
+     */
+    public function searchPensionLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            $search = $request->input('search', '');
+            $pensionType = $request->input('pension_type', '');
+            $perPage = (int) $request->input('per_page', 15);
+            $page = (int) $request->input('page', 1);
+            
+            // Build the query - ONLY pension vouchers that are paid/closed (TCO approved)
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode', 'approvals', 'schedule'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'pension')
+                ->where('status', 'closed')
+                ->whereNotNull('tco_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            // Filter by MDA if provided
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            // Filter by Pension Type if provided
+            if ($pensionType) {
+                $query->where('pension_type', $pensionType);
+            }
+            
+            // Apply search filter
+            if ($search) {
+                $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $query->where(function ($q) use ($word) {
+                        $q->where('voucher_number', 'like', "%{$word}%")
+                        ->orWhere('narration', 'like', "%{$word}%")
+                        ->orWhere('payee_name', 'like', "%{$word}%")
+                        ->orWhere('voucher_type', 'like', "%{$word}%")
+                        ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+                            $mdaQuery->where('name', 'like', "%{$word}%");
+                        });
+                    });
+                }
+            }
+            
+            $vouchers = $query->orderBy('voucher_date', 'asc')
+                ->orderBy('created_at', 'asc')
+                ->paginate($perPage, ['*'], 'page', $page);
+            
+            // Calculate running balance
+            $runningBalance = $this->getPensionOpeningBalance($month, $year, $mdaId, $pensionType);
+            $entries = [];
+            $totalPayments = 0;
+            $pensionTypeStats = [];
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                $totalPayments += $amount;
+                
+                // Calculate pension type statistics
+                $type = $voucher->pension_type ?? 'regular';
+                if (!isset($pensionTypeStats[$type])) {
+                    $pensionTypeStats[$type] = [
+                        'type' => $type,
+                        'total' => 0,
+                        'count' => 0,
+                    ];
+                }
+                $pensionTypeStats[$type]['total'] += $amount;
+                $pensionTypeStats[$type]['count']++;
+                
+                $entries[] = [
+                    'id' => $voucher->id,
+                    'transaction_date' => $voucher->voucher_date?->toDateString(),
+                    'voucher_number' => $voucher->voucher_number,
+                    'description' => $this->getLedgerDescription($voucher),
+                    'payee_name' => $voucher->payee_name,
+                    'amount' => $amount,
+                    'running_balance' => $runningBalance,
+                    'pay_point' => $voucher->pay_point ?? 'TCO',
+                    'schedule_id' => $voucher->schedule_id,
+                    'schedule_number' => $voucher->schedule?->schedule_number ?? null,
+                    'pension_type' => $voucher->pension_type ?? 'regular',
+                    'mda' => $voucher->mda ? [
+                        'id' => $voucher->mda->id,
+                        'name' => $voucher->mda->name,
+                        'code' => $voucher->mda->code,
+                    ] : null,
+                    'payment_date' => $voucher->tco_approved_at?->toDateTimeString(),
+                    'payment_reference' => $voucher->payment_reference,
+                ];
+            }
+            
+            $summary = [
+                'opening_balance' => $this->getPensionOpeningBalance($month, $year, $mdaId, $pensionType),
+                'total_payments' => $totalPayments,
+                'closing_balance' => $this->getPensionOpeningBalance($month, $year, $mdaId, $pensionType) + $totalPayments,
+                'total_vouchers' => $vouchers->total(),
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'entries' => $entries,
+                'summary' => $summary,
+                'pensionTypeStats' => array_values($pensionTypeStats),
+                'paginator' => [
+                    'total' => $vouchers->total(),
+                    'per_page' => $vouchers->perPage(),
+                    'current_page' => $vouchers->currentPage(),
+                    'last_page' => $vouchers->lastPage(),
+                ],
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Pension Ledger Search Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Export pension ledger to Excel
+     */
+    public function exportPensionLedger(Request $request)
+    {
+        try {
+            $month = $request->input('month', now()->month);
+            $year = $request->input('year', now()->year);
+            $mdaId = $request->input('mda_id');
+            $pensionType = $request->input('pension_type', '');
+            
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.economyCodeItem', 'items.programmeCode', 'schedule'])
+                // ->whereNull('deleted_at')
+                ->where('voucher_type', 'pension')
+                ->where('status', 'closed')
+                ->whereNotNull('tco_approved_at')
+                ->whereMonth('voucher_date', $month)
+                ->whereYear('voucher_date', $year);
+            
+            if ($mdaId) {
+                $query->where('mda_id', $mdaId);
+            }
+            
+            if ($pensionType) {
+                $query->where('pension_type', $pensionType);
+            }
+            
+            $vouchers = $query->orderBy('voucher_date', 'asc')->get();
+            
+            // Prepare data for export
+            $exportData = [];
+            $runningBalance = $this->getPensionOpeningBalance($month, $year, $mdaId, $pensionType);
+            
+            foreach ($vouchers as $voucher) {
+                $amount = (float) $voucher->total_amount;
+                $runningBalance += $amount;
+                
+                $exportData[] = [
+                    'Date' => $voucher->voucher_date?->toDateString(),
+                    'Voucher #' => $voucher->voucher_number,
+                    'MDA' => $voucher->mda?->name,
+                    'Payee' => $voucher->payee_name,
+                    'Pension Type' => ucfirst($voucher->pension_type ?? 'Regular'),
+                    'Description' => $this->getLedgerDescription($voucher),
+                    'Amount' => $amount,
+                    'Running Balance' => $runningBalance,
+                    'Payment Date' => $voucher->tco_approved_at?->toDateString(),
+                    'Payment Ref' => $voucher->payment_reference,
+                ];
+            }
+            
+            // Generate Excel file
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            
+            // Headers
+            $headers = array_keys($exportData[0] ?? []);
+            foreach ($headers as $index => $header) {
+                $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+                $sheet->setCellValue($col . '1', $header);
+                $sheet->getStyle($col . '1')->getFont()->setBold(true);
+            }
+            
+            // Data
+            $row = 2;
+            foreach ($exportData as $data) {
+                $col = 1;
+                foreach ($data as $value) {
+                    $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col);
+                    $sheet->setCellValue($colLetter . $row, $value);
+                    $col++;
+                }
+                $row++;
+            }
+            
+            // Auto size columns
+            foreach (range('A', \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers))) as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
+            }
+            
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $filename = "Pension_Ledger_{$month}_{$year}.xlsx";
+            
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment;filename="' . $filename . '"');
+            header('Cache-Control: max-age=0');
+            
+            $writer->save('php://output');
+            exit;
+            
+        } catch (\Exception $e) {
+            Log::error('Pension Ledger Export Error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to export ledger'], 500);
         }
     }
 }

@@ -66,6 +66,8 @@ class Voucher extends Model
         'status',
         'voucher_type',
         'rejection_reason',
+        'rejected_by',
+        'rejected_at',
         'schedule_id',
         'requires_retirement',
         'retired_at',
@@ -112,6 +114,7 @@ class Voucher extends Model
         'i_approved_at' => 'datetime',
         'tco_approved_at' => 'datetime',
         'assigned_at' => 'datetime',
+        'rejected_at' => 'datetime',
     ];
 
     protected $logAttributes = [
@@ -501,4 +504,20 @@ class Voucher extends Model
     {
         return $this->belongsTo(User::class, 'assigned_by');
     }
+
+    /**
+     * Get the schedule item that this voucher belongs to
+     */
+    public function scheduleItem(): BelongsTo
+    {
+        return $this->belongsTo(ScheduleItem::class, 'schedule_item_id');
+    }
+
+    /**
+     * Get the schedule that this voucher belongs to (through schedule item or directly)
+     */
+    // public function schedule(): BelongsTo
+    // {
+    //     return $this->belongsTo(Schedule::class, 'schedule_id');
+    // }
 }

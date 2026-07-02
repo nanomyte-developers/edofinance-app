@@ -45,22 +45,6 @@ class ManagementAccountSectionController extends Controller
                 ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
                 ->orderBy('created_at', 'desc');
 
-            // // Tab filtering
-            // if ($tab === 'all') {
-            //     // Show all vouchers approved by AG (status ag_approved) AND those already closed
-            //     $query->whereIn('status', ['ag_approved', 'closed']);
-            // } elseif ($tab === 'pending') {
-            //     // Pending MAS review (AG approved, not yet closed)
-            //     $query->where('status', 'ag_approved')->whereNotNull('ag_approved_at');
-            // } elseif ($tab === 'liability') {
-            //     // Liability vouchers (approved by FA today)
-            //     $query->whereIn('status', ['ag_approved', 'closed'])
-            //         ->whereDate('ag_approved_at', today());
-            // } elseif ($tab === 'closed') {
-            //     // Closed vouchers
-            //     $query->where('status', 'closed')->whereNotNull('mas_approved_at');
-            // }
-
             // =============================================
             // FIXED TAB FILTERING - Replace your existing tab filtering block
             // =============================================
@@ -141,6 +125,25 @@ class ManagementAccountSectionController extends Controller
                     $paymentStatus = 'awaiting_mas';
                 }
 
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
+
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
@@ -184,58 +187,12 @@ class ManagementAccountSectionController extends Controller
                             'programme_name' => $item->programme_name,
                         ];
                     }),
+                    // =============================================
+                    // ADD APPROVALS TO THE RETURN ARRAY
+                    // =============================================
+                    'approvals' => $approvals,
                 ];
             });
-
-            // =============================================
-            // FIXED STATISTICS
-            // =============================================
-            // $stats = [
-            //     // All vouchers approved by AG (including those already closed)
-            //     'pending_ag_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'ag_approved')
-            //         ->count(),
-                
-            //     // Vouchers pending MAS review (AG approved but not closed)
-            //     'pending_mas_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'ag_approved')
-            //         // ->whereNull('mas_approved_at')
-            //         ->count(),
-                
-            //     // Vouchers closed today
-            //     'closed_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'closed')
-            //         ->whereDate('mas_approved_at', today())
-            //         ->count(),
-                
-            //     // Vouchers rejected by MAS today
-            //     'rejected_today' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'mas_rejected')
-            //         // ->whereDate('rejected_at', today())
-            //         ->count(),
-                
-            //     // Total processed (closed + rejected by MAS)
-            //     'total_processed' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->whereIn('status', ['closed', 'mas_rejected'])
-            //         ->count(),
-                
-            //     // Total amount pending MAS review
-            //     'total_amount_pending' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'ag_approved')
-            //         // ->whereNull('mas_approved_at')
-            //         ->sum('total_amount'),
-                
-            //     // Total amount closed
-            //     'total_amount_closed' => (float) Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->where('status', 'closed')
-            //         ->sum('total_amount'),
-                
-            //     // Liability count - vouchers approved by FA today (liability as at current day)
-            //     // These are vouchers where final_approved_at is today, regardless of current status
-            //     'liability_count' => Voucher::whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
-            //         ->whereDate('ag_approved_at', today())
-            //         ->count(),
-            // ];
 
             // =============================================
             // FIXED STATISTICS - Replace your stats array
@@ -365,18 +322,6 @@ class ManagementAccountSectionController extends Controller
                 ->whereIn('voucher_type', self::MAS_VOUCHER_TYPES)
                 ->orderBy('created_at', 'desc');
 
-            // Tab filtering
-            // if ($tab === 'all') {
-            //     $query->whereIn('status', ['ag_approved', 'closed']);
-            // } elseif ($tab === 'pending') {
-            //     $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
-            // } elseif ($tab === 'liability') {
-            //     $query->whereIn('status', ['ag_approved', 'closed'])
-            //         ->whereDate('final_approved_at', today());
-            // } elseif ($tab === 'closed') {
-            //     $query->where('status', 'closed')->whereNotNull('mas_approved_at');
-            // }
-
             // =============================================
             // FIXED SEARCH TAB FILTERING - Replace your search tab filtering
             // =============================================
@@ -451,6 +396,26 @@ class ManagementAccountSectionController extends Controller
                     $paymentStatus = 'awaiting_mas';
                 }
 
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
+
+
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
@@ -490,6 +455,10 @@ class ManagementAccountSectionController extends Controller
                             'sub_total' => (float) $item->sub_total,
                         ];
                     }),
+                    // =============================================
+                    // ADD APPROVALS TO THE RETURN ARRAY
+                    // =============================================
+                    'approvals' => $approvals,
                 ];
             })->values()->toArray();
 
@@ -710,83 +679,6 @@ class ManagementAccountSectionController extends Controller
     /**
      * Assign bank account to voucher
      */
-    // public function assignBank(Voucher $voucher, Request $request)
-    // {
-    //     Log::info('MAS Assign Bank Request:', [
-    //         'voucher_id' => $voucher->id,
-    //         'voucher_number' => $voucher->voucher_number,
-    //         'bank_activity_id' => $request->input('bank_activity_id'),
-    //         'user_id' => auth()->id(),
-    //     ]);
-
-    //     DB::beginTransaction();
-
-    //     try {
-    //         $bankActivityId = $request->input('bank_activity_id');
-
-    //         if (!$bankActivityId) {
-    //             DB::rollBack();
-    //             return redirect()->route('management-account-section.index')
-    //                 ->with('error', 'Please select a bank account.');
-    //         }
-
-    //         // Check if bank exists
-    //         $bank = BankActivity::find($bankActivityId);
-    //         if (!$bank) {
-    //             DB::rollBack();
-    //             return redirect()->route('management-account-section.index')
-    //                 ->with('error', 'Selected bank account not found.');
-    //         }
-
-    //         // Update voucher with bank
-    //         $voucher->update([
-    //             'bank_activity_id' => $bankActivityId,
-    //             // 'bank_assigned_by' => auth()->id(),
-    //             // 'bank_assigned_at' => now(),
-    //         ]);
-
-    //         // Log activity
-    //         if ($this->activityLogger) {
-    //             $this->activityLogger->log(
-    //                 "Bank account assigned to voucher {$voucher->voucher_number}",
-    //                 [
-    //                     'voucher_id' => $voucher->id,
-    //                     'voucher_number' => $voucher->voucher_number,
-    //                     'bank_name' => $bank->bank_name,
-    //                     'bank_account' => $bank->account_number,
-    //                     'assigned_by' => auth()->id(),
-    //                 ],
-    //                 'voucher'
-    //             );
-    //         }
-
-    //         DB::commit();
-
-    //         Log::info('MAS Assign Bank Successful:', [
-    //             'voucher_id' => $voucher->id,
-    //             'voucher_number' => $voucher->voucher_number,
-    //             'bank_activity_id' => $bankActivityId,
-    //         ]);
-
-    //         return redirect()->route('management-account-section.index')
-    //             ->with('success', "Bank account assigned to voucher {$voucher->voucher_number} successfully.");
-
-    //     } catch (\Exception $e) {
-    //         DB::rollBack();
-    //         Log::error('MAS Assign Bank Failed:', [
-    //             'voucher_id' => $voucher->id,
-    //             'error' => $e->getMessage(),
-    //             'trace' => $e->getTraceAsString()
-    //         ]);
-
-    //         return redirect()->route('management-account-section.index')
-    //             ->with('error', 'Failed to assign bank: ' . $e->getMessage());
-    //     }
-    // }
-
-    /**
-     * Assign bank account to voucher
-     */
     public function assignBank(Voucher $voucher, Request $request)
     {
         Log::info('MAS Assign Bank Request:', [
@@ -943,7 +835,7 @@ class ManagementAccountSectionController extends Controller
     }
 
     /**
-     * Reject voucher from Management Account Section
+     * Reject voucher from Management Account Section - Return to EC
      */
     public function reject(Voucher $voucher, Request $request)
     {
@@ -986,26 +878,32 @@ class ManagementAccountSectionController extends Controller
                 'status' => VoucherApproval::STATUS_REJECTED,
                 'comment' => $reason,
                 'action_at' => now(),
-                // 'rejected_at' => now(),
+                'rejected_at' => now(),
             ]);
 
-            // Update voucher status
+            // Update voucher status - RETURN TO EC FOR REVIEW
             $voucher->update([
-                'status' => 'mas_rejected',
-                // 'rejection_reason' => $reason,
-                // 'rejected_by' => auth()->id(),
-                // 'rejected_at' => now(),
+                'status' => 'ec_review', // Changed from 'mas_rejected' to 'ec_review'
+                'rejection_reason' => $reason,
+                'rejected_by' => auth()->id(),
+                'rejected_at' => now(),
+                // Clear MAS approval fields so it can go through the flow again
+                'mas_approved_by' => null,
+                'mas_approved_at' => null,
+                'ag_approved_by' => null,
+                'ag_approved_at' => null,
             ]);
 
             // Log activity
             if ($this->activityLogger) {
                 $this->activityLogger->log(
-                    "Management Account Section rejected voucher {$voucher->voucher_number}",
+                    "Management Account Section rejected voucher {$voucher->voucher_number} and returned to EC for review",
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
                         'reason' => $reason,
                         'rejected_by' => auth()->id(),
+                        'returned_to' => 'EC',
                     ],
                     'voucher'
                 );
@@ -1013,13 +911,14 @@ class ManagementAccountSectionController extends Controller
 
             DB::commit();
 
-            Log::info('MAS Reject Successful:', [
+            Log::info('MAS Reject Successful - Returned to EC:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
+                'new_status' => 'ec_review',
             ]);
 
             return redirect()->route('management-account-section.index')
-                ->with('success', "Voucher {$voucher->voucher_number} has been rejected.");
+                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to EC for review.");
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1682,7 +1581,7 @@ class ManagementAccountSectionController extends Controller
     }
 
     /**
-     * Reject assigned voucher from Management Account Section
+     * Reject assigned voucher from Management Account Section - Return to EC
      */
     public function rejectAssigned(Voucher $voucher, Request $request)
     {
@@ -1728,23 +1627,29 @@ class ManagementAccountSectionController extends Controller
                 'rejected_at' => now(),
             ]);
 
-            // Update voucher status
+            // Update voucher status - RETURN TO EC FOR REVIEW
             $voucher->update([
-                'status' => 'mas_rejected',
+                'status' => 'ec_review', // Changed from 'mas_rejected' to 'ec_review'
                 'rejection_reason' => $reason,
                 'rejected_by' => auth()->id(),
                 'rejected_at' => now(),
+                // Clear MAS approval fields so it can go through the flow again
+                'mas_approved_by' => null,
+                'mas_approved_at' => null,
+                'ag_approved_by' => null,
+                'ag_approved_at' => null,
             ]);
 
             // Log activity
             if ($this->activityLogger) {
                 $this->activityLogger->log(
-                    "Management Account Section rejected assigned voucher {$voucher->voucher_number}",
+                    "Management Account Section rejected assigned voucher {$voucher->voucher_number} and returned to EC for review",
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
                         'reason' => $reason,
                         'rejected_by' => auth()->id(),
+                        'returned_to' => 'EC',
                     ],
                     'voucher'
                 );
@@ -1752,13 +1657,14 @@ class ManagementAccountSectionController extends Controller
 
             DB::commit();
 
-            Log::info('MAS Reject Assigned Successful:', [
+            Log::info('MAS Reject Assigned Successful - Returned to EC:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
+                'new_status' => 'ec_review',
             ]);
 
             return redirect()->route('management-account-section.assigned')
-                ->with('success', "Voucher {$voucher->voucher_number} has been rejected.");
+                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to EC for review.");
 
         } catch (\Exception $e) {
             DB::rollBack();

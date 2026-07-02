@@ -35,7 +35,7 @@ const voucherForm = ref({
     departmentNo: '',
     economyCode: '',
     code: '',
-    financialAuthority: 'G.W...2025',
+    financialAuthority: 'G.W...2026',
     place: 'Benin City',
     date: new Date().toLocaleDateString('en-GB'),
     items: [],
@@ -43,6 +43,8 @@ const voucherForm = ref({
     mdaInitials: '',
     budgetCodeNumber: '',
     permanentSecretaryTitle: '',
+    mdaNameName: '',
+    mdaNameCode: '',
 });
 
 // Function to round quantity to nearest whole number
@@ -262,7 +264,7 @@ const extractDepartmentNumber = () => {
 const getEconomyCodeValue = () => {
     // Try from economyCode prop
     if (props.economyCode && props.economyCode.code) {
-        return props.economyCode.code;
+        return `${props.economyCode.code} (${props.economyCode.name})`;
     }
 
     // Try from voucher items
@@ -273,7 +275,7 @@ const getEconomyCodeValue = () => {
     ) {
         const firstItem = props.voucher.items[0];
         if (firstItem.economy_code && firstItem.economy_code.code) {
-            return firstItem.economy_code.code;
+            return `${firstItem.economy_code.code} (${firstItem.economy_code.name})`;
         }
     }
 
@@ -343,6 +345,8 @@ const totalAmountSplit = computed(() => {
 // Computed amount in words
 const amountInWords = computed(() => {
     return convertToWords(totalAmount.value);
+
+
 });
 
 // Initialize with props data
@@ -480,85 +484,48 @@ const formatDate = (dateString) => {
                 <section class="mb-4 flex flex-col gap-4 text-sm md:flex-row">
                     <!-- Left Side: Code and Dept -->
                     <div class="flex-1">
-                        <p class="mb-2 font-medium">
-                            Administrative Code:
-                            <span
-                                class="input-line ml-2 inline-block w-48 border-b border-gray-400 font-mono"
-                                >{{ voucherForm.code || 'N/A' }}</span
-                            >
-                            - {{ voucherForm.mdaName || 'Ministry/Agency' }}
+                        <p class="mb-2 font-medium flex items-center">
+                            <span class="whitespace-nowrap">Administrative Code:</span>
+                            <span class="input-line ml-2 inline-block border-b border-gray-400 font-mono whitespace-nowrap px-1" style="min-width: 200px;">
+                                {{ props.voucher.mda_name_code }}{{ props.voucher.mda_name_name ? ' - ' + props.voucher.mda_name_name : ' - N/A' }}
+                            </span>
                         </p>
-                        <p class="mb-2 font-medium">
-                            Economic Code:
-                            <span
-                                class="input-line ml-2 inline-block w-32 border-b border-gray-400 font-mono"
-                                >{{ voucherForm.economyCode || 'N/A' }}</span
-                            >
+                        <p class="mb-2 font-medium flex items-center">
+                            <span class="whitespace-nowrap">Economic Code:</span>
+                            <span class="input-line ml-2 inline-block w-48 border-b border-gray-400 font-mono whitespace-nowrap px-1" style="min-width: 200px;">
+                                {{ voucherForm.economyCode || 'N/A' }}
+                            </span>
+                            <span class="ml-1">{{ props.voucher.economyCode || '' }}</span>
                         </p>
-                        <p class="font-medium">
-                            Dr. To: {{ voucherForm.permanentSecretaryTitle }}
+                        <p class="font-medium flex items-center">
+                            <span class="whitespace-nowrap">Dr. To:</span>
+                            <span class="ml-2">{{ voucherForm.permanentSecretaryTitle }}</span>
                         </p>
                     </div>
 
                     <!-- Right Side: Station, Month, PV No -->
                     <div class="flex-1 rounded-lg border border-black p-3">
                         <div class="mb-3 flex items-center justify-between">
-                            <span class="font-medium">Department No:</span>
-                            <!-- <input
-                                type="text"
-                                :value="voucherForm.departmentNo"
-                                class="input-line w-16 border-b border-gray-400 text-center"
-                                placeholder="___"
-                                readonly
-                            /> -->
-                            <span class="input-line w-16 border-b border-gray-400 text-center">{{
-                                voucherForm.departmentNo
-                            }}
+                            <span class="font-medium whitespace-nowrap">Department No:</span>
+                            <span class="input-line w-16 border-b border-gray-400 text-center">
+                                {{ voucherForm.departmentNo || '___' }}
                             </span>
                         </div>
-                        <div
-                            class="mb-2 grid grid-cols-4 gap-2 border-t border-black pt-2"
-                        >
-                            <span class="col-span-1 text-xs font-bold"
-                                >STATION</span
-                            >
-                            <span class="col-span-1 text-xs font-bold"
-                                >MONTH</span
-                            >
-                            <span class="col-span-2 text-xs font-bold"
-                                >P.V No.</span
-                            >
+                        <div class="mb-2 grid grid-cols-4 gap-2 border-t border-black pt-2">
+                            <span class="col-span-1 text-xs font-bold text-center">STATION</span>
+                            <span class="col-span-1 text-xs font-bold text-center">MONTH</span>
+                            <span class="col-span-2 text-xs font-bold text-center">P.V No.</span>
                         </div>
                         <div class="grid grid-cols-4 gap-2">
-                            <!-- <input
-                                type="text"
-                                :value="voucherForm.station"
-                                class="input-line col-span-1 border-b border-gray-400 text-center"
-                                readonly
-                            /> -->
-                            <span class="input-line col-span-1 border-b border-gray-400 text-left text-xs">{{
-                                voucherForm.station
-                            }}
+                            <span class="input-line col-span-1 border-b border-gray-400 text-center text-xs">
+                                {{ voucherForm.station || '___' }}
                             </span>
-                            <!-- <input
-                                type="text"
-                                :value="voucherForm.month"
-                                class="input-line col-span-2 border-b border-gray-400 text-center"
-                                readonly
-                            /> -->
-                            <span class="input-line col-span-1 border-b border-gray-400 text-left">{{
-                                voucherForm.month
-                            }} </span>
-                            <!-- <input
-                                type="text"
-                                :value="voucherForm.pvNumber"
-                                class="input-line col-span-1 border-b border-gray-400 text-center font-mono"
-                                placeholder="____"
-                                readonly
-                            /> -->
-                            <span class="input-line col-span-2 border-b border-gray-400 text-left font-mono">{{
-                                voucherForm.pvNumber
-                            }}</span>
+                            <span class="input-line col-span-1 border-b border-gray-400 text-center">
+                                {{ voucherForm.month || '___' }}
+                            </span>
+                            <span class="input-line col-span-2 border-b border-gray-400 text-center font-mono">
+                                {{ voucherForm.pvNumber || '____' }}
+                            </span>
                         </div>
                     </div>
                 </section>
@@ -577,7 +544,7 @@ const formatDate = (dateString) => {
                                     Detailed Description of Service or Article
                                 </th>
                                 <th class="w-1/12 border border-black p-2">
-                                    Qty
+                                    
                                 </th>
                                 <th class="w-1/12 border border-black p-2">
                                     Rate
@@ -640,9 +607,9 @@ const formatDate = (dateString) => {
                                         readonly
                                     /> -->
 
-                                    <span class="w-full text-center ">{{ item?.quantity || '' }}</span>
+                                    <!-- <span class="w-full text-center ">{{ item?.quantity || '' }}</span> -->
                                 </td>
-                                <td class="border border-black p-2 text-xs">
+                                <td class="border border-black p-2 text-xs text-center">
                                     <!-- <input
                                         type="text"
                                         :value="item.rate"
@@ -650,7 +617,8 @@ const formatDate = (dateString) => {
                                         readonly
                                     /> -->
 
-                                    <span class="w-full text-right ">{{ item?.rate || '' }}</span>
+                                    <!-- <span class="w-full text-right ">{{ item?.rate || '' }}</span> -->
+                                     <span class="w-full text-center ">{{ item?.quantity || '' }}</span>
                                 </td>
                                 <td
                                     class="border border-black p-2 text-right text-xs"
@@ -738,25 +706,43 @@ const formatDate = (dateString) => {
                     <!-- Certification Text -->
                     <div class="leading-relaxed">
                         <p class="mb-2 font-medium">
-                            *CERTIFY THAT the above account is correct, and was
+                            I CERTIFY THAT the above account is correct, and was
                             incurred under the authority quoted, and that the
                             service <strong>has</strong> been duly performed,
                             and that the rate/price charge is/are according to
-                            regulation/contract
-                        </p>
-                        <p class="mb-2 font-medium">
-                            Fair and reasonable and that the amount of:
-                            <strong>{{ convertToWords(totalAmount) }}</strong>
-                        </p>
-                        <p class="font-medium">
-                            Can be paid under the sub-head quoted
+                            regulation/contract fair and reasonable and that the amount of
+                            <strong>{{ convertToWords(totalAmount) }}</strong> can be paid under the sub-head quoted.
                         </p>
                     </div>
 
-                    <!-- Place, Date and First Signature -->
+                    <div class="mt-4">
+                        <p class="mb-2 font-medium">
+                            <!-- Your second div content here -->
+                        </p>
+                    </div>
+
+                    <!-- Place, First Signature -->
                     <div class="mt-2 flex items-start justify-between gap-8">
                         <div>
-                            <p class="mb-2">Place: {{ voucherForm.place }}</p>
+                            <p>Place: <span class="mb-2 input-line mx-2 inline-block w-48 border-b border-gray-400">{{ voucherForm.place }}</span></p>
+                            
+                        </div>
+                        <div class="text-right">
+                            <p class="mb-2 input-line mx-2 inline-block border-b border-gray-400">
+                                Signature of Officer Controlling Expenditure
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <p class="mb-2 font-medium">
+                            <!-- Your second div content here -->
+                        </p>
+                    </div>
+
+                    <!-- Date and Rank -->
+                    <div class="mt-2 flex items-start justify-between gap-8">
+                        <div>
                             <p>
                                 Date:
                                 <span
@@ -765,65 +751,62 @@ const formatDate = (dateString) => {
                                 >
                             </p>
                         </div>
-                        <div class="text-right">
-                            <p class="mb-1">
-                                Signature of Officer controlling Expenditure
-                            </p>
-                            <div
-                                class="mb-1 inline-block w-4/5 border-b border-black"
-                            >
-                                .....................................................................
-                            </div>
-                            <p class="text-sm">
-                                Rank......................................................................
+                        <div>
+                            <p>
+                                Rank: <span class="input-line ml-2 inline-block w-48 border-b border-gray-400" ></span>
                             </p>
                         </div>
                     </div>
 
                     <!-- Received Section -->
-                    <div class="mt-4 border-t border-black pt-6">
+                    <div class="mt-2 pt-6">
                         <p class="mb-4">
                             RECEIVED this
                             <span
-                                class="input-line mx-2 inline-block w-40 border-b border-gray-400"
-                                >............................</span
+                                class="input-line mx-2 inline-block w-48 border-b border-gray-400"
+                                ></span
                             >
-                            date of
+                            day of
                             <span
-                                class="input-line mx-2 inline-block w-24 border-b border-gray-400"
-                                >.............</span
+                                class="input-line mx-2 inline-block w-48 border-b border-gray-400"
+                                ></span
                             >
                             20
                             <span
-                                class="input-line mx-2 inline-block w-24 border-b border-gray-400"
-                                >.............</span
+                                class="input-line mx-2 inline-block w-48 border-b border-gray-400"
+                                ></span
                             >
                             in payment of the above
                         </p>
 
-                        <div class="flex items-start justify-between gap-8">
+                        <div class="mt-2 pt-6">
                             <div>
                                 <p class="mb-2">
                                     Account the sum of
                                     <span
-                                        class="input-line ml-2 inline-block w-48 border-b border-gray-400"
-                                        >........................................................</span
+                                        class="input-line ml-2 inline-block w-full border-b border-gray-400"
+                                        ></span
                                     >
                                 </p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start justify-between gap-8">
+                            <div>
                                 <p>
                                     Witness to mark
                                     <span
-                                        class="input-line ml-2 inline-block w-48 border-b border-gray-400"
-                                        >........................................................</span
+                                        class="input-line ml-2 inline-block w-full border-b border-gray-400"
+                                        ></span
                                     >
                                 </p>
                             </div>
                             <div class="text-right">
                                 <p class="mb-1">Signature of Receiver</p>
                                 <div
-                                    class="inline-block w-4/5 border-b border-black"
+                                    class="input-line ml-2 inline-block w-full border-b border-black"
                                 >
-                                    .....................................................................
+                                    
                                 </div>
                             </div>
                         </div>
@@ -831,8 +814,7 @@ const formatDate = (dateString) => {
 
                     <!-- Footer Note -->
                     <p class="pt-4 text-center italic">
-                        *The Certificate must be made to apply to the
-                        circumstance of the payment.
+                        *The Certificate must be made to apply to the circumstance of the payment.
                     </p>
                 </section>
             </div>

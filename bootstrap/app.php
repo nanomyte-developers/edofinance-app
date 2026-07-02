@@ -1,6 +1,8 @@
 <?php
 
 use App\Console\Commands\ImportBudgetProgrammeCodes;
+use App\Http\Middleware\CheckDFAPermission;
+use App\Http\Middleware\CheckUserSignature;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
@@ -28,6 +30,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+            'signature.check' => CheckUserSignature::class,
+            'dfa.permission' => CheckDFAPermission::class,
             // 'admin' => \App\Http\Middleware\AdminMiddleware::class,
             // 'customer' => \App\Http\Middleware\CustomerMiddleware::class,
             // 'user_role' => \App\Http\Middleware\UserRoleMiddleware::class,

@@ -26,6 +26,459 @@ class AccountantGeneralController extends Controller
         $this->activityLogger = $activityLogger;
     }
 
+    // /**
+    //  * Display list of vouchers for Accountant General review
+    //  * Only Capital, Recurrent, and Gratuity vouchers go to AG
+    //  */
+    // public function index(Request $request)
+    // {
+    //     try {
+    //         $perPage = $request->input('per_page', 15);
+    //         $search = $request->input('search', '');
+    //         $voucherType = $request->input('voucher_type', '');
+    //         $status = $request->input('status', '');
+    //         $paymentStatus = $request->input('payment_status', '');
+    //         $dateFrom = $request->input('date_from', '');
+    //         $dateTo = $request->input('date_to', '');
+    //         $tab = $request->input('tab', 'all');
+
+    //         $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals'])
+    //             ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //             ->orderBy('created_at', 'desc');
+
+    //         // Tab filtering
+    //         if ($tab === 'all') {
+    //             // Show all vouchers that EC sees (forwarded from FA) - only AG types
+    //             $query->where('status', 'forwarded')
+    //                 ->where('is_final_accounts', 1)
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
+    //         } elseif ($tab === 'pending') {
+    //             // Pending AG review (EC approved) - only AG types
+    //             $query->where('status', 'ec_approved')
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
+    //         } elseif ($tab === 'liability') {
+    //             // Liability vouchers (approved by FA today) - only AG types
+    //             $query->where('status', 'ec_approved')
+    //                 ->whereDate('final_approved_at', today())
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
+    //         } elseif ($tab === 'approved') {
+    //             // AG approved today - only AG types
+    //             $query->where('status', 'ag_approved')
+    //                 ->whereDate('ag_approved_at', today())
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
+    //         }
+
+    //         // Apply search filter
+    //         if ($search) {
+    //             $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+    //             foreach ($words as $word) {
+    //                 $query->where(function ($q) use ($word) {
+    //                     $q->where('voucher_number', 'like', "%{$word}%")
+    //                         ->orWhere('narration', 'like', "%{$word}%")
+    //                         ->orWhere('payee_name', 'like', "%{$word}%")
+    //                         ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+    //                             $mdaQuery->where('name', 'like', "%{$word}%");
+    //                         });
+    //                 });
+    //             }
+    //         }
+
+    //         // Apply voucher type filter (if specific type selected)
+    //         if ($voucherType) {
+    //             $query->where('voucher_type', $voucherType);
+    //         }
+
+    //         // Apply status filter
+    //         if ($status) {
+    //             $query->where('status', $status);
+    //         }
+
+    //         // Apply payment status filter
+    //         if ($paymentStatus) {
+    //             if ($paymentStatus === 'paid') {
+    //                 $query->where('status', 'closed')->whereNotNull('mas_approved_at');
+    //             } elseif ($paymentStatus === 'awaiting_mas') {
+    //                 $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
+    //             } elseif ($paymentStatus === 'awaiting_ag') {
+    //                 $query->where('status', 'ec_approved')->whereNull('ag_approved_at');
+    //             }
+    //         }
+
+    //         // Apply date range filter
+    //         if ($dateFrom) {
+    //             $query->whereDate('voucher_date', '>=', $dateFrom);
+    //         }
+    //         if ($dateTo) {
+    //             $query->whereDate('voucher_date', '<=', $dateTo);
+    //         }
+
+    //         $vouchers = $query->paginate($perPage);
+
+    //         $transformedVouchers = $vouchers->through(function ($voucher) {
+    //             // Get approval records
+    //             $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+    //             $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+    //             $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
+    //             $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+
+    //             // Determine payment status
+    //             $paymentStatus = 'unknown';
+    //             if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
+    //                 $paymentStatus = 'paid';
+    //             } elseif ($voucher->status === 'ag_approved') {
+    //                 $paymentStatus = 'awaiting_mas';
+    //             } elseif ($voucher->status === 'ec_approved') {
+    //                 $paymentStatus = 'awaiting_ag';
+    //             }
+
+    //             return [
+    //                 'id' => $voucher->id,
+    //                 'voucher_number' => $voucher->voucher_number,
+    //                 'voucher_date' => $voucher->voucher_date?->toDateString(),
+    //                 'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(),
+    //                 // 'final_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+    //                 'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+    //                 'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+    //                 'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+    //                 'narration' => $voucher->narration,
+    //                 'total_amount' => (float) $voucher->total_amount,
+    //                 'payee_name' => $voucher->payee_name,
+    //                 'status' => $voucher->status,
+    //                 'voucher_type' => $voucher->voucher_type,
+    //                 'payment_status' => $paymentStatus,
+    //                 'bank_activity' => $voucher->bankActivity ? [
+    //                     'id' => $voucher->bankActivity->id,
+    //                     'bank_name' => $voucher->bankActivity->bank_name,
+    //                     'account_number' => $voucher->bankActivity->account_number,
+    //                     'tag' => $voucher->bankActivity->tag,
+    //                     'title' => $voucher->bankActivity->title,
+    //                 ] : null,
+    //                 'mda' => $voucher->mda ? [
+    //                     'id' => $voucher->mda->id,
+    //                     'name' => $voucher->mda->name,
+    //                     'code' => $voucher->mda->code,
+    //                 ] : null,
+    //                 'items' => $voucher->items->map(function ($item) {
+    //                     return [
+    //                         'id' => $item->id,
+    //                         'description' => $item->description,
+    //                         'quantity' => (float) $item->quantity,
+    //                         'unit_price' => (float) $item->unit_price,
+    //                         'sub_total' => (float) $item->sub_total,
+    //                         'programme_code' => $item->programme_code,
+    //                         'programme_name' => $item->programme_name,
+    //                     ];
+    //                 }),
+    //             ];
+    //         });
+
+    //         // Get statistics - only for AG voucher types
+    //         $stats = [
+    //             'pending_ec_count' => Voucher::where('status', 'forwarded')
+    //                 ->where('is_final_accounts', 1)
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->count(),
+    //             'pending_ag_count' => Voucher::where('status', 'ec_approved')
+    //                 ->whereNull('ag_approved_at')
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->count(),
+    //             'approved_today' => Voucher::where('status', 'ag_approved')
+    //                 ->whereDate('ag_approved_at', today())
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->count(),
+    //             // 'rejected_today' => Voucher::where('status', 'sent_back')
+    //             //     // ->whereDate('rejected_at', today())
+    //             //     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //             //     ->whereHas('approvals', function ($q) {
+    //             //         $q->where('approval_role', VoucherApproval::ROLE_AG)
+    //             //             ->where('action', VoucherApproval::ACTION_DECLINED);
+    //             //     })
+    //             //     ->count(),
+    //             'rejected_today' => Voucher::where('status', 'ec_review') // Changed from 'sent_back'
+    //                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                     ->whereHas('approvals', function ($q) {
+    //                         $q->where('approval_role', VoucherApproval::ROLE_AG)
+    //                             ->where('action', VoucherApproval::ACTION_DECLINED)
+    //                             ->whereDate('action_at', today()); // Only count rejections from today
+    //                     })
+    //                     ->count(),
+    //             'total_processed' => Voucher::whereIn('status', ['ag_approved', 'ec_review'])
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->count(),
+    //             'total_amount_pending' => (float) Voucher::where('status', 'ec_approved')
+    //                 ->whereNull('ag_approved_at')
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->sum('total_amount'),
+    //             'total_amount_approved' => (float) Voucher::where('status', 'ag_approved')
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->sum('total_amount'),
+    //             'liability_count' => Voucher::where('status', 'ec_approved')
+    //                 ->whereDate('final_approved_at', today())
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->count(),
+    //         ];
+
+    //         return Inertia::render('admin/accountantGeneral/index', [
+    //             'vouchers' => [
+    //                 'data' => $transformedVouchers,
+    //                 'total' => $vouchers->total(),
+    //                 'per_page' => $vouchers->perPage(),
+    //                 'current_page' => $vouchers->currentPage(),
+    //                 'from' => $vouchers->firstItem(),
+    //                 'to' => $vouchers->lastItem(),
+    //             ],
+    //             'stats' => $stats,
+    //         ]);
+
+    //     } catch (\Exception $e) {
+    //         Log::error('Accountant General Index Error: ' . $e->getMessage());
+    //         return Inertia::render('admin/accountantGeneral/index', [
+    //             'vouchers' => [
+    //                 'data' => [],
+    //                 'total' => 0,
+    //                 'per_page' => 15,
+    //                 'current_page' => 1,
+    //                 'from' => 0,
+    //                 'to' => 0,
+    //             ],
+    //             'stats' => [
+    //                 'pending_ec_count' => 0,
+    //                 'pending_ag_count' => 0,
+    //                 'approved_today' => 0,
+    //                 'rejected_today' => 0,
+    //                 'total_processed' => 0,
+    //                 'total_amount_pending' => 0,
+    //                 'total_amount_approved' => 0,
+    //                 'liability_count' => 0,
+    //             ],
+    //         ]);
+    //     }
+    // }
+
+    // /**
+    //  * Search for vouchers (API endpoint for AJAX calls)
+    //  */
+    // public function search(Request $request)
+    // {
+    //     try {
+    //         $perPage = (int) $request->input('per_page', 15);
+    //         $page = (int) $request->input('page', 1);
+    //         $search = $request->input('search', '');
+    //         $voucherType = $request->input('voucher_type', '');
+    //         $status = $request->input('status', '');
+    //         $paymentStatus = $request->input('payment_status', '');
+    //         $dateFrom = $request->input('date_from', '');
+    //         $dateTo = $request->input('date_to', '');
+    //         $tab = $request->input('tab', 'all');
+
+    //         $query = Voucher::with(['mda', 'bankActivity', 'items', 'creator', 'approvals'])
+    //             ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //             ->orderBy('created_at', 'desc');
+
+    //         // Tab filtering
+    //         if ($tab === 'all') {
+    //             $query->where('status', 'forwarded')
+    //                 ->where('is_final_accounts', 1)
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
+    //         } elseif ($tab === 'pending') {
+    //             $query->where('status', 'ec_approved')
+    //                 ->whereNull('ag_approved_at')
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
+    //         } elseif ($tab === 'liability') {
+    //             $query->where('status', 'ec_approved')
+    //                 ->whereDate('final_approved_at', today())
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
+    //         } elseif ($tab === 'approved') {
+    //             $query->where('status', 'ag_approved')
+    //                 ->whereDate('ag_approved_at', today())
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
+    //         }
+
+    //         // Apply search filter
+    //         if ($search) {
+    //             $words = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY);
+    //             foreach ($words as $word) {
+    //                 $query->where(function ($q) use ($word) {
+    //                     $q->where('voucher_number', 'like', "%{$word}%")
+    //                         ->orWhere('narration', 'like', "%{$word}%")
+    //                         ->orWhere('payee_name', 'like', "%{$word}%")
+    //                         ->orWhereHas('mda', function ($mdaQuery) use ($word) {
+    //                             $mdaQuery->where('name', 'like', "%{$word}%");
+    //                         });
+    //                 });
+    //             }
+    //         }
+
+    //         // Apply voucher type filter
+    //         if ($voucherType) {
+    //             $query->where('voucher_type', $voucherType);
+    //         }
+
+    //         // Apply status filter
+    //         if ($status) {
+    //             $query->where('status', $status);
+    //         }
+
+    //         // Apply payment status filter
+    //         if ($paymentStatus) {
+    //             if ($paymentStatus === 'paid') {
+    //                 $query->where('status', 'closed')->whereNotNull('mas_approved_at');
+    //             } elseif ($paymentStatus === 'awaiting_mas') {
+    //                 $query->where('status', 'ag_approved')->whereNull('mas_approved_at');
+    //             } elseif ($paymentStatus === 'awaiting_ag') {
+    //                 $query->where('status', 'ec_approved')->whereNull('ag_approved_at');
+    //             }
+    //         }
+
+    //         // Apply date range filter
+    //         if ($dateFrom) {
+    //             $query->whereDate('voucher_date', '>=', $dateFrom);
+    //         }
+    //         if ($dateTo) {
+    //             $query->whereDate('voucher_date', '<=', $dateTo);
+    //         }
+
+    //         $vouchers = $query->paginate($perPage, ['*'], 'page', $page);
+
+    //         $transformedVouchers = $vouchers->map(function ($voucher) {
+    //             // Get approval records
+    //             $faApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_FA)->first();
+    //             $ecApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_EC)->first();
+    //             $agApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_AG)->first();
+    //             $masApproval = $voucher->approvals->where('approval_role', VoucherApproval::ROLE_MAS)->first();
+
+    //             // Determine payment status
+    //             $paymentStatus = 'unknown';
+    //             if ($voucher->status === 'closed' && $voucher->mas_approved_at) {
+    //                 $paymentStatus = 'paid';
+    //             } elseif ($voucher->status === 'ag_approved') {
+    //                 $paymentStatus = 'awaiting_mas';
+    //             } elseif ($voucher->status === 'ec_approved') {
+    //                 $paymentStatus = 'awaiting_ag';
+    //             }
+
+    //             return [
+    //                 'id' => $voucher->id,
+    //                 'voucher_number' => $voucher->voucher_number,
+    //                 'voucher_date' => $voucher->voucher_date?->toDateString(),
+    //                 'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(),
+    //                 'final_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
+    //                 'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
+    //                 'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
+    //                 'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
+    //                 'narration' => $voucher->narration,
+    //                 'total_amount' => (float) $voucher->total_amount,
+    //                 'payee_name' => $voucher->payee_name,
+    //                 'status' => $voucher->status,
+    //                 'voucher_type' => $voucher->voucher_type,
+    //                 'payment_status' => $paymentStatus,
+    //                 'bank_activity' => $voucher->bankActivity ? [
+    //                     'id' => $voucher->bankActivity->id,
+    //                     'bank_name' => $voucher->bankActivity->bank_name,
+    //                     'account_number' => $voucher->bankActivity->account_number,
+    //                     'tag' => $voucher->bankActivity->tag,
+    //                     'title' => $voucher->bankActivity->title,
+    //                 ] : null,
+    //                 'mda' => $voucher->mda ? [
+    //                     'id' => $voucher->mda->id,
+    //                     'name' => $voucher->mda->name,
+    //                     'code' => $voucher->mda->code,
+    //                 ] : null,
+    //                 'items' => $voucher->items->map(function ($item) {
+    //                     return [
+    //                         'id' => $item->id,
+    //                         'description' => $item->description,
+    //                         'quantity' => (float) $item->quantity,
+    //                         'unit_price' => (float) $item->unit_price,
+    //                         'sub_total' => (float) $item->sub_total,
+    //                     ];
+    //                 }),
+    //             ];
+    //         })->values()->toArray();
+
+    //         // Get statistics - only for AG voucher types
+    //         $stats = [
+    //             'pending_ec_count' => Voucher::where('status', 'forwarded')
+    //                 ->where('is_final_accounts', 1)
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->count(),
+    //             'pending_ag_count' => Voucher::where('status', 'ec_approved')
+    //                 ->whereNull('ag_approved_at')
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->count(),
+    //             'approved_today' => Voucher::where('status', 'ag_approved')
+    //                 ->whereDate('ag_approved_at', today())
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->count(),
+    //             'rejected_today' => Voucher::where('status', 'ec_review')
+    //                 // ->whereDate('rejected_at', today())
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->whereHas('approvals', function ($q) {
+    //                     $q->where('approval_role', VoucherApproval::ROLE_AG)
+    //                         ->where('action', VoucherApproval::ACTION_DECLINED);
+    //                 })
+    //                 ->count(),
+    //             'total_processed' => Voucher::whereIn('status', ['ag_approved', 'ec_review'])
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->count(),
+    //             'total_amount_pending' => (float) Voucher::where('status', 'ec_approved')
+    //                 ->whereNull('ag_approved_at')
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->sum('total_amount'),
+    //             'total_amount_approved' => (float) Voucher::where('status', 'ag_approved')
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->sum('total_amount'),
+    //             'liability_count' => Voucher::where('status', 'ec_approved')
+    //                 ->whereDate('final_approved_at', today())
+    //                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
+    //                 ->count(),
+    //         ];
+
+    //         return response()->json([
+    //             'success' => true,
+    //             'vouchers' => [
+    //                 'data' => $transformedVouchers,
+    //                 'total' => $vouchers->total(),
+    //                 'per_page' => $vouchers->perPage(),
+    //                 'current_page' => $vouchers->currentPage(),
+    //                 'last_page' => $vouchers->lastPage(),
+    //                 'from' => $vouchers->firstItem(),
+    //                 'to' => $vouchers->lastItem(),
+    //             ],
+    //             'stats' => $stats,
+    //         ]);
+
+    //     } catch (\Exception $e) {
+    //         Log::error('Accountant General Search Error: ' . $e->getMessage(), [
+    //             'trace' => $e->getTraceAsString()
+    //         ]);
+
+    //         return response()->json([
+    //             'success' => false,
+    //             'error' => $e->getMessage(),
+    //             'vouchers' => [
+    //                 'data' => [],
+    //                 'total' => 0,
+    //                 'per_page' => 15,
+    //                 'current_page' => 1,
+    //                 'last_page' => 1,
+    //                 'from' => 0,
+    //                 'to' => 0,
+    //             ],
+    //             'stats' => [
+    //                 'pending_ec_count' => 0,
+    //                 'pending_ag_count' => 0,
+    //                 'approved_today' => 0,
+    //                 'rejected_today' => 0,
+    //                 'total_processed' => 0,
+    //                 'total_amount_pending' => 0,
+    //                 'total_amount_approved' => 0,
+    //                 'liability_count' => 0,
+    //             ],
+    //         ]);
+    //     }
+    // }
+
     /**
      * Display list of vouchers for Accountant General review
      * Only Capital, Recurrent, and Gratuity vouchers go to AG
@@ -42,27 +495,23 @@ class AccountantGeneralController extends Controller
             $dateTo = $request->input('date_to', '');
             $tab = $request->input('tab', 'all');
 
-            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals'])
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'items.programmeCode', 'creator', 'approvals', 'approvals.user'])
                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                 ->orderBy('created_at', 'desc');
 
             // Tab filtering
             if ($tab === 'all') {
-                // Show all vouchers that EC sees (forwarded from FA) - only AG types
                 $query->where('status', 'forwarded')
                     ->where('is_final_accounts', 1)
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
             } elseif ($tab === 'pending') {
-                // Pending AG review (EC approved) - only AG types
                 $query->where('status', 'ec_approved')
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
             } elseif ($tab === 'liability') {
-                // Liability vouchers (approved by FA today) - only AG types
                 $query->where('status', 'ec_approved')
                     ->whereDate('final_approved_at', today())
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
             } elseif ($tab === 'approved') {
-                // AG approved today - only AG types
                 $query->where('status', 'ag_approved')
                     ->whereDate('ag_approved_at', today())
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES);
@@ -131,12 +580,30 @@ class AccountantGeneralController extends Controller
                     $paymentStatus = 'awaiting_ag';
                 }
 
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
+
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
                     'voucher_date' => $voucher->voucher_date?->toDateString(),
                     'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(),
-                    // 'final_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
                     'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
                     'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
                     'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
@@ -169,6 +636,10 @@ class AccountantGeneralController extends Controller
                             'programme_name' => $item->programme_name,
                         ];
                     }),
+                    // =============================================
+                    // ADD APPROVALS TO THE RETURN ARRAY
+                    // =============================================
+                    'approvals' => $approvals,
                 ];
             });
 
@@ -186,15 +657,15 @@ class AccountantGeneralController extends Controller
                     ->whereDate('ag_approved_at', today())
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                     ->count(),
-                'rejected_today' => Voucher::where('status', 'sent_back')
-                    // ->whereDate('rejected_at', today())
+                'rejected_today' => Voucher::where('status', 'ec_review')
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                     ->whereHas('approvals', function ($q) {
                         $q->where('approval_role', VoucherApproval::ROLE_AG)
-                            ->where('action', VoucherApproval::ACTION_DECLINED);
+                            ->where('action', VoucherApproval::ACTION_DECLINED)
+                            ->whereDate('action_at', today());
                     })
                     ->count(),
-                'total_processed' => Voucher::whereIn('status', ['ag_approved', 'ag_rejected'])
+                'total_processed' => Voucher::whereIn('status', ['ag_approved', 'ec_review'])
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                     ->count(),
                 'total_amount_pending' => (float) Voucher::where('status', 'ec_approved')
@@ -263,7 +734,7 @@ class AccountantGeneralController extends Controller
             $dateTo = $request->input('date_to', '');
             $tab = $request->input('tab', 'all');
 
-            $query = Voucher::with(['mda', 'bankActivity', 'items', 'creator', 'approvals'])
+            $query = Voucher::with(['mda', 'bankActivity', 'items', 'creator', 'approvals', 'approvals.user'])
                 ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                 ->orderBy('created_at', 'desc');
 
@@ -349,12 +820,30 @@ class AccountantGeneralController extends Controller
                     $paymentStatus = 'awaiting_ag';
                 }
 
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
+
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
                     'voucher_date' => $voucher->voucher_date?->toDateString(),
                     'final_approved_at' => $voucher->final_approved_at?->toDateTimeString(),
-                    'final_approved_at' => $faApproval?->approved_at?->toDateTimeString(),
                     'ec_approved_at' => $ecApproval?->approved_at?->toDateTimeString(),
                     'ag_approved_at' => $agApproval?->approved_at?->toDateTimeString(),
                     'mas_approved_at' => $masApproval?->approved_at?->toDateTimeString(),
@@ -385,6 +874,10 @@ class AccountantGeneralController extends Controller
                             'sub_total' => (float) $item->sub_total,
                         ];
                     }),
+                    // =============================================
+                    // ADD APPROVALS TO THE RETURN ARRAY
+                    // =============================================
+                    'approvals' => $approvals,
                 ];
             })->values()->toArray();
 
@@ -402,15 +895,15 @@ class AccountantGeneralController extends Controller
                     ->whereDate('ag_approved_at', today())
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                     ->count(),
-                'rejected_today' => Voucher::where('status', 'sent_back')
-                    // ->whereDate('rejected_at', today())
+                'rejected_today' => Voucher::where('status', 'ec_review')
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                     ->whereHas('approvals', function ($q) {
                         $q->where('approval_role', VoucherApproval::ROLE_AG)
-                            ->where('action', VoucherApproval::ACTION_DECLINED);
+                            ->where('action', VoucherApproval::ACTION_DECLINED)
+                            ->whereDate('action_at', today());
                     })
                     ->count(),
-                'total_processed' => Voucher::whereIn('status', ['ag_approved', 'ag_rejected'])
+                'total_processed' => Voucher::whereIn('status', ['ag_approved', 'ec_review'])
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                     ->count(),
                 'total_amount_pending' => (float) Voucher::where('status', 'ec_approved')
@@ -626,6 +1119,9 @@ class AccountantGeneralController extends Controller
     /**
      * Reject voucher from Accountant General (send back to EC)
      */
+    /**
+     * Reject voucher from Accountant General (send back to EC)
+     */
     public function reject(Voucher $voucher, Request $request)
     {
         Log::info('Accountant General Rejection Request:', [
@@ -675,21 +1171,26 @@ class AccountantGeneralController extends Controller
                 'status' => VoucherApproval::STATUS_REJECTED,
                 'comment' => $reason,
                 'action_at' => now(),
-                // 'rejected_at' => now(),
+                'rejected_at' => now(),
             ]);
 
-            // Update voucher status
+            // Update voucher status - RETURN TO EC FOR REVIEW
             $voucher->update([
-                'status' => 'sent_back',
-                // 'rejection_reason' => $reason,
-                // 'rejected_by' => auth()->id(),
-                // 'rejected_at' => now(),
+                'status' => 'ec_review', // Changed from 'sent_back' to 'ec_review'
+                'rejection_reason' => $reason,
+                'rejected_by' => auth()->id(),
+                'rejected_at' => now(),
+                // Clear approval fields so it can go through the flow again
+                'ag_approved_by' => null,
+                'ag_approved_at' => null,
+                'ec_approved_by' => null,
+                'ec_approved_at' => null,
             ]);
 
             // Log activity
             if ($this->activityLogger) {
                 $this->activityLogger->log(
-                    "Accountant General rejected voucher {$voucher->voucher_number}",
+                    "Accountant General rejected voucher {$voucher->voucher_number} and returned to EC for review",
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
@@ -697,6 +1198,7 @@ class AccountantGeneralController extends Controller
                         'reason' => $reason,
                         'rejection_step' => $rejectionStep,
                         'rejected_by' => auth()->id(),
+                        'returned_to' => 'EC',
                     ],
                     'voucher'
                 );
@@ -704,14 +1206,15 @@ class AccountantGeneralController extends Controller
 
             DB::commit();
 
-            Log::info('Accountant General Rejection Successful:', [
+            Log::info('Accountant General Rejection Successful - Returned to EC:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
+                'new_status' => 'ec_review',
                 'reason' => $reason
             ]);
 
             return redirect()->route('accountant-general.index')
-                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Expenditure Control.");
+                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Expenditure Control for review.");
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -837,7 +1340,7 @@ class AccountantGeneralController extends Controller
                     ->whereDate('ag_approved_at', today())
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                     ->count(),
-                'rejected_today' => Voucher::where('status', 'sent_back')
+                'rejected_today' => Voucher::where('status', 'ec_review')
                     // ->whereDate('rejected_at', today())
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                     ->whereHas('approvals', function ($q) {
@@ -845,7 +1348,7 @@ class AccountantGeneralController extends Controller
                             ->where('action', VoucherApproval::ACTION_DECLINED);
                     })
                     ->count(),
-                'total_processed' => Voucher::whereIn('status', ['ag_approved', 'ag_rejected'])
+                'total_processed' => Voucher::whereIn('status', ['ag_approved', 'ec_review'])
                     ->whereIn('voucher_type', self::AG_VOUCHER_TYPES)
                     ->count(),
                 'total_amount_pending' => (float) Voucher::where('status', 'ec_approved')

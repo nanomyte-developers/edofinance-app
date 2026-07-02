@@ -72,10 +72,14 @@ Route::get('/user-activities', [UserActivitiesController::class, 'index'])->name
 
 Route::middleware(['auth', 'verified'])->group(function () {
     // Route::resource('users', UsersController::class);
-    Route::resource('users', UsersController::class)->except(['create', 'edit']);
+    
     Route::get('/users/{user}/permissions', [UsersController::class, 'permissions'])->name('users.permissions');
     Route::post('/users/{user}/roles', [UsersController::class, 'updateRoles'])->name('userz.roles.update');
     Route::post('/users/{user}/permissions', [UsersController::class, 'updatePermissions'])->name('userz.permissions.update');
+    // ✅ Add this route for updating signatory status
+    Route::put('/users/{user}/signatory', [UsersController::class, 'updateSignatoryStatus'])
+        ->name('users.update.signatory');
+    Route::resource('users', UsersController::class);
 
     // Roles and Roles Management Routes
     // Route::get('/listRoles', [RoleController::class, 'listRoles'])->name('listRoles')->middleware(['permission:role-list', 'verified']);
@@ -87,40 +91,124 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Route::resource('permissions', PermissionController::class)->middleware(['role_or_permission:Permissions|permission-create|permission-edit|permission-update|permission-delete', 'verified']);
     Route::resource('permissions', PermissionController::class)->middleware(['verified']);
 
-    // Route::get('roles', [UsersController::class, 'index'] )->name('users.index');
-    // Route::get('permissions', [UsersController::class, 'index'] )->name('users.index');
-
     // Voucher Management Routes
-    Route::resource('vouchers', VouchersController::class);
     Route::get('/vouchers/{voucher}/print', [VouchersController::class, 'print'])->name('vouchers.print');
     Route::get('vsearch', [VouchersController::class, 'search'])->name('vouchers.index2');
     Route::get('avsearch', [InternalAuditController::class, 'search'])->name('vouchers.audit.index');
     Route::get('dashboardStats', [ActivityLogController::class, 'dashboardStats'])->name('dashboardStats');
 
-    Route::get('schedules/next-number', [ScheduleController::class, 'getNextNumber'])->name('schedules.next-number');
-    Route::resource('schedules', ScheduleController::class);
-    Route::get('/schedules/{schedule}/print', [ScheduleController::class, 'print'])->name('schedules.print');
-    Route::get('sssearch', [ScheduleController::class, 'search'])->name('receipts.search.index');
+    // Route::get('schedules/next-number', [ScheduleController::class, 'getNextNumber'])->name('schedules.next-number');
+    // Route::resource('schedules', ScheduleController::class);
+    // Route::get('/schedules/{schedule}/print', [ScheduleController::class, 'print'])->name('schedules.print');
+    // Route::get('sssearch', [ScheduleController::class, 'search'])->name('receiptss.search.index');
+
+    // ==================== SCHEDULE ROUTES WITH EXPLICIT CONTROL ====================
+    Route::get('schedules/next-number', [ScheduleController::class, 'getNextNumber'])
+        ->name('schedules.next-number');
+
+    Route::get('/schedules/search', [ScheduleController::class, 'search'])->name('schedules.search');
+    // ✅ Export routes
+    Route::get('/schedules/export/excel', [ScheduleController::class, 'exportExcel'])->name('schedules.export.excel');
+    Route::get('/schedules/export/pdf', [ScheduleController::class, 'exportPdf'])->name('schedules.export.pdf');
+
+    Route::get('/schedules/{schedule}/items', [ScheduleController::class, 'getItems'])->name('schedules.items');
+    
+    // ✅ Create and Store routes - require signature and schedule.create permission
+    Route::get('schedules/create', [ScheduleController::class, 'create'])
+        ->middleware(['signature.check', 'can:schedule.create'])
+        ->name('schedules.create');
+    
+    Route::post('schedules', [ScheduleController::class, 'store'])
+        ->middleware(['signature.check', 'can:schedule.create'])
+        ->name('schedules.store');
+    
+    // ✅ Edit and Update routes - require signature and schedule.edit permission
+    Route::get('schedules/{schedule}/edit', [ScheduleController::class, 'edit'])
+        ->middleware(['signature.check', 'can:schedule.edit'])
+        ->name('schedules.edit');
+    
+    Route::put('schedules/{schedule}', [ScheduleController::class, 'update'])
+        ->middleware(['signature.check', 'can:schedule.edit'])
+        ->name('schedules.update');
+    
+    // ✅ Delete route - requires schedule.delete permission
+    Route::delete('schedules/{schedule}', [ScheduleController::class, 'destroy'])
+        ->middleware(['can:schedule.delete'])
+        ->name('schedules.destroy');
+
+    // ✅ Public routes - view and print (no strict middleware needed)
+    Route::get('schedules', [ScheduleController::class, 'index'])->name('schedules.index');
+    Route::get('schedules/{schedule}', [ScheduleController::class, 'show'])->name('schedules.show');
+    Route::get('schedules/{schedule}/print', [ScheduleController::class, 'print'])->name('schedules.print');
+    Route::get('sssearch', [ScheduleController::class, 'search'])->name('receiptss.search.index');
+    
+    
+    // ==================== END SCHEDULE ROUTES ====================
 
     Route::resource('receipts', ReceiptController::class);
 
+    // Route::prefix('vouchers')->name('vouchers.')->group(function () {
+    //     // ✅ SEARCH ROUTE - Same pattern as expenditure-control
+    //     Route::get('/', [VouchersController::class, 'index'])->name('index');
+    //     Route::get('/search', [VouchersController::class, 'search'])->name('search');
+        
+    //     // Retirement routes for vouchers (specific routes first)
+    //     Route::get('/{voucher}/retire', [RetirementController::class, 'create'])->name('retire.create');
+    //     Route::post('/{voucher}/retire', [RetirementController::class, 'store'])->name('retire.store');
+
+    //     // Approve retirement
+    //     Route::put('/{voucher}/approve', [VouchersController::class, 'approve'])->name('approve');
+    //     Route::put('/{voucher}/draft', [VouchersController::class, 'makeDraft'])->name('draft');
+
+    //     // Reject route
+    //     Route::post('/{voucher}/reject', [VouchersController::class, 'reject'])->name('reject');
+
+    //     // Print route
+    //     Route::get('/{voucher}/print', [VouchersController::class, 'print'])->name('print');
+
+    //     // ❌ RESOURCE ROUTE - MUST COME LAST
+    //     Route::resource('/', VouchersController::class)->parameters(['' => 'voucher']);
+    // });
+
+    // Voucher routes with DFA permission check
     Route::prefix('vouchers')->name('vouchers.')->group(function () {
-        // Retirement routes for vouchers (SPECIFIC ROUTES FIRST)
+        Route::get('/', [VouchersController::class, 'index'])->name('index');
+        Route::get('/search', [VouchersController::class, 'search'])->name('search');
+        
+        // Create routes with DFA permission middleware
+        Route::get('/create', [VouchersController::class, 'create'])
+            ->middleware(['dfa.permission'])
+            ->name('create');
+        
+        Route::post('/', [VouchersController::class, 'store'])
+            ->middleware(['dfa.permission'])
+            ->name('store');
+        
+        // Edit routes with DFA permission middleware
+        Route::get('/{voucher}/edit', [VouchersController::class, 'edit'])
+            ->middleware(['dfa.permission'])
+            ->name('edit');
+        
+        Route::put('/{voucher}', [VouchersController::class, 'update'])
+            ->middleware(['dfa.permission'])
+            ->name('update');
+        
+        // Retirement routes
         Route::get('/{voucher}/retire', [RetirementController::class, 'create'])->name('retire.create');
         Route::post('/{voucher}/retire', [RetirementController::class, 'store'])->name('retire.store');
 
         // Approve retirement
-        Route::put('/{voucher}/approve', [VouchersController::class, 'approve'])->name('vouchers.approve');
-        Route::put('/{voucher}/draft', [VouchersController::class, 'makeDraft'])->name('vouchers.draft');
+        Route::put('/{voucher}/approve', [VouchersController::class, 'approve'])->name('approve');
+        Route::put('/{voucher}/draft', [VouchersController::class, 'makeDraft'])->name('draft');
 
-        // ADD THE REJECT ROUTE HERE
-        Route::post('/{voucher}/reject', [VouchersController::class, 'reject'])->name('vouchers.reject');
+        // Reject route
+        Route::post('/{voucher}/reject', [VouchersController::class, 'reject'])->name('reject');
 
         // Print route
         Route::get('/{voucher}/print', [VouchersController::class, 'print'])->name('print');
 
-        // Generic resource route LAST
-        Route::resource('/', VouchersController::class)->parameters(['' => 'voucher']);
+        // Resource route - MUST COME LAST
+        Route::resource('/', VouchersController::class)->parameters(['' => 'voucher'])->except(['create', 'store', 'edit', 'update']);
     });
 
     Route::middleware(['auth', 'verified'])->group(function () {
@@ -181,8 +269,31 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/salary-vouchers/{voucher}/forward-inspectorate', [ExpenditureControlController::class, 'forwardToInspectorate'])->name('salary.forward');
         Route::get('/salary/search', [ExpenditureControlController::class, 'searchSalaryVouchers'])->name('salary.search');
         Route::get('/salary/stats', [ExpenditureControlController::class, 'salaryStats'])->name('salary.stats');
+
+        // Ledger routes
+        Route::get('/recurrent-ledger', [ExpenditureControlController::class, 'ledger'])->name('recurrent-ledger');
+        Route::get('/recurrent-ledger/search', [ExpenditureControlController::class, 'searchLedger'])->name('recurrent-ledger.search');
+        Route::get('/recurrent-ledger/export', [ExpenditureControlController::class, 'exportLedger'])->name('recurrent-ledger.export');
+
+        // Capital Ledger routes
+        Route::get('/capital-ledger', [ExpenditureControlController::class, 'capitalLedger'])->name('capital-ledger');
+        Route::get('/capital-ledger/search', [ExpenditureControlController::class, 'searchCapitalLedger'])->name('capital-ledger.search');
+        Route::get('/capital-ledger/export', [ExpenditureControlController::class, 'exportCapitalLedger'])->name('capital-ledger.export');
+
+        // Salary Ledger routes
+        Route::get('/salary-ledger', [ExpenditureControlController::class, 'salaryLedger'])->name('salary-ledger');
+        Route::get('/salary-ledger/search', [ExpenditureControlController::class, 'searchSalaryLedger'])->name('salary-ledger.search');
+        Route::get('/salary-ledger/export', [ExpenditureControlController::class, 'exportSalaryLedger'])->name('salary-ledger.export');
+
+        // Pension Ledger routes
+        Route::get('/pension-ledger', [ExpenditureControlController::class, 'pensionLedger'])->name('pension-ledger');
+        Route::get('/pension-ledger/search', [ExpenditureControlController::class, 'searchPensionLedger'])->name('pension-ledger.search');
+        Route::get('/pension-ledger/export', [ExpenditureControlController::class, 'exportPensionLedger'])->name('pension-ledger.export');
+
     });
 
+    // Approval route for expenditure index workflow history
+    Route::get('/vouchers/{voucher}/approvals', [ExpenditureControlController::class, 'getApprovals'])->name('vouchers.approvals');
 
     // ==================== ACCOUNTANT GENERAL ROUTES (Step 5) ====================
     Route::prefix('accountant-general')->name('accountant-general.')->middleware(['auth'])->group(function () {
@@ -193,6 +304,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/vouchers/{voucher}/approve', [AccountantGeneralController::class, 'approve'])->name('approve');
         Route::post('/vouchers/{voucher}/reject', [AccountantGeneralController::class, 'reject'])->name('reject');
     });
+
     Route::get('/accountant-general/bank-activities', [AccountantGeneralController::class, 'getBankActivities'])->name('accountant-general.bank-activities');
 
     // ==================== MANAGEMENT ACCOUNT SECTION ROUTES (Step 6 - Final) ====================
@@ -276,12 +388,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/vouchers/{voucher}/retirement-history', [RetirementController::class, 'history'])->name('vouchers.retirement-history');
     });
 
-    // // API endpoints (for AJAX calls)
-    // Route::prefix('api')->name('api.')->group(function () {
-    //     Route::get('/vouchers/{voucher}/retirement-status', [RetirementController::class, 'checkRetirementStatus'])->name('vouchers.retirement-status');
-    //     Route::get('/vouchers/{voucher}/retirement-history', [RetirementController::class, 'history'])->name('vouchers.retirement-history');
-    // });
-
     // Economic Codes routes
     Route::get('/economy-codes', [ScheduleController::class, 'getEconomyCodes']);
     Route::get('/economy-code-items', [ScheduleController::class, 'getAllEconomyCodeItems']);
@@ -289,18 +395,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/payeeList', [ScheduleController::class, 'getPayees'])->name('payeeList');
     Route::get('/bankActivityList', [VouchersController::class, 'getBankActivities'])->name('bankActivityList');
 
-    // Internal Audit Management Routes
-    // Route::resource('internal-audits', InternalAuditController::class);
-    // Route::post('/{voucher}/approve', [InternalAuditController::class, 'approve'])->name('approve');
-    // Route::post('/{voucher}/reject', [InternalAuditController::class, 'reject'])->name('reject');
-
-    // Route::resource('final-accounts', FinalAccountsController::class);
-
+    // Remittances
     Route::resource('remittances', RemittanceController::class);
     Route::get('/remittances/{remittance}/print', [RemittanceController::class, 'print'])->name('remittances.print');
-
-    // Route::resource('expenditure-control', ExpenditureControlController::class);
-    // Route::resource('accountant-general', AccountantGeneralController::class);
 
     // 
     Route::resource('mdas', MdaController::class);
@@ -333,8 +430,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 });
 
-
-
+// Dashboard statistics
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('activity-logs')->group(function () {
         Route::get('/', [ActivityLogController::class, 'index']);
@@ -357,8 +453,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     route::post('/reports/MDAtrialbalance', [ReportController::class, 'mdaTrialBalance'])->name('reports.mda.trialbalance.view');
     route::post('/reports/trialbalanceDetails', [ReportController::class, 'trialBalanceDetails'])->name('reports.trialbalance.details');
 
-
-
     // Reports routes
     Route::get('/reports/financial-report', [FinancialReportController::class, 'index'])->name('financial-report.index');
     Route::get('/reports/balance-sheet', [FinancialPositionController::class, 'index'])->name('finance.balance-sheet');
@@ -377,6 +471,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('reports.other-bank-of-the-treasury');
 });
 
+// Receipts
 Route::middleware(['auth', 'verified'])->group(function () {
     // This single line registers receipts.index, receipts.show, receipts.store, etc.
     Route::resource('receipts', ReceiptController::class);
@@ -547,7 +642,6 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/gl-accounts/{accountCode}', [JournalController::class, 'getGlAccount']);
         Route::get('/account-types', [JournalController::class, 'getAccountTypes']);
     });
-
 
     // New API routes for dropdowns
     Route::get('/api/mdas', [JournalController::class, 'getMdas'])->name('api.mdas');

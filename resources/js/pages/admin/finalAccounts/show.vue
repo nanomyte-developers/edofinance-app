@@ -19,7 +19,7 @@ import Timeline from 'primevue/timeline';
 import Toast from 'primevue/toast';
 import ProgressSpinner from 'primevue/progressspinner';
 import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import moment from 'moment';
 
 const toast = useToast();
@@ -41,6 +41,7 @@ const successMessage = ref('');
 const successTitle = ref('');
 const successDetails = ref(null);
 const isProcessing = ref(false);
+const loadingWorkflow = ref(false);
 
 // Props from Laravel controller
 const props = defineProps({
@@ -93,6 +94,10 @@ const getVoucherTypeSeverity = (type) => {
         standard: 'info',
         prepayment: 'warning',
         salary: 'success',
+        capital: 'info',
+        recurrent: 'info',
+        gratuity: 'warning',
+        pension: 'success',
     };
     return types[type?.toLowerCase()] || 'info';
 };
@@ -102,12 +107,21 @@ const getStatusSeverity = (status) => {
     const statuses = {
         draft: 'secondary',
         submitted: 'info',
+        fa_approved: 'success',
         audit_approved: 'success',
         approved: 'success',
         forwarded: 'warning',
         sent_back: 'danger',
         rejected: 'danger',
         closed: 'success',
+        ec_approved: 'info',
+        ag_approved: 'success',
+        mas_approved: 'success',
+        inspectorate_approved: 'success',
+        tco_approved: 'success',
+        ec_review: 'warning',
+        ag_rejected: 'danger',
+        mas_rejected: 'danger',
     };
     return statuses[status?.toLowerCase()] || 'info';
 };
@@ -117,21 +131,95 @@ const getStatusDisplayName = (status) => {
     const names = {
         draft: 'Draft',
         submitted: 'Submitted',
+        fa_approved: 'FA Approved',
         audit_approved: 'Audit Approved',
         approved: 'Approved',
         forwarded: 'Forwarded',
         sent_back: 'Sent Back',
         rejected: 'Rejected',
         closed: 'Closed',
+        ec_approved: 'EC Approved',
+        ag_approved: 'AG Approved',
+        mas_approved: 'MAS Approved',
+        inspectorate_approved: 'Inspectorate Approved',
+        tco_approved: 'TCO Approved',
+        ec_review: 'EC Review',
+        ag_rejected: 'AG Rejected',
+        mas_rejected: 'MAS Rejected',
     };
     return names[status?.toLowerCase()] || status || 'Unknown';
+};
+
+// Get action severity
+const getActionSeverity = (action) => {
+    const actionMap = {
+        'Approved': 'success',
+        'Declined': 'danger',
+        'Rejected': 'danger',
+        'Forwarded': 'info',
+        'Submitted': 'info',
+        'Created': 'info',
+        'Updated': 'warning',
+        'Saved': 'secondary',
+        'Sent Back': 'warning',
+    };
+    return actionMap[action] || 'info';
+};
+
+// Get action icon
+const getActionIcon = (action) => {
+    const iconMap = {
+        'Approved': 'pi-check-circle',
+        'Declined': 'pi-times-circle',
+        'Rejected': 'pi-times-circle',
+        'Forwarded': 'pi-send',
+        'Submitted': 'pi-upload',
+        'Created': 'pi-plus-circle',
+        'Updated': 'pi-pencil',
+        'Saved': 'pi-save',
+        'Sent Back': 'pi-undo',
+    };
+    return iconMap[action] || 'pi-circle';
+};
+
+// Get action color
+const getActionColor = (action) => {
+    const colorMap = {
+        'Approved': 'text-green-500 bg-green-100',
+        'Declined': 'text-red-500 bg-red-100',
+        'Rejected': 'text-red-500 bg-red-100',
+        'Forwarded': 'text-blue-500 bg-blue-100',
+        'Submitted': 'text-cyan-500 bg-cyan-100',
+        'Created': 'text-purple-500 bg-purple-100',
+        'Updated': 'text-orange-500 bg-orange-100',
+        'Saved': 'text-gray-500 bg-gray-100',
+        'Sent Back': 'text-yellow-500 bg-yellow-100',
+    };
+    return colorMap[action] || 'text-gray-500 bg-gray-100';
+};
+
+// Get action border color
+const getActionBorderColor = (action) => {
+    const colorMap = {
+        'Approved': 'border-green-500',
+        'Declined': 'border-red-500',
+        'Rejected': 'border-red-500',
+        'Forwarded': 'border-blue-500',
+        'Submitted': 'border-cyan-500',
+        'Created': 'border-purple-500',
+        'Updated': 'border-orange-500',
+        'Saved': 'border-gray-500',
+        'Sent Back': 'border-yellow-500',
+    };
+    return colorMap[action] || 'border-gray-300';
 };
 
 // Get next stage based on voucher type
 const getNextStage = () => {
     if (!props.voucher) return 'N/A';
     
-    if (props.voucher.voucher_type?.toLowerCase() === 'salary') {
+    if (props.voucher.voucher_type?.toLowerCase() === 'salary' || 
+        props.voucher.voucher_type?.toLowerCase() === 'pension') {
         return 'Inspectorate → TCO';
     }
     return 'Expenditure Control (EC) → Accountant General (AG) → Management Account Section (MAS)';
@@ -139,14 +227,53 @@ const getNextStage = () => {
 
 // Check if voucher is ready for Final Accounts approval
 const isReadyForApproval = computed(() => {
-    return props.voucher.status?.toLowerCase() === 'audit_approved';
+    const status = props.voucher.status?.toLowerCase();
+    // Allow approval if status is 'fa_approved' or 'audit_approved'
+    return status === 'fa_approved' || status === 'audit_approved';
+});
+
+// =============================================
+// FIXED: Use approvals from voucher prop directly
+// =============================================
+
+// Load workflow history from voucher approvals
+const loadWorkflowHistory = () => {
+    loadingWorkflow.value = true;
+    try {
+        // Get approvals from the voucher prop
+        const approvals = props.voucher?.approvals || [];
+        
+        // Sort by created_at descending (most recent first)
+        workflowHistory.value = [...approvals].sort((a, b) => {
+            const dateA = new Date(a.action_at || a.created_at);
+            const dateB = new Date(b.action_at || b.created_at);
+            return dateB - dateA;
+        });
+        
+        console.log('Workflow History loaded:', workflowHistory.value.length, 'entries');
+    } catch (error) {
+        console.error('Error loading workflow:', error);
+        workflowHistory.value = [];
+    } finally {
+        loadingWorkflow.value = false;
+    }
+};
+
+// Watch for voucher changes to reload workflow
+watch(() => props.voucher, () => {
+    loadWorkflowHistory();
+}, { deep: true, immediate: true });
+
+// Initialize
+onMounted(() => {
+    loadWorkflowHistory();
 });
 
 // Open approval modal
 const openApproveModal = () => {
     if (!isReadyForApproval.value) {
         errorTitle.value = 'Cannot Approve Voucher';
-        errorMessage.value = `This voucher has status "${getStatusDisplayName(props.voucher.status)}" and must be "Audit Approved" before Final Accounts can process it.`;
+        errorMessage.value = `This voucher has status "${getStatusDisplayName(props.voucher.status)}" and must be "FA Approved" or "Audit Approved" before Final Accounts can process it.`;
         showErrorModal.value = true;
         return;
     }
@@ -157,7 +284,7 @@ const openApproveModal = () => {
 const openRejectModal = () => {
     if (!isReadyForApproval.value) {
         errorTitle.value = 'Cannot Reject Voucher';
-        errorMessage.value = `This voucher has status "${getStatusDisplayName(props.voucher.status)}" and must be "Audit Approved" before Final Accounts can reject it.`;
+        errorMessage.value = `This voucher has status "${getStatusDisplayName(props.voucher.status)}" and must be "FA Approved" or "Audit Approved" before Final Accounts can reject it.`;
         showErrorModal.value = true;
         return;
     }
@@ -180,9 +307,9 @@ const handleApprove = () => {
             successTitle.value = 'Voucher Approved & Forwarded!';
             successMessage.value = response.message || `Voucher has been successfully forwarded to ${response.next_role || 'the next stage'}.`;
             successDetails.value = {
-                voucher_number: response.voucher?.voucher_number,
-                amount: formatCurrency(response.voucher?.total_amount),
-                next_role: response.next_role,
+                voucher_number: response.voucher?.voucher_number || props.voucher.voucher_number,
+                amount: formatCurrency(response.voucher?.total_amount || props.voucher.total_amount),
+                next_role: response.next_role || getNextStage(),
                 status: 'Forwarded',
                 forwarded_at: new Date().toLocaleString()
             };
@@ -318,22 +445,6 @@ const printVoucher = () => {
 const goBack = () => {
     router.visit('/final-accounts');
 };
-
-// Load workflow history
-const loadWorkflowHistory = async () => {
-    try {
-        const response = await axios.get(`/vouchers/${props.voucher.id}/approvals`);
-        workflowHistory.value = response.data || [];
-    } catch (error) {
-        console.error('Error loading workflow:', error);
-        workflowHistory.value = [];
-    }
-};
-
-// Initialize
-onMounted(() => {
-    loadWorkflowHistory();
-});
 </script>
 
 <template>
@@ -356,7 +467,7 @@ onMounted(() => {
                     <h1 class="text-2xl font-semibold m-0">Voucher Details</h1>
                 </div>
             </div>
-            <div class="flex gap-2">
+            <div class="flex gap-2 flex-wrap">
                 <Button 
                     icon="pi pi-print" 
                     label="Print" 
@@ -369,12 +480,14 @@ onMounted(() => {
                     label="Approve & Forward" 
                     severity="success" 
                     @click="openApproveModal" 
+                    :disabled="!isReadyForApproval"
                 />
                 <Button 
                     icon="pi pi-times-circle" 
                     label="Reject & Return" 
                     severity="danger" 
-                    @click="openRejectModal" 
+                    @click="openRejectModal"
+                    :disabled="!isReadyForApproval"
                 />
             </div>
         </div>
@@ -388,7 +501,7 @@ onMounted(() => {
                         <strong>Voucher Not Ready for Final Accounts Review</strong>
                         <div class="text-sm mt-1">
                             This voucher has status <strong>{{ getStatusDisplayName(voucher.status) }}</strong>. 
-                            Only vouchers with status <strong>"Audit Approved"</strong> can be processed by Final Accounts.
+                            Only vouchers with status <strong>"FA Approved"</strong> or <strong>"Audit Approved"</strong> can be processed by Final Accounts.
                         </div>
                     </div>
                 </div>
@@ -401,11 +514,15 @@ onMounted(() => {
                 <div class="flex align-items-center gap-3 flex-wrap">
                     <i class="pi pi-share-alt text-xl"></i>
                     <div>
-                        <strong>Final Accounts (FA) - Step 3 of 6</strong>
+                        <strong>Final Accounts (FA) - Step 3 of {{ voucher.voucher_type?.toLowerCase() === 'salary' ? '5' : '6' }}</strong>
                         <div class="text-sm mt-1">
                             Reviewing voucher <strong>{{ voucher.voucher_number }}</strong>. 
-                            <span class="font-semibold">Salary vouchers</span> go to Inspectorate → TCO.
-                            <span class="font-semibold">Other vouchers</span> go to EC → AG → MAS.
+                            <span v-if="voucher.voucher_type?.toLowerCase() === 'salary' || voucher.voucher_type?.toLowerCase() === 'pension'">
+                                <span class="font-semibold">Salary/Pension vouchers</span> go to Inspectorate → TCO.
+                            </span>
+                            <span v-else>
+                                <span class="font-semibold">Other vouchers</span> go to EC → AG → MAS.
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -416,6 +533,7 @@ onMounted(() => {
         <div class="grid">
             <!-- Left Column - Voucher Details -->
             <div class="col-12 lg:col-8">
+                <!-- Voucher Information Card -->
                 <Card class="voucher-details-card">
                     <template #title>
                         <div class="flex align-items-center justify-content-between flex-wrap gap-2">
@@ -423,11 +541,17 @@ onMounted(() => {
                                 <i class="pi pi-file-text text-primary"></i>
                                 <span>Voucher Information</span>
                             </div>
-                            <Tag 
-                                :value="getStatusDisplayName(voucher.status)" 
-                                :severity="getStatusSeverity(voucher.status)"
-                                size="large"
-                            />
+                            <div class="flex align-items-center gap-2">
+                                <Tag 
+                                    :value="voucher.voucher_type?.toUpperCase() || 'N/A'" 
+                                    :severity="getVoucherTypeSeverity(voucher.voucher_type)"
+                                />
+                                <Tag 
+                                    :value="getStatusDisplayName(voucher.status)" 
+                                    :severity="getStatusSeverity(voucher.status)"
+                                    size="large"
+                                />
+                            </div>
                         </div>
                     </template>
                     <template #content>
@@ -600,7 +724,7 @@ onMounted(() => {
                             </div>
                             <div class="flex justify-content-between align-items-center">
                                 <span class="text-500">Required Status:</span>
-                                <Tag value="Audit Approved" severity="success" icon="pi pi-check-circle" />
+                                <Tag value="FA / Audit Approved" severity="success" icon="pi pi-check-circle" />
                             </div>
                             <div class="flex justify-content-between align-items-center">
                                 <span class="text-500">Current Status:</span>
@@ -615,20 +739,33 @@ onMounted(() => {
                     </template>
                 </Card>
 
-                <!-- Workflow Timeline Card -->
+                <!-- Workflow Timeline Card - FIXED -->
                 <Card class="mt-4 timeline-card">
                     <template #title>
-                        <div class="flex align-items-center gap-2">
-                            <i class="pi pi-sitemap text-primary"></i>
-                            <span>Approval Workflow</span>
+                        <div class="flex align-items-center justify-content-between">
+                            <div class="flex align-items-center gap-2">
+                                <i class="pi pi-sitemap text-primary"></i>
+                                <span>Approval Workflow</span>
+                            </div>
+                            <Badge :value="workflowHistory.length" severity="info" />
                         </div>
                     </template>
                     <template #content>
                         <div class="workflow-timeline" style="max-height: 500px; overflow-y: auto;">
-                            <div v-if="workflowHistory.length === 0" class="text-center p-4">
+                            <!-- Loading State -->
+                            <div v-if="loadingWorkflow" class="text-center p-4">
+                                <i class="pi pi-spin pi-spinner text-primary text-2xl"></i>
+                                <p class="text-600 mt-2">Loading workflow history...</p>
+                            </div>
+
+                            <!-- No History State -->
+                            <div v-else-if="workflowHistory.length === 0" class="text-center p-4">
                                 <i class="pi pi-clock text-400 text-3xl mb-2"></i>
                                 <p class="text-600">No workflow history available</p>
+                                <p class="text-500 text-sm">Approval history will appear here once the voucher is processed.</p>
                             </div>
+
+                            <!-- Timeline -->
                             <Timeline
                                 v-else
                                 :value="workflowHistory"
@@ -639,53 +776,42 @@ onMounted(() => {
                                 <template #marker="slotProps">
                                     <span 
                                         class="custom-marker p-shadow-2" 
-                                        :class="{
-                                            'bg-green-500': slotProps.item.action === 'Approved',
-                                            'bg-red-500': slotProps.item.action === 'Declined',
-                                            'bg-blue-500': slotProps.item.action === 'Forwarded',
-                                            'bg-orange-500': slotProps.item.action === 'Sent Back',
-                                            'bg-gray-500': slotProps.item.action === 'Saved'
-                                        }"
+                                        :class="getActionColor(slotProps.item.action)"
                                     >
-                                        <i :class="{
-                                            'pi pi-check': slotProps.item.action === 'Approved',
-                                            'pi pi-times': slotProps.item.action === 'Declined',
-                                            'pi pi-send': slotProps.item.action === 'Forwarded',
-                                            'pi pi-undo': slotProps.item.action === 'Sent Back',
-                                            'pi pi-save': slotProps.item.action === 'Saved'
-                                        }" class="text-white text-sm"></i>
+                                        <i :class="getActionIcon(slotProps.item.action)" class="text-white text-sm"></i>
                                     </span>
                                 </template>
                                 <template #content="slotProps">
-                                    <Card class="workflow-card-item">
-                                        <template #content>
-                                            <div class="flex flex-column gap-2">
-                                                <div class="flex align-items-center justify-content-between flex-wrap">
-                                                    <span class="font-semibold text-primary">
-                                                        {{ slotProps.item.approval_role || 'System' }}
-                                                    </span>
-                                                    <Badge 
-                                                        :value="slotProps.item.action" 
-                                                        :severity="slotProps.item.action === 'Approved' ? 'success' : 
-                                                                  slotProps.item.action === 'Declined' ? 'danger' :
-                                                                  slotProps.item.action === 'Forwarded' ? 'info' :
-                                                                  slotProps.item.action === 'Sent Back' ? 'warning' : 'secondary'"
-                                                        size="small"
-                                                    />
-                                                </div>
-                                                <div class="text-600 text-sm">
-                                                    {{ formatDateTime(slotProps.item.action_at) }}
-                                                </div>
-                                                <div v-if="slotProps.item.comment" class="text-500 text-sm mt-1 p-2 bg-gray-50 border-round">
-                                                    <i class="pi pi-comment mr-1"></i>
-                                                    {{ slotProps.item.comment }}
-                                                </div>
-                                                <div v-if="slotProps.item.user" class="text-500 text-xs">
-                                                    By: {{ slotProps.item.user.name }}
-                                                </div>
+                                    <div class="workflow-card-item border-round border-1 p-3" :class="getActionBorderColor(slotProps.item.action)">
+                                        <div class="flex flex-column gap-2">
+                                            <div class="flex align-items-center justify-content-between flex-wrap">
+                                                <span class="font-semibold text-primary">
+                                                    {{ slotProps.item.approval_role || 'System' }}
+                                                </span>
+                                                <Tag 
+                                                    :value="slotProps.item.action" 
+                                                    :severity="getActionSeverity(slotProps.item.action)"
+                                                    size="small"
+                                                />
                                             </div>
-                                        </template>
-                                    </Card>
+                                            <div class="text-600 text-sm">
+                                                <i class="pi pi-clock mr-1"></i>
+                                                {{ formatDateTime(slotProps.item.action_at || slotProps.item.created_at) }}
+                                            </div>
+                                            <div v-if="slotProps.item.comment" class="text-500 text-sm mt-1 p-2 bg-gray-50 border-round">
+                                                <i class="pi pi-comment mr-1"></i>
+                                                {{ slotProps.item.comment }}
+                                            </div>
+                                            <div v-if="slotProps.item.user" class="text-500 text-xs">
+                                                <i class="pi pi-user mr-1"></i>
+                                                By: {{ slotProps.item.user.name }}
+                                            </div>
+                                            <div v-if="slotProps.item.status" class="text-500 text-xs">
+                                                <i class="pi pi-info-circle mr-1"></i>
+                                                Status: {{ slotProps.item.status }}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </template>
                             </Timeline>
                         </div>
@@ -694,7 +820,7 @@ onMounted(() => {
             </div>
         </div>
 
-        <!-- Success Modal (SweetAlert style) -->
+        <!-- Success Modal -->
         <Dialog
             v-model:visible="showSuccessModal"
             :style="{ width: '500px' }"
@@ -906,7 +1032,7 @@ onMounted(() => {
                     </div>
                     <ul class="m-0 pl-3 text-sm">
                         <li>Ensure the voucher has been approved by Internal Audit</li>
-                        <li>The voucher status should be "Audit Approved"</li>
+                        <li>The voucher status should be "FA Approved" or "Audit Approved"</li>
                         <li>Contact Internal Audit if the voucher needs to be reviewed</li>
                         <li>Refresh the page and try again</li>
                     </ul>
@@ -1004,15 +1130,13 @@ onMounted(() => {
     border-radius: 0.75rem;
 }
 
-.workflow-card-item :deep(.p-card) {
-    box-shadow: none;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.5rem;
-    margin: 0.5rem 0;
+.workflow-card-item {
+    background: white;
+    transition: all 0.2s ease;
 }
 
-.workflow-card-item :deep(.p-card-content) {
-    padding: 0.75rem;
+.workflow-card-item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .custom-marker {
@@ -1032,6 +1156,11 @@ onMounted(() => {
 
 .custom-timeline :deep(.p-timeline-event-content) {
     margin-left: 1rem;
+}
+
+.custom-timeline :deep(.p-timeline-event-marker) {
+    background: transparent !important;
+    border: none !important;
 }
 
 .approval-dialog :deep(.p-dialog-header),

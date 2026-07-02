@@ -124,6 +124,25 @@ class InspectorateController extends Controller
                     $paymentStatus = 'awaiting_tco';
                 }
 
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
+
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
@@ -161,6 +180,7 @@ class InspectorateController extends Controller
                             'programme_name' => $item->programme_name,
                         ];
                     }),
+                    'approvals' => $approvals,
                 ];
             });
 
@@ -190,8 +210,8 @@ class InspectorateController extends Controller
                     ->count(),
                 
                 // Rejected by Inspectorate today
-                'rejected_today' => Voucher::where('status', 'sent_back')
-                    // ->whereDate('rejected_at', today())
+                'rejected_today' => Voucher::where('status', 'ec_review')
+                    ->whereDate('rejected_at', today())
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->whereHas('approvals', function ($q) {
                         $q->where('approval_role', VoucherApproval::ROLE_INSPECTORATE)
@@ -200,7 +220,7 @@ class InspectorateController extends Controller
                     ->count(),
                 
                 // Total processed by Inspectorate
-                'total_processed' => Voucher::whereIn('status', ['inspectorate_approved', 'inspectorate_rejected'])
+                'total_processed' => Voucher::whereIn('status', ['inspectorate_approved', 'ec_review'])
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->count(),
                 
@@ -355,6 +375,25 @@ class InspectorateController extends Controller
                     $paymentStatus = 'awaiting_tco';
                 }
 
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
+
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
@@ -390,6 +429,7 @@ class InspectorateController extends Controller
                             'sub_total' => (float) $item->sub_total,
                         ];
                     }),
+                    'approvals' => $approvals,
                 ];
             })->values()->toArray();
 
@@ -412,7 +452,7 @@ class InspectorateController extends Controller
                     ->whereDate('i_approved_at', today())
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->count(),
-                'rejected_today' => Voucher::where('status', 'sent_back')
+                'rejected_today' => Voucher::where('status', 'ec_review')
                     // ->whereDate('rejected_at', today())
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->whereHas('approvals', function ($q) {
@@ -420,7 +460,7 @@ class InspectorateController extends Controller
                             ->where('action', VoucherApproval::ACTION_DECLINED);
                     })
                     ->count(),
-                'total_processed' => Voucher::whereIn('status', ['inspectorate_approved', 'inspectorate_rejected'])
+                'total_processed' => Voucher::whereIn('status', ['inspectorate_approved', 'ec_review'])
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->count(),
                 'total_amount_pending' => (float) Voucher::where('status', 'ec_approved')
@@ -801,18 +841,25 @@ class InspectorateController extends Controller
                 'rejected_at' => now(),
             ]);
 
-            // Update voucher status
+            // Update voucher status - RETURN TO EC FOR REVIEW
             $voucher->update([
-                'status' => 'sent_back',
-                // 'rejection_reason' => $reason,
-                // 'rejected_by' => auth()->id(),
-                // 'rejected_at' => now(),
+                'status' => 'ec_review', // Changed from 'ec_review' to 'ec_review'
+                'rejection_reason' => $reason,
+                'rejected_by' => auth()->id(),
+                'rejected_at' => now(),
+                // Clear approval fields so it can go through the flow again
+                'i_approved_by' => null,
+                'i_approved_at' => null,
+                'ec_approved_by' => null,
+                'ec_approved_at' => null,
+                'forwarded_to_inspectorate_by' => null,
+                'forwarded_to_inspectorate_at' => null,
             ]);
 
             // Log activity
             if ($this->activityLogger) {
                 $this->activityLogger->log(
-                    "Inspectorate rejected voucher {$voucher->voucher_number}",
+                    "Inspectorate rejected voucher {$voucher->voucher_number} and returned to EC for review",
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
@@ -820,6 +867,7 @@ class InspectorateController extends Controller
                         'reason' => $reason,
                         'rejection_step' => $rejectionStep,
                         'rejected_by' => auth()->id(),
+                        'returned_to' => 'EC',
                     ],
                     'voucher'
                 );
@@ -827,14 +875,15 @@ class InspectorateController extends Controller
 
             DB::commit();
 
-            Log::info('Inspectorate Rejection Successful:', [
+            Log::info('Inspectorate Rejection Successful - Returned to EC:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
+                'new_status' => 'ec_review',
                 'reason' => $reason
             ]);
 
             return redirect()->route('inspectorate.index')
-                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Expenditure Control.");
+                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Expenditure Control for review.");
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -962,15 +1011,15 @@ class InspectorateController extends Controller
                     ->whereDate('i_approved_at', today())
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->count(),
-                'rejected_today' => Voucher::where('status', 'sent_back')
-                    // ->whereDate('rejected_at', today())
+                'rejected_today' => Voucher::where('status', 'ec_review')
+                    ->whereDate('rejected_at', today())
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->whereHas('approvals', function ($q) {
                         $q->where('approval_role', VoucherApproval::ROLE_INSPECTORATE)
                             ->where('action', VoucherApproval::ACTION_DECLINED);
                     })
                     ->count(),
-                'total_processed' => Voucher::whereIn('status', ['inspectorate_approved', 'inspectorate_rejected'])
+                'total_processed' => Voucher::whereIn('status', ['inspectorate_approved', 'ec_review'])
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->count(),
                 'total_amount_pending' => (float) Voucher::where('status', 'ec_approved')
@@ -1028,7 +1077,7 @@ class InspectorateController extends Controller
             } elseif ($tab === 'approved') {
                 $query->where('status', 'inspectorate_approved');
             } elseif ($tab === 'rejected') {
-                $query->where('status', 'sent_back');
+                $query->where('status', 'ec_review');
             }
             
             // Apply search filter
@@ -1089,6 +1138,25 @@ class InspectorateController extends Controller
                 } elseif ($voucher->status === 'inspectorate_approved') {
                     $paymentStatus = 'awaiting_tco';
                 }
+
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
                 
                 return [
                     'id' => $voucher->id,
@@ -1126,6 +1194,7 @@ class InspectorateController extends Controller
                             'programme_name' => $item->programme_name,
                         ];
                     }),
+                    'approvals' => $approvals,
                 ];
             });
             
@@ -1143,7 +1212,7 @@ class InspectorateController extends Controller
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->count(),
                 'rejected_count' => Voucher::where('assigned_to_user_id', $userId)
-                    ->where('status', 'sent_back')
+                    ->where('status', 'ec_review')
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->count(),
                 'forwarded_count' => Voucher::where('assigned_to_user_id', $userId)
@@ -1222,7 +1291,7 @@ class InspectorateController extends Controller
             } elseif ($tab === 'approved') {
                 $query->where('status', 'inspectorate_approved');
             } elseif ($tab === 'rejected') {
-                $query->where('status', 'sent_back');
+                $query->where('status', 'ec_review');
             }
             
             // Apply search filter
@@ -1283,6 +1352,25 @@ class InspectorateController extends Controller
                 } elseif ($voucher->status === 'inspectorate_approved') {
                     $paymentStatus = 'awaiting_tco';
                 }
+
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
                 
                 return [
                     'id' => $voucher->id,
@@ -1317,6 +1405,7 @@ class InspectorateController extends Controller
                             'sub_total' => (float) $item->sub_total,
                         ];
                     }),
+                    'approvals' => $approvals,
                 ];
             })->values()->toArray();
             
@@ -1334,7 +1423,7 @@ class InspectorateController extends Controller
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->count(),
                 'rejected_count' => Voucher::where('assigned_to_user_id', $userId)
-                    ->where('status', 'sent_back')
+                    ->where('status', 'ec_review')
                     ->whereIn('voucher_type', self::INSPECTORATE_VOUCHER_TYPES)
                     ->count(),
                 'forwarded_count' => Voucher::where('assigned_to_user_id', $userId)
@@ -1556,18 +1645,25 @@ class InspectorateController extends Controller
                 'rejected_at' => now(),
             ]);
 
-            // Update voucher status
+            // Update voucher status - RETURN TO EC FOR REVIEW
             $voucher->update([
-                'status' => 'sent_back',
+                'status' => 'ec_review', // Changed from 'ec_review' to 'ec_review'
                 'rejection_reason' => $reason,
                 'rejected_by' => auth()->id(),
                 'rejected_at' => now(),
+                // Clear approval fields so it can go through the flow again
+                'i_approved_by' => null,
+                'i_approved_at' => null,
+                'ec_approved_by' => null,
+                'ec_approved_at' => null,
+                'forwarded_to_inspectorate_by' => null,
+                'forwarded_to_inspectorate_at' => null,
             ]);
 
             // Log activity
             if ($this->activityLogger) {
                 $this->activityLogger->log(
-                    "Inspectorate rejected assigned voucher {$voucher->voucher_number}",
+                    "Inspectorate rejected assigned voucher {$voucher->voucher_number} and returned to EC for review",
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
@@ -1575,6 +1671,7 @@ class InspectorateController extends Controller
                         'reason' => $reason,
                         'rejection_step' => $rejectionStep,
                         'rejected_by' => auth()->id(),
+                        'returned_to' => 'EC',
                     ],
                     'voucher'
                 );
@@ -1582,14 +1679,15 @@ class InspectorateController extends Controller
 
             DB::commit();
 
-            Log::info('Inspectorate Reject Assigned Successful:', [
+            Log::info('Inspectorate Reject Assigned Successful - Returned to EC:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
+                'new_status' => 'ec_review',
                 'reason' => $reason
             ]);
 
             return redirect()->route('inspectorate.assigned')
-                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Expenditure Control.");
+                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Expenditure Control for review.");
 
         } catch (\Exception $e) {
             DB::rollBack();

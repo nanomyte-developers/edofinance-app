@@ -14,8 +14,7 @@ class AdministrativeSectorCode extends Model
         'name',
         'administrative_code_id',
         'initials',
-        'status',
-    
+        'status',    
     ];
 
     /**

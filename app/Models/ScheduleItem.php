@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ScheduleItem extends Model
 {
@@ -44,5 +45,21 @@ class ScheduleItem extends Model
     public function schedule(): BelongsTo
     {
         return $this->belongsTo(Schedule::class);
+    }
+
+    /**
+     * Get the vouchers for this schedule item
+     */
+    public function vouchers(): HasMany
+    {
+        return $this->hasMany(Voucher::class, 'schedule_item_id');
+    }
+
+    /**
+     * Get the voucher for this schedule item (single)
+     */
+    public function voucher(): BelongsTo
+    {
+        return $this->belongsTo(Voucher::class, 'voucher_id');
     }
 }

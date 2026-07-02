@@ -21,6 +21,7 @@ import ProgressSpinner from 'primevue/progressspinner';
 import Dropdown from 'primevue/dropdown';
 import Calendar from 'primevue/calendar';
 import RadioButton from 'primevue/radiobutton';
+import Timeline from 'primevue/timeline';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 import * as XLSX from 'xlsx';
@@ -59,6 +60,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    mdas: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 // State
@@ -73,6 +78,7 @@ const isProcessing = ref(false);
 const selectedVoucherType = ref('');
 const selectedStatus = ref('');
 const selectedPaymentStatus = ref('');
+const selectedMda = ref(null);
 const dateRange = ref(null);
 const activeTab = ref('all');
 
@@ -85,6 +91,7 @@ const showAssignModal = ref(false);
 const showWorkflowModal = ref(false);
 const showDocumentViewer = ref(false);
 const showConfirmForwardModal = ref(false);
+const showLiabilityPrintDialog = ref(false);
 
 const currentVoucher = ref(null);
 const rejectionReason = ref('');
@@ -99,6 +106,27 @@ const documentUrl = ref('');
 const loadingDocument = ref(false);
 const documentError = ref('');
 const currentDocument = ref(null);
+const liabilityPrintContentRef = ref(null);
+
+const currentDateTime = ref(
+    new Date().toLocaleString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+    })
+);
+
+// // Selected MDA name for print header
+// const selectedMdaName = computed(() => {
+//     if (selectedMda.value) {
+//         const mda = props.mdas?.find(m => m.id === selectedMda.value);
+//         return mda ? mda.name : '';
+//     }
+//     return 'ALL MINISTRIES';
+// });
 
 // Destination options
 const destinationOptions = [
@@ -246,6 +274,41 @@ const filteredCount = computed(() => {
     return vouchers.value.length || 0;
 });
 
+// Liability Print Data
+const liabilityPrintData = computed(() => {
+    if (activeTab.value === 'liability') {
+        return vouchers.value.filter(v => {
+            if (v.final_approved_at) {
+                const today = new Date();
+                const date = new Date(v.final_approved_at);
+                return date.getFullYear() === today.getFullYear() &&
+                       date.getMonth() === today.getMonth() &&
+                       date.getDate() === today.getDate();
+            }
+            return false;
+        });
+    }
+    return vouchers.value || [];
+});
+
+const totalLiabilityAmount = computed(() => {
+    return liabilityPrintData.value.reduce((sum, v) => sum + (Number(v.total_amount) || 0), 0);
+});
+
+const selectedMdaName = computed(() => {
+    if (selectedMda.value) {
+        const mda = props.mdas?.find(m => m.id === selectedMda.value);
+        return mda ? mda.name : '';
+    }
+    return 'ALL MINISTRIES';
+});
+
+const liabilityEmptyRows = computed(() => {
+    const minRows = 15;
+    const dataRows = liabilityPrintData.value.length + 1;
+    return Math.max(0, minRows - dataRows);
+});
+
 const breadcrumbs = [
     { title: 'Expenditure Control', href: '/expenditure-control' },
     { title: 'Queue', href: '#' },
@@ -253,6 +316,22 @@ const breadcrumbs = [
 
 // Format functions
 const formatCurrency = (value) => {
+    const numValue = Number(value) || 0;
+    return new Intl.NumberFormat('en-NG', {
+        style: 'currency',
+        currency: 'NGN',
+        minimumFractionDigits: 2,
+    }).format(numValue);
+};
+
+const formatCurrencyAmount = (value) => {
+    if (value === null || value === undefined || value === '') return '';
+    const num = parseFloat(value) || 0;
+    const parts = num.toFixed(2).split('.');
+    return new Intl.NumberFormat('en-NG').format(parts[0]) + '.' + parts[1];
+};
+
+const formatCurrencyForPrint = (value) => {
     const numValue = Number(value) || 0;
     return new Intl.NumberFormat('en-NG', {
         style: 'currency',
@@ -279,6 +358,20 @@ const formatDateTime = (date) => {
         hour: '2-digit',
         minute: '2-digit',
     });
+};
+
+const formatShortDate = (date) => {
+    if (!date) return '';
+    try {
+        const d = new Date(date);
+        const day = d.getDate().toString().padStart(2, '0');
+        const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+        const month = monthNames[d.getMonth()];
+        const year = d.getFullYear().toString().slice(-2);
+        return `${day}-${month}-${year}`;
+    } catch (error) {
+        return '';
+    }
 };
 
 const formatDateForApi = (date) => {
@@ -374,6 +467,90 @@ const getDestinationLabel = (value) => {
     return option ? option.label : value;
 };
 
+// Get action severity for workflow
+const getActionSeverity = (action) => {
+    const actionMap = {
+        'Approved': 'success',
+        'Declined': 'danger',
+        'Rejected': 'danger',
+        'Forwarded': 'info',
+        'Submitted': 'info',
+        'Created': 'info',
+        'Updated': 'warning',
+        'Saved': 'secondary',
+        'Sent Back': 'warning',
+        'Audit Approved': 'success',
+        'FA Approved': 'success',
+        'EC Approved': 'success',
+        'AG Approved': 'success',
+        'MAS Approved': 'success',
+    };
+    return actionMap[action] || 'info';
+};
+
+// Get action icon for workflow
+const getActionIcon = (action) => {
+    const iconMap = {
+        'Approved': 'pi-check-circle',
+        'Declined': 'pi-times-circle',
+        'Rejected': 'pi-times-circle',
+        'Forwarded': 'pi-send',
+        'Submitted': 'pi-upload',
+        'Created': 'pi-plus-circle',
+        'Updated': 'pi-pencil',
+        'Saved': 'pi-save',
+        'Sent Back': 'pi-undo',
+        'Audit Approved': 'pi-check-circle',
+        'FA Approved': 'pi-check-circle',
+        'EC Approved': 'pi-check-circle',
+        'AG Approved': 'pi-check-circle',
+        'MAS Approved': 'pi-check-circle',
+    };
+    return iconMap[action] || 'pi-circle';
+};
+
+// Get action color for workflow
+const getActionColor = (action) => {
+    const colorMap = {
+        'Approved': 'text-green-500 bg-green-100',
+        'Declined': 'text-red-500 bg-red-100',
+        'Rejected': 'text-red-500 bg-red-100',
+        'Forwarded': 'text-blue-500 bg-blue-100',
+        'Submitted': 'text-cyan-500 bg-cyan-100',
+        'Created': 'text-purple-500 bg-purple-100',
+        'Updated': 'text-orange-500 bg-orange-100',
+        'Saved': 'text-gray-500 bg-gray-100',
+        'Sent Back': 'text-yellow-500 bg-yellow-100',
+        'Audit Approved': 'text-green-500 bg-green-100',
+        'FA Approved': 'text-green-500 bg-green-100',
+        'EC Approved': 'text-green-500 bg-green-100',
+        'AG Approved': 'text-green-500 bg-green-100',
+        'MAS Approved': 'text-green-500 bg-green-100',
+    };
+    return colorMap[action] || 'text-gray-500 bg-gray-100';
+};
+
+// Get action border color for workflow
+const getActionBorderColor = (action) => {
+    const colorMap = {
+        'Approved': 'border-green-500',
+        'Declined': 'border-red-500',
+        'Rejected': 'border-red-500',
+        'Forwarded': 'border-blue-500',
+        'Submitted': 'border-cyan-500',
+        'Created': 'border-purple-500',
+        'Updated': 'border-orange-500',
+        'Saved': 'border-gray-500',
+        'Sent Back': 'border-yellow-500',
+        'Audit Approved': 'border-green-500',
+        'FA Approved': 'border-green-500',
+        'EC Approved': 'border-green-500',
+        'AG Approved': 'border-green-500',
+        'MAS Approved': 'border-green-500',
+    };
+    return colorMap[action] || 'border-gray-300';
+};
+
 // Load vouchers
 const loadVouchers = async () => {
     loading.value = true;
@@ -393,6 +570,9 @@ const loadVouchers = async () => {
         }
         if (selectedPaymentStatus.value) {
             params.payment_status = selectedPaymentStatus.value;
+        }
+        if (selectedMda.value) { // <-- ADD THIS
+            params.mda_id = selectedMda.value;
         }
         if (dateRange.value && dateRange.value.length === 2) {
             if (dateRange.value[0]) {
@@ -466,6 +646,7 @@ const clearFilters = () => {
     selectedVoucherType.value = '';
     selectedStatus.value = '';
     selectedPaymentStatus.value = '';
+    selectedMda.value = null;
     dateRange.value = null;
     lazyParams.value.page = 1;
     loadVouchers();
@@ -643,24 +824,40 @@ const openPaymentModal = (voucher) => {
 
 const openAssignModal = (voucher) => {
     currentVoucher.value = voucher;
-    selectedUser.value = null; // Reset selection
+    selectedUser.value = null;
     showAssignModal.value = true;
 };
 
 const openWorkflowModal = async (voucher) => {
     currentVoucher.value = voucher;
     showWorkflowModal.value = true;
+    workflowHistory.value = [];
     
     try {
-        const response = await axios.get(`/vouchers/${voucher.id}/approvals`);
-        workflowHistory.value = response.data || [];
+        let approvals = voucher.approvals || [];
+        
+        if (approvals.length === 0) {
+            try {
+                const response = await axios.get(`/vouchers/${voucher.id}/approvals`);
+                approvals = response.data || [];
+            } catch (apiError) {
+                console.warn('Could not fetch approvals via API:', apiError);
+            }
+        }
+        
+        workflowHistory.value = [...approvals].sort((a, b) => {
+            const dateA = new Date(a.action_at || a.created_at);
+            const dateB = new Date(b.action_at || b.created_at);
+            return dateB - dateA;
+        });
+        
+        console.log('Workflow History loaded:', workflowHistory.value.length, 'entries');
     } catch (error) {
         console.error('Error loading workflow:', error);
         workflowHistory.value = [];
     }
 };
 
-// Open confirmation modal after selecting destination
 const openConfirmForwardModal = () => {
     if (!selectedDestination.value) {
         toast.add({
@@ -672,6 +869,225 @@ const openConfirmForwardModal = () => {
         return;
     }
     showConfirmForwardModal.value = true;
+};
+
+// Liability Print Functions
+const openLiabilityPrintDialog = () => {
+    if (stats.liability_count === 0) {
+        toast.add({
+            severity: 'warn',
+            summary: 'No Liabilities',
+            detail: 'There are no liability vouchers to print for today.',
+            life: 3000,
+        });
+        return;
+    }
+    showLiabilityPrintDialog.value = true;
+};
+
+const closeLiabilityPrintDialog = () => {
+    showLiabilityPrintDialog.value = false;
+};
+
+const printLiabilityContent = () => {
+    try {
+        const printElement = document.getElementById('liability-print-content');
+        if (!printElement) {
+            toast.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Print content not found.',
+                life: 3000,
+            });
+            return;
+        }
+
+        const printWindow = window.open('', '_blank', 'width=1200,height=800,scrollbars=yes');
+        if (!printWindow) {
+            toast.add({
+                severity: 'error',
+                summary: 'Popup Blocked',
+                detail: 'Please allow popups for this site to print.',
+                life: 5000,
+            });
+            return;
+        }
+
+        const contentHTML = printElement.innerHTML;
+        const title = `Liability_Printout_${new Date().toISOString().split('T')[0]}`;
+
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>${title}</title>
+                <meta charset="UTF-8">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body {
+                        font-family: Arial, sans-serif;
+                        font-size: 10px;
+                        padding: 20px;
+                        background: white;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    
+                    .print-header {
+                        text-align: center;
+                        margin-bottom: 15px;
+                        border-bottom: 2px solid #000;
+                        padding-bottom: 10px;
+                    }
+                    .print-title {
+                        font-size: 16px;
+                        font-weight: bold;
+                        margin: 5px 0;
+                        text-transform: uppercase;
+                    }
+                    .print-subtitle {
+                        font-size: 12px;
+                        margin: 3px 0;
+                    }
+                    .print-info {
+                        font-size: 10px;
+                        margin: 5px 0;
+                        display: flex;
+                        justify-content: space-between;
+                    }
+                    
+                    .print-ledger-table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        font-size: 9px;
+                        table-layout: fixed;
+                        border: 1px solid #000;
+                        margin-bottom: 20px;
+                    }
+                    .print-ledger-table th,
+                    .print-ledger-table td {
+                        border: 1px solid #000;
+                        padding: 4px 6px;
+                        vertical-align: middle;
+                        text-align: center;
+                        height: 28px;
+                    }
+                    .print-ledger-table th {
+                        background-color: #f0f0f0 !important;
+                        font-weight: bold;
+                        text-transform: uppercase;
+                        font-size: 8px;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    .print-ledger-table .amount-cell {
+                        text-align: right;
+                        font-family: 'Courier New', monospace;
+                        font-weight: bold;
+                        padding-right: 8px;
+                    }
+                    .print-ledger-table .purpose-cell {
+                        text-align: left;
+                        font-size: 8px;
+                        word-wrap: break-word;
+                        overflow-wrap: break-word;
+                        white-space: normal;
+                        line-height: 1.3;
+                    }
+                    .print-ledger-table .text-left { text-align: left; }
+                    .print-ledger-table .text-right { text-align: right; }
+                    .print-ledger-table .text-center { text-align: center; }
+                    .print-ledger-table .font-bold { font-weight: bold; }
+                    
+                    .print-ledger-table .total-row {
+                        background-color: #fff3e0 !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    .print-ledger-table .empty-row { height: 28px; }
+                    .print-ledger-table .data-row:hover { background-color: #f5f5f5 !important; }
+                    
+                    .print-ledger-table .type-badge {
+                        display: inline-block;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-weight: bold;
+                        font-size: 7px;
+                        background-color: #2196f3;
+                        color: white;
+                    }
+                    
+                    .print-ledger-table .status-badge {
+                        display: inline-block;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-weight: bold;
+                        font-size: 7px;
+                        background-color: #ff9800;
+                        color: white;
+                    }
+                    
+                    .print-ledger-table .sno-col { width: 5%; }
+                    .print-ledger-table .date-col { width: 8%; }
+                    .print-ledger-table .voucher-col { width: 10%; }
+                    .print-ledger-table .type-col { width: 8%; }
+                    .print-ledger-table .mda-col { width: 14%; }
+                    .print-ledger-table .payee-col { width: 12%; }
+                    .print-ledger-table .purpose-col { width: 18%; }
+                    .print-ledger-table .amount-col { width: 10%; }
+                    .print-ledger-table .fa-approved-col { width: 8%; }
+                    .print-ledger-table .status-col { width: 7%; }
+                    
+                    .print-footer {
+                        margin-top: 15px;
+                        padding-top: 10px;
+                        border-top: 1px solid #000;
+                        font-size: 9px;
+                        display: flex;
+                        justify-content: space-between;
+                    }
+                    .uppercase { text-transform: uppercase; }
+                    .italic { font-style: italic; }
+                    
+                    @page {
+                        size: A4 landscape;
+                        margin: 10mm;
+                    }
+                    
+                    @media print {
+                        body { padding: 0; }
+                        .print-ledger-table th { background-color: #f0f0f0 !important; }
+                        .print-ledger-table .total-row { background-color: #fff3e0 !important; }
+                    }
+                </style>
+            </head>
+            <body>
+                ${contentHTML}
+                <script>
+                    window.onload = function() {
+                        setTimeout(function() {
+                            window.print();
+                            setTimeout(function() {
+                                window.close();
+                            }, 500);
+                        }, 300);
+                    };
+                <\/script>
+            </body>
+            </html>
+        `);
+
+        printWindow.document.close();
+
+    } catch (error) {
+        console.error('Print error:', error);
+        toast.add({
+            severity: 'error',
+            summary: 'Print Error',
+            detail: 'Failed to print. Please try again.',
+            life: 5000,
+        });
+    }
 };
 
 // View document
@@ -857,9 +1273,8 @@ const handleMarkAsPaid = () => {
     });
 };
 
-// Handle assign to user - FIXED
+// Handle assign to user
 const handleAssign = () => {
-    // Check if user is selected
     if (!selectedUser.value) {
         toast.add({
             severity: 'warn',
@@ -870,7 +1285,6 @@ const handleAssign = () => {
         return;
     }
 
-    // Get the user ID
     const userId = selectedUser.value.id || selectedUser.value;
     
     if (!userId) {
@@ -976,6 +1390,13 @@ const closeWorkflowModal = () => {
     currentVoucher.value = null;
     workflowHistory.value = [];
 };
+
+// Check if there are any capital vouchers in the liability data
+const hasCapitalVouchers = computed(() => {
+    return liabilityPrintData.value.some(v => 
+        v.voucher_type?.toLowerCase() === 'capital'
+    );
+});
 
 // Watch for filter changes
 watch([selectedVoucherType, selectedStatus, selectedPaymentStatus, dateRange, searchQuery], () => {
@@ -1110,31 +1531,43 @@ onMounted(() => {
             </Message>
         </div>
 
-        <!-- Tab Navigation -->
+        <!-- Tab Navigation with Print Button -->
         <div class="mb-4">
-            <div class="flex align-items-center gap-3 flex-wrap">
+            <div class="flex align-items-center justify-content-between flex-wrap gap-3">
+                <div class="flex align-items-center gap-3 flex-wrap">
+                    <Button
+                        :label="`All Vouchers (${totalRecords || 0})`"
+                        :severity="activeTab === 'all' ? 'primary' : 'secondary'"
+                        :outlined="activeTab !== 'all'"
+                        @click="switchTab('all')"
+                        size="small"
+                    />
+                    <Button
+                        :label="`Liability Vouchers (${stats.liability_count || 0})`"
+                        :severity="activeTab === 'liability' ? 'primary' : 'secondary'"
+                        :outlined="activeTab !== 'liability'"
+                        @click="switchTab('liability')"
+                        size="small"
+                    >
+                        <template #icon>
+                            <i class="pi pi-calendar"></i>
+                        </template>
+                    </Button>
+                    <span class="text-sm text-500 ml-2">
+                        <i class="pi pi-info-circle mr-1"></i>
+                        Liability vouchers are vouchers approved by Final Accounts today
+                    </span>
+                </div>
+                <!-- Print Liability Button -->
                 <Button
-                    :label="`All Vouchers (${totalRecords || 0})`"
-                    :severity="activeTab === 'all' ? 'primary' : 'secondary'"
-                    :outlined="activeTab !== 'all'"
-                    @click="switchTab('all')"
+                    v-if="activeTab === 'liability' && stats.liability_count > 0"
+                    label="Print Liability"
+                    icon="pi pi-print"
+                    severity="warning"
                     size="small"
+                    @click="openLiabilityPrintDialog"
+                    class="liability-print-btn"
                 />
-                <Button
-                    :label="`Liability Vouchers (${stats.liability_count || 0})`"
-                    :severity="activeTab === 'liability' ? 'primary' : 'secondary'"
-                    :outlined="activeTab !== 'liability'"
-                    @click="switchTab('liability')"
-                    size="small"
-                >
-                    <template #icon>
-                        <i class="pi pi-calendar"></i>
-                    </template>
-                </Button>
-                <span class="text-sm text-500 ml-2">
-                    <i class="pi pi-info-circle mr-1"></i>
-                    Liability vouchers are vouchers approved by Final Accounts today
-                </span>
             </div>
         </div>
 
@@ -1192,7 +1625,6 @@ onMounted(() => {
                 <!-- Filter Section -->
                 <div class="mb-4">
                     <div class="grid">
-                        <!-- Search -->
                         <div class="col-12 md:col-3">
                             <IconField>
                                 <InputIcon>
@@ -1207,7 +1639,6 @@ onMounted(() => {
                             </IconField>
                         </div>
 
-                        <!-- Voucher Type Filter -->
                         <div class="col-12 md:col-2">
                             <Dropdown
                                 v-model="selectedVoucherType"
@@ -1221,7 +1652,6 @@ onMounted(() => {
                             />
                         </div>
 
-                        <!-- Status Filter -->
                         <div class="col-12 md:col-2">
                             <Dropdown
                                 v-model="selectedStatus"
@@ -1235,7 +1665,6 @@ onMounted(() => {
                             />
                         </div>
 
-                        <!-- Payment Status Filter -->
                         <div class="col-12 md:col-2">
                             <Dropdown
                                 v-model="selectedPaymentStatus"
@@ -1249,7 +1678,6 @@ onMounted(() => {
                             />
                         </div>
 
-                        <!-- Date Range -->
                         <div class="col-12 md:col-3">
                             <Calendar
                                 v-model="dateRange"
@@ -1295,7 +1723,6 @@ onMounted(() => {
                     currentPageReportTemplate="{first} to {last} of {totalRecords}"
                     showGridlines
                 >
-                    <!-- Voucher Number -->
                     <Column field="voucher_number" header="Voucher #" headerStyle="width: 10%" :sortable="true">
                         <template #body="slotProps">
                             <Link 
@@ -1307,7 +1734,6 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- Type -->
                     <Column field="voucher_type" header="Type" headerStyle="width: 8%" :sortable="true">
                         <template #body="slotProps">
                             <Tag 
@@ -1317,14 +1743,12 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- Date -->
                     <Column field="voucher_date" header="Date" headerStyle="width: 8%" :sortable="true">
                         <template #body="slotProps">
                             <span class="text-900">{{ formatDate(slotProps.data.voucher_date) }}</span>
                         </template>
                     </Column>
 
-                    <!-- FA Approved Date -->
                     <Column field="fa_approved_at" header="FA Approved" headerStyle="width: 10%" :sortable="true">
                         <template #body="slotProps">
                             <div class="flex flex-column">
@@ -1336,7 +1760,6 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- MDA -->
                     <Column field="mda.name" header="MDA" headerStyle="width: 10%">
                         <template #body="slotProps">
                             <div class="flex flex-column">
@@ -1346,14 +1769,12 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- Payee -->
                     <Column field="payee_name" header="Payee" headerStyle="width: 8%">
                         <template #body="slotProps">
                             <span class="text-600">{{ slotProps.data.payee_name || 'N/A' }}</span>
                         </template>
                     </Column>
 
-                    <!-- Amount with Footer -->
                     <Column field="total_amount" header="Amount" headerStyle="width: 10%" bodyClass="font-bold text-right" :sortable="true" footerStyle="font-bold text-right text-primary">
                         <template #body="slotProps">
                             <span class="text-900">{{ formatCurrency(slotProps.data.total_amount) }}</span>
@@ -1366,7 +1787,6 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- Bank -->
                     <Column field="bank_activity" header="Bank" headerStyle="width: 10%">
                         <template #body="slotProps">
                             <div v-if="slotProps.data.bank_activity">
@@ -1377,7 +1797,6 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- Payment Status -->
                     <Column field="payment_status" header="Payment Status" headerStyle="width: 8%">
                         <template #body="slotProps">
                             <Tag 
@@ -1388,7 +1807,6 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- Status -->
                     <Column field="status" header="Status" headerStyle="width: 8%">
                         <template #body="slotProps">
                             <Tag 
@@ -1399,7 +1817,6 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- Liability Badge -->
                     <Column header="Liability" headerStyle="width: 6%">
                         <template #body="slotProps">
                             <Tag 
@@ -1413,11 +1830,9 @@ onMounted(() => {
                         </template>
                     </Column>
 
-                    <!-- Actions - 3 up, 3 down layout -->
                     <Column header="Actions" headerStyle="width: 12%" bodyClass="text-center">
                         <template #body="slotProps">
                             <div class="flex flex-column gap-1 align-items-center">
-                                <!-- Row 1: 3 buttons -->
                                 <div class="flex gap-1 justify-content-center">
                                     <Button
                                         icon="pi pi-print"
@@ -1447,7 +1862,6 @@ onMounted(() => {
                                         @click="openWorkflowModal(slotProps.data)"
                                     />
                                 </div>
-                                <!-- Row 2: 3 buttons -->
                                 <div class="flex gap-1 justify-content-center">
                                     <Button
                                         icon="pi pi-user-plus"
@@ -1506,7 +1920,7 @@ onMounted(() => {
             </template>
         </Card>
 
-        <!-- Forward Modal (Choose Destination) -->
+        <!-- Forward Modal -->
         <Dialog
             v-model:visible="showForwardModal"
             :style="{ width: '550px' }"
@@ -1703,73 +2117,7 @@ onMounted(() => {
             </template>
         </Dialog>
 
-        <!-- Payment Modal -->
-        <Dialog
-            v-model:visible="showPaymentModal"
-            :style="{ width: '500px' }"
-            header="Mark Voucher as Paid"
-            :modal="true"
-            class="payment-dialog"
-            :closable="!isProcessing"
-        >
-            <div class="flex flex-column gap-3">
-                <div class="flex align-items-center gap-3 p-3 bg-green-50 border-round">
-                    <i class="pi pi-info-circle text-green-500 text-xl"></i>
-                    <div>
-                        <div class="font-semibold">Voucher: {{ currentVoucher?.voucher_number }}</div>
-                        <div class="text-sm">Amount: {{ formatCurrency(currentVoucher?.total_amount) }}</div>
-                        <div class="text-sm">Payee: {{ currentVoucher?.payee_name }}</div>
-                    </div>
-                </div>
-
-                <div class="field">
-                    <label class="font-semibold block mb-2">
-                        Payment Reference Number <span class="text-red-500">*</span>
-                    </label>
-                    <InputText
-                        v-model="paymentReference"
-                        placeholder="Enter payment reference number (e.g., Teller #, Transfer Ref)"
-                        class="w-full"
-                    />
-                    <small class="text-500 mt-1 block">
-                        <i class="pi pi-info-circle mr-1"></i>
-                        This reference will be recorded for audit purposes
-                    </small>
-                </div>
-
-                <div class="field">
-                    <label class="font-semibold block mb-2">
-                        Comment (Optional)
-                    </label>
-                    <Textarea
-                        v-model="paymentComment"
-                        rows="3"
-                        placeholder="Add any additional notes about the payment..."
-                        class="w-full"
-                        autoResize
-                    />
-                </div>
-
-                <div class="border-round bg-yellow-50 p-3">
-                    <div class="flex align-items-center gap-2">
-                        <i class="pi pi-exclamation-triangle text-yellow-600"></i>
-                        <span class="text-sm">This action will mark the voucher as paid and close it permanently.</span>
-                    </div>
-                </div>
-
-                <div v-if="isProcessing" class="flex align-items-center justify-content-center gap-2 p-2">
-                    <ProgressSpinner style="width: 30px; height: 30px" strokeWidth="4" />
-                    <span>Processing...</span>
-                </div>
-            </div>
-
-            <template #footer>
-                <Button label="Cancel" icon="pi pi-times" @click="closePaymentModal" text :disabled="isProcessing" />
-                <Button label="Mark as Paid" icon="pi pi-check-circle" severity="success" @click="handleMarkAsPaid" :loading="isProcessing" />
-            </template>
-        </Dialog>
-
-        <!-- Assign to Staff Modal - FIXED -->
+        <!-- Assign to Staff Modal -->
         <Dialog
             v-model:visible="showAssignModal"
             :style="{ width: '500px' }"
@@ -1830,7 +2178,6 @@ onMounted(() => {
                     </small>
                 </div>
 
-                <!-- Selected User Preview -->
                 <div v-if="selectedUser" class="border-round bg-green-50 p-3">
                     <div class="flex align-items-center gap-2">
                         <i class="pi pi-check-circle text-green-600"></i>
@@ -1881,7 +2228,9 @@ onMounted(() => {
                 <div v-if="workflowHistory.length === 0" class="text-center p-4">
                     <i class="pi pi-clock text-400 text-3xl mb-2"></i>
                     <p class="text-600">No workflow history available</p>
+                    <p class="text-500 text-sm">Approval history will appear here once the voucher is processed.</p>
                 </div>
+
                 <Timeline
                     v-else
                     :value="workflowHistory"
@@ -1892,53 +2241,42 @@ onMounted(() => {
                     <template #marker="slotProps">
                         <span 
                             class="custom-marker p-shadow-2" 
-                            :class="{
-                                'bg-green-500': slotProps.item.action === 'Approved',
-                                'bg-red-500': slotProps.item.action === 'Declined',
-                                'bg-blue-500': slotProps.item.action === 'Forwarded',
-                                'bg-orange-500': slotProps.item.action === 'Sent Back',
-                                'bg-gray-500': slotProps.item.action === 'Saved'
-                            }"
+                            :class="getActionColor(slotProps.item.action)"
                         >
-                            <i :class="{
-                                'pi pi-check': slotProps.item.action === 'Approved',
-                                'pi pi-times': slotProps.item.action === 'Declined',
-                                'pi pi-send': slotProps.item.action === 'Forwarded',
-                                'pi pi-undo': slotProps.item.action === 'Sent Back',
-                                'pi pi-save': slotProps.item.action === 'Saved'
-                            }" class="text-white text-sm"></i>
+                            <i :class="getActionIcon(slotProps.item.action)" class="text-white text-sm"></i>
                         </span>
                     </template>
                     <template #content="slotProps">
-                        <Card class="workflow-card">
-                            <template #content>
-                                <div class="flex flex-column gap-2">
-                                    <div class="flex align-items-center justify-content-between flex-wrap">
-                                        <span class="font-semibold text-primary">
-                                            {{ slotProps.item.approval_role || 'System' }}
-                                        </span>
-                                        <Badge 
-                                            :value="slotProps.item.action" 
-                                            :severity="slotProps.item.action === 'Approved' ? 'success' : 
-                                                      slotProps.item.action === 'Declined' ? 'danger' :
-                                                      slotProps.item.action === 'Forwarded' ? 'info' :
-                                                      slotProps.item.action === 'Sent Back' ? 'warning' : 'secondary'"
-                                            size="small"
-                                        />
-                                    </div>
-                                    <div class="text-600 text-sm">
-                                        {{ formatDateTime(slotProps.item.action_at) }}
-                                    </div>
-                                    <div v-if="slotProps.item.comment" class="text-500 text-sm mt-1 p-2 bg-gray-50 border-round">
-                                        <i class="pi pi-comment mr-1"></i>
-                                        {{ slotProps.item.comment }}
-                                    </div>
-                                    <div v-if="slotProps.item.user" class="text-500 text-xs">
-                                        By: {{ slotProps.item.user.name }}
-                                    </div>
+                        <div class="workflow-card-item border-round border-1 p-3" :class="getActionBorderColor(slotProps.item.action)">
+                            <div class="flex flex-column gap-2">
+                                <div class="flex align-items-center justify-content-between flex-wrap">
+                                    <span class="font-semibold text-primary">
+                                        {{ slotProps.item.approval_role || 'System' }}
+                                    </span>
+                                    <Tag 
+                                        :value="slotProps.item.action" 
+                                        :severity="getActionSeverity(slotProps.item.action)"
+                                        size="small"
+                                    />
                                 </div>
-                            </template>
-                        </Card>
+                                <div class="text-600 text-sm">
+                                    <i class="pi pi-clock mr-1"></i>
+                                    {{ formatDateTime(slotProps.item.action_at || slotProps.item.created_at) }}
+                                </div>
+                                <div v-if="slotProps.item.comment" class="text-500 text-sm mt-1 p-2 bg-gray-50 border-round">
+                                    <i class="pi pi-comment mr-1"></i>
+                                    {{ slotProps.item.comment }}
+                                </div>
+                                <div v-if="slotProps.item.user" class="text-500 text-xs">
+                                    <i class="pi pi-user mr-1"></i>
+                                    By: {{ slotProps.item.user.name }}
+                                </div>
+                                <div v-if="slotProps.item.status" class="text-500 text-xs">
+                                    <i class="pi pi-info-circle mr-1"></i>
+                                    Status: {{ slotProps.item.status }}
+                                </div>
+                            </div>
+                        </div>
                     </template>
                 </Timeline>
             </div>
@@ -1946,6 +2284,117 @@ onMounted(() => {
                 <Button label="Close" icon="pi pi-times" @click="closeWorkflowModal" text />
             </template>
         </Dialog>
+
+        <!-- Liability Print Dialog -->
+<Dialog
+    v-model:visible="showLiabilityPrintDialog"
+    :style="{ width: '95vw', maxWidth: '1400px', height: '95vh' }"
+    header="Liability Printout - Expenditure Control"
+    :modal="true"
+    :closable="true"
+    @hide="closeLiabilityPrintDialog"
+    class="print-dialog"
+>
+    <div class="print-content-wrapper" id="liability-print-wrapper">
+        <div class="print-content" id="liability-print-content" ref="liabilityPrintContentRef">
+            <!-- Print Header -->
+            <div class="print-header">
+                <div class="print-title">OFFICE OF THE ACCOUNTANT GENERAL</div>
+                <div class="print-subtitle">EXPENDITURE AND CONTROL DEPARTMENT</div>
+                <div class="print-subtitle">TREASURY HOUSE</div>
+                <div class="print-subtitle">SECRETARIAT COMPLEX</div>
+                <h2 class="print-title">LIABILITY AS AT {{ new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() }}</h2>
+                <div class="print-subtitle font-bold uppercase">
+                    {{ selectedMdaName || 'ALL MINISTRIES' }}
+                </div>
+                <div class="print-info">
+                    <span>Generated: {{ currentDateTime }}</span>
+                    <span>Total Liabilities: {{ liabilityPrintData.length }} vouchers</span>
+                    <span>Total Amount: {{ formatCurrencyForPrint(totalLiabilityAmount) }}</span>
+                </div>
+            </div>
+
+            <!-- Liability Table with Conditional HEAD/CODE Column -->
+            <table class="print-ledger-table" :class="{ 'no-head-code': !hasCapitalVouchers }" id="liability-print-table">
+                <thead>
+                    <tr>
+                        <th class="sno-col">S/NO</th>
+                        <th class="date-col">DATE</th>
+                        <th class="head-code-col" v-if="hasCapitalVouchers">HEAD/CODE</th>
+                        <th class="voucher-col">VOUCHER NO</th>
+                        <th class="type-col">TYPE</th>
+                        <th class="mda-col">MDA</th>
+                        <th class="payee-col">PAYEE</th>
+                        <th class="purpose-col">PURPOSE</th>
+                        <th class="amount-col">AMOUNT</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="(voucher, index) in liabilityPrintData" :key="voucher.id" class="data-row">
+                        <td class="text-center">{{ index + 1 }}</td>
+                        <td class="text-center">{{ formatShortDate(voucher.voucher_date) }}</td>
+                        <td class="text-center" v-if="hasCapitalVouchers">
+                            {{ voucher.voucher_type?.toLowerCase() === 'capital' ? (voucher.mda?.code || 'N/A') : '-' }}
+                        </td>
+                        <td class="text-center">{{ voucher.voucher_number || 'N/A' }}</td>
+                        <td class="text-center">
+                            <span class="type-badge">{{ voucher.voucher_type?.toUpperCase() || 'N/A' }}</span>
+                        </td>
+                        <td class="text-left">{{ voucher.mda?.name || 'N/A' }}</td>
+                        <td class="text-left">{{ voucher.payee_name || 'N/A' }}</td>
+                        <td class="text-left purpose-cell">{{ voucher.narration || 'N/A' }}</td>
+                        <td class="amount-cell">{{ formatCurrencyAmount(voucher.total_amount) }}</td>
+                    </tr>
+
+                    <!-- Empty Rows -->
+                    <tr v-for="n in liabilityEmptyRows" :key="'empty-' + n" class="empty-row">
+                        <td></td>
+                        <td></td>
+                        <td v-if="hasCapitalVouchers"></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+
+                    <!-- Total Row -->
+                    <tr class="total-row">
+                        <td :colspan="hasCapitalVouchers ? 8 : 7" class="text-right font-bold">TOTAL LIABILITY</td>
+                        <td class="amount-cell font-bold">{{ formatCurrencyAmount(totalLiabilityAmount) }}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- Print Footer -->
+            <div class="print-footer">
+                <span>Page 1</span>
+                <div class="text-right uppercase italic">
+                    PREPARED BY EXPENDITURE AND CONTROL DEPARTMENT<br />
+                    OFFICE OF THE ACCOUNTANT-GENERAL, BENIN CITY
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <template #footer>
+        <div class="flex gap-2 justify-content-end">
+            <Button 
+                label="Cancel" 
+                icon="pi pi-times" 
+                @click="closeLiabilityPrintDialog" 
+                class="p-button-secondary p-button-sm"
+            />
+            <Button 
+                label="Print" 
+                icon="pi pi-print" 
+                @click="printLiabilityContent" 
+                class="p-button-primary p-button-sm"
+            />
+        </div>
+    </template>
+</Dialog>
 
         <!-- Document Viewer Dialog -->
         <Dialog
@@ -1988,7 +2437,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Liability Banner - PROMINENT */
+/* Liability Banner */
 .liability-banner :deep(.p-message) {
     background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
     border: 3px solid #f97316;
@@ -2002,6 +2451,28 @@ onMounted(() => {
 
 .liability-banner :deep(.p-message-text) {
     width: 100%;
+}
+
+/* Liability Print Button */
+.liability-print-btn {
+    background: linear-gradient(135deg, #f97316, #ea580c) !important;
+    border: none !important;
+    color: white !important;
+    font-weight: 600 !important;
+    padding: 0.5rem 1rem !important;
+    border-radius: 0.5rem !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 2px 8px rgba(249, 115, 22, 0.3) !important;
+}
+
+.liability-print-btn:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 16px rgba(249, 115, 22, 0.4) !important;
+    background: linear-gradient(135deg, #ea580c, #c2410c) !important;
+}
+
+.liability-print-btn:active {
+    transform: translateY(0) !important;
 }
 
 /* Stat Cards */
@@ -2029,49 +2500,177 @@ onMounted(() => {
     border-radius: 0.75rem;
 }
 
-/* Table footer styling */
-:deep(.p-datatable-tfoot) {
-    background: #f8fafc;
-    font-weight: 600;
+/* Print Dialog Styles */
+:deep(.print-dialog .p-dialog-content) {
+    overflow: auto;
+    padding: 0;
+    background: #f5f5f5;
 }
 
-:deep(.p-datatable-tfoot > tr > td) {
-    border-top: 2px solid #e2e8f0;
-    padding: 0.75rem 1rem;
+.print-content-wrapper {
+    padding: 20px;
+    background: white;
+    min-height: 500px;
 }
 
-/* Table styling */
-.table-container :deep(.p-datatable) {
-    border-radius: 0.75rem;
-    overflow: hidden;
+.print-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: white;
+    padding: 20px;
 }
 
-.table-container :deep(.p-datatable-thead > tr > th) {
-    background: #f8fafc;
-    color: #1e293b;
-    font-weight: 600;
-    padding: 0.75rem 1rem;
-    border-top: 1px solid #e2e8f0;
+/* Print Styles inside dialog */
+.print-header {
+    text-align: center;
+    margin-bottom: 15px;
+    border-bottom: 2px solid #000;
+    padding-bottom: 10px;
 }
 
-.table-container :deep(.p-datatable-tbody > tr) {
-    transition: background-color 0.2s;
+.print-title {
+    font-size: 16px;
+    font-weight: bold;
+    margin: 5px 0;
+    text-transform: uppercase;
 }
 
-.table-container :deep(.p-datatable-tbody > tr:hover) {
-    background: #f1f5f9;
+.print-subtitle {
+    font-size: 12px;
+    margin: 3px 0;
 }
+
+.print-info {
+    font-size: 10px;
+    margin: 5px 0;
+    display: flex;
+    justify-content: space-between;
+}
+
+.print-ledger-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9px;
+    table-layout: fixed;
+    border: 1px solid #000;
+    margin-bottom: 20px;
+}
+
+.print-ledger-table th,
+.print-ledger-table td {
+    border: 1px solid #000;
+    padding: 4px 6px;
+    vertical-align: middle;
+    text-align: center;
+    height: 28px;
+}
+
+.print-ledger-table th {
+    background-color: #f0f0f0 !important;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 8px;
+}
+
+.print-ledger-table .amount-cell {
+    text-align: right;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    padding-right: 8px;
+}
+
+.print-ledger-table .purpose-cell {
+    text-align: left;
+    font-size: 8px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    line-height: 1.3;
+}
+
+.print-ledger-table .text-left { text-align: left; }
+.print-ledger-table .text-right { text-align: right; }
+.print-ledger-table .text-center { text-align: center; }
+.print-ledger-table .font-bold { font-weight: bold; }
+
+.print-ledger-table .total-row {
+    background-color: #fff3e0 !important;
+}
+
+.print-ledger-table .empty-row {
+    height: 28px;
+}
+
+.print-ledger-table .type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 7px;
+    background-color: #2196f3;
+    color: white;
+}
+
+.print-ledger-table .status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 7px;
+    background-color: #ff9800;
+    color: white;
+}
+
+/* Column widths */
+.print-ledger-table .sno-col { width: 5%; }
+.print-ledger-table .date-col { width: 8%; }
+.print-ledger-table .voucher-col { width: 10%; }
+.print-ledger-table .type-col { width: 8%; }
+.print-ledger-table .mda-col { width: 14%; }
+.print-ledger-table .payee-col { width: 12%; }
+.print-ledger-table .purpose-col { width: 18%; }
+.print-ledger-table .amount-col { width: 10%; }
+.print-ledger-table .fa-approved-col { width: 8%; }
+.print-ledger-table .status-col { width: 7%; }
+
+.print-footer {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #000;
+    font-size: 9px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.uppercase { text-transform: uppercase; }
+.italic { font-style: italic; }
 
 /* Workflow Timeline */
-.workflow-card :deep(.p-card) {
-    box-shadow: none;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.5rem;
-    margin: 0.5rem 0;
+.workflow-card-item {
+    background: white;
+    transition: all 0.2s ease;
 }
 
-.workflow-card :deep(.p-card-content) {
-    padding: 0.75rem;
+.workflow-card-item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.workflow-timeline::-webkit-scrollbar {
+    width: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.workflow-timeline::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
 }
 
 .custom-marker {
@@ -2091,6 +2690,52 @@ onMounted(() => {
 
 .custom-timeline :deep(.p-timeline-event-content) {
     margin-left: 1rem;
+}
+
+.custom-timeline :deep(.p-timeline-event-marker) {
+    background: transparent !important;
+    border: none !important;
+}
+
+.workflow-dialog :deep(.p-dialog-header) {
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.workflow-dialog :deep(.p-dialog-content) {
+    padding: 1rem;
+}
+
+/* Table styling */
+:deep(.p-datatable-tfoot) {
+    background: #f8fafc;
+    font-weight: 600;
+}
+
+:deep(.p-datatable-tfoot > tr > td) {
+    border-top: 2px solid #e2e8f0;
+    padding: 0.75rem 1rem;
+}
+
+:deep(.p-datatable) {
+    border-radius: 0.75rem;
+    overflow: hidden;
+}
+
+:deep(.p-datatable-thead > tr > th) {
+    background: #f8fafc;
+    color: #1e293b;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid #e2e8f0;
+}
+
+:deep(.p-datatable-tbody > tr) {
+    transition: background-color 0.2s;
+}
+
+:deep(.p-datatable-tbody > tr:hover) {
+    background: #f1f5f9;
 }
 
 /* Dialogs */
@@ -2116,12 +2761,12 @@ onMounted(() => {
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
-    .table-container :deep(.p-datatable) {
+    :deep(.p-datatable) {
         font-size: 0.875rem;
     }
     
-    .table-container :deep(.p-datatable-thead > tr > th),
-    .table-container :deep(.p-datatable-tbody > tr > td) {
+    :deep(.p-datatable-thead > tr > th),
+    :deep(.p-datatable-tbody > tr > td) {
         padding: 0.5rem;
     }
 
@@ -2129,4 +2774,25 @@ onMounted(() => {
         padding: 0.75rem 1rem;
     }
 }
+
+/* Column widths - with HEAD/CODE */
+.print-ledger-table .sno-col { width: 5%; }
+.print-ledger-table .date-col { width: 8%; }
+.print-ledger-table .head-code-col { width: 10%; }
+.print-ledger-table .voucher-col { width: 10%; }
+.print-ledger-table .type-col { width: 8%; }
+.print-ledger-table .mda-col { width: 12%; }
+.print-ledger-table .payee-col { width: 10%; }
+.print-ledger-table .purpose-col { width: 17%; }
+.print-ledger-table .amount-col { width: 10%; }
+
+/* Column widths - without HEAD/CODE (when no capital vouchers) */
+.print-ledger-table.no-head-code .sno-col { width: 6%; }
+.print-ledger-table.no-head-code .date-col { width: 10%; }
+.print-ledger-table.no-head-code .voucher-col { width: 12%; }
+.print-ledger-table.no-head-code .type-col { width: 10%; }
+.print-ledger-table.no-head-code .mda-col { width: 15%; }
+.print-ledger-table.no-head-code .payee-col { width: 12%; }
+.print-ledger-table.no-head-code .purpose-col { width: 20%; }
+.print-ledger-table.no-head-code .amount-col { width: 12%; }
 </style>

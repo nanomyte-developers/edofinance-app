@@ -2,19 +2,21 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Models\Mda;
-use App\Models\User;
-use Inertia\Inertia;
-use Illuminate\Http\Request;
-use App\Services\UserService;
-use Illuminate\Support\Facades\DB;
-use Spatie\Permission\Models\Role;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
-use App\Http\Resources\UserResource;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
+use App\Http\Resources\UserResource;
+use App\Models\Mda;
+use App\Models\User;
+use App\Models\UserCategory;
+use App\Services\UserService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Inertia\Inertia;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class UsersController extends Controller
 {
@@ -25,9 +27,9 @@ class UsersController extends Controller
         $this->userService = $userService;
     }
 
-    // /**
-    //  * Display a listing of the resource.
-    //  */
+    /**
+     * Display a listing of the resource.
+     */
     public function index(Request $request)
     {
         $filters = [
@@ -40,11 +42,13 @@ class UsersController extends Controller
 
         $users = $this->userService->getPaginatedUsers($filters);
 
-        // Load MDA relationships for each user
-        $users->getCollection()->transform(function ($user) {
-            $user->load('mdas');
-            return $user;
-        });
+        // Fetch all users with their categories
+        $allUsers = User::select('id', 'name', 'email', 'user_category_id', 'can_be_signatory')
+            ->with('userCategory')
+            ->get()
+            ->toArray();
+
+        // dd($allUsers); // Debugging line to check if data is being fetched
 
         return Inertia::render('admin/users/index', [
             'users' => [
@@ -56,7 +60,9 @@ class UsersController extends Controller
             ],
             'allRoles' => Role::all()->pluck('name')->toArray(),
             'allPermissions' => Permission::all()->pluck('name')->toArray(),
-            'allMdas' => \App\Models\Mda::all(['id', 'name'])->toArray(), // Add this line
+            'allMdas' => Mda::all(['id', 'name'])->toArray(),
+            'allUserCategories' => UserCategory::select('id', 'name', 'requires_signature', 'can_be_signatory')->get()->toArray(),
+            'allUsers' => $allUsers, // ✅ CRITICAL: This must be here
             'filters' => $filters,
         ]);
     }
@@ -66,24 +72,47 @@ class UsersController extends Controller
      */
     public function create()
     {
+        // Fetch all users with their categories
+        $allUsers = User::select('id', 'name', 'email', 'user_category_id', 'can_be_signatory')
+            ->with('userCategory')
+            ->get()
+            ->toArray();
+
+        // Debug - Log to check if data is being fetched
+        \Log::info('Create page - Users fetched:', [
+            'count' => count($allUsers),
+            'sample' => array_slice($allUsers, 0, 3) // Show first 3 users
+        ]);
+
         return Inertia::render('admin/users/Create', [
             'allRoles' => Role::all()->pluck('name')->toArray(),
             'allPermissions' => Permission::all()->pluck('name')->toArray(),
             'allMdas' => Mda::select('id', 'name')->get()->toArray(),
+            'allUserCategories' => UserCategory::select('id', 'name', 'requires_signature', 'can_be_signatory')->get()->toArray(),
+            'allUsers' => $allUsers, // ✅ CRITICAL: This must be here
         ]);
-    }
+}
 
     /**
      * Store a newly created resource in storage.
      */
     public function store(StoreUserRequest $request)
     {
-        // Debug what's coming from the frontend
         logger('Store User Request Data:', $request->all());
         
         try {
-            // Use your service class - this is the proper way!
-            $user = $this->userService->createUser($request->validated());
+            $validatedData = $request->validated();
+            
+            // Handle file uploads
+            if ($request->hasFile('signature')) {
+                $validatedData['signature'] = $request->file('signature');
+            }
+            
+            if ($request->hasFile('passport')) {
+                $validatedData['passport'] = $request->file('passport');
+            }
+            
+            $user = $this->userService->createUser($validatedData);
             
             logger('User created with ID: ' . $user->id);
             
@@ -112,42 +141,95 @@ class UsersController extends Controller
      */
     public function edit(User $user)
     {
-        // 1. Load relationships required for the form
-        $user->load(['roles', 'permissions', 'mdas']);
+        $user->load(['roles', 'permissions', 'mdas', 'userCategory', 'signatory']);
 
-        // 2. Wrap the user in the resource
-        $userResource = new UserResource($user);
-        
-        // 🔥 CRITICAL DEBUG: Check the data before sending it to Inertia
-        Log::info('--- USER DATA DEBUG ---');
-        Log::info('User Resource Data:', $userResource->toArray(request()));
-        
-        // 3. Collect lists
-            $allRoles = Role::all()->pluck('name')->toArray();
-            $allPermissions = Permission::all()->pluck('name')->toArray();
-            $allMdas = Mda::select('id', 'name')->get()->toArray(); // 🔥 FETCH MDAs
+        // Fetch all users with their categories
+        $allUsers = User::select('id', 'name', 'email', 'user_category_id', 'can_be_signatory')
+            ->with('userCategory')
+            ->get()
+            ->toArray();
+
+        // Debug
+        \Log::info('Edit page - Users fetched:', [
+            'count' => count($allUsers)
+        ]);
 
         return Inertia::render('admin/users/Edit', [
-            'user' => $userResource,
-            'allRoles' => $allRoles,
-            'allPermissions' => $allPermissions,
-            'allMdas' => $allMdas,
+            'user' => new UserResource($user),
+            'allRoles' => Role::all()->pluck('name')->toArray(),
+            'allPermissions' => Permission::all()->pluck('name')->toArray(),
+            'allMdas' => Mda::select('id', 'name')->get()->toArray(),
+            'allUserCategories' => UserCategory::select('id', 'name', 'requires_signature', 'can_be_signatory')->get()->toArray(),
+            'allUsers' => $allUsers, // ✅ CRITICAL: This must be here
         ]);
     }
 
     /**
-     * Update the specified resource in storage.
+     * ✅ FIXED: Update method - NO dd() statement
      */
     public function update(UpdateUserRequest $request, User $user)
     {
-        // dd($user);
-        // Load the user with relationships for the response if needed
-        $user->load(['roles', 'permissions', 'mdas']);
-        
-        $updatedUser = $this->userService->updateUser($user, $request->validated());
-        
-        return redirect()->route('users.index')
-            ->with('success', 'User updated successfully.');
+        // dd($request->all());
+        try {
+            Log::info('Update User Request - Starting:', [
+                'user_id' => $user->id,
+                'has_signature' => $request->hasFile('signature'),
+                'has_passport' => $request->hasFile('passport'),
+                'all_data' => $request->except(['signature', 'passport']),
+            ]);
+
+            $validatedData = $request->validated();
+            
+            // Handle file uploads
+            if ($request->hasFile('signature')) {
+                $validatedData['signature'] = $request->file('signature');
+                Log::info('Signature file received:', [
+                    'name' => $request->file('signature')->getClientOriginalName(),
+                    'size' => $request->file('signature')->getSize(),
+                ]);
+            }
+            
+            if ($request->hasFile('passport')) {
+                $validatedData['passport'] = $request->file('passport');
+                Log::info('Passport file received:', [
+                    'name' => $request->file('passport')->getClientOriginalName(),
+                    'size' => $request->file('passport')->getSize(),
+                ]);
+            }
+            
+            $updatedUser = $this->userService->updateUser($user, $validatedData);
+
+            Log::info('User updated successfully:', [
+                'user_id' => $updatedUser->id,
+                'name' => $updatedUser->name,
+                'has_signature' => !empty($updatedUser->signature),
+                'has_passport' => !empty($updatedUser->passport),
+            ]);
+            
+            return redirect()->route('users.index')
+                ->with('success', 'User updated successfully.');
+                
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('Validation Error updating user:', [
+                'user_id' => $user->id,
+                'errors' => $e->errors(),
+            ]);
+            
+            return back()
+                ->withErrors($e->errors())
+                ->withInput();
+                
+        } catch (\Exception $e) {
+            Log::error('Error updating user:', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return back()
+                ->withInput()
+                ->with('error', 'Failed to update user: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -167,72 +249,60 @@ class UsersController extends Controller
         }
     }
 
-    // /**
-    //  * Get user with roles and permissions for management
-    //  */
+    /**
+     * Get user with roles and permissions for management
+     */
     public function permissions(User $user)
     {
-        // 1. Eager load necessary relations
-        $userWithRelations = $user->load('roles.permissions', 'permissions'); 
+        $userWithRelations = $user->load('roles.permissions', 'permissions', 'userCategory', 'signatory', 'mdas'); 
 
-        // 2. Fetch ALL available roles and permissions
         $allRoles = Role::all()->pluck('name')->toArray();
         $allPermissions = Permission::all()->pluck('name')->toArray();
-
-        // 3. Get the user's effective permissions (direct + inherited)
         $allEffectivePermissions = $userWithRelations->getAllPermissions()->pluck('name')->toArray();
+        $allMdas = Mda::select('id', 'name')->get()->toArray();
+        $allUserCategories = UserCategory::select('id', 'name', 'requires_signature', 'can_be_signatory')->get()->toArray();
+        $allUsers = User::select('id', 'name', 'email', 'user_category_id', 'can_be_signatory')
+            ->with('userCategory')
+            ->get()
+            ->toArray();
         
-        // 4. FIX: Convert the UserResource to a plain array first
         $userDataArray = (new UserResource($userWithRelations))->toArray(request());
 
         return Inertia::render('admin/users/UserRolesPermissions', [
-            // Pass the user data array without merging the effective permissions here
             'userData' => $userDataArray, 
-            
-            // Pass the standard available lists
             'allRoles' => $allRoles,
             'allPermissions' => $allPermissions,
-
-            // 🔥 CRITICAL FIX: Pass Effective Permissions as a new, simple top-level array prop
+            'allMdas' => $allMdas,
+            'allUserCategories' => $allUserCategories,
+            'allUsers' => $allUsers,
             'effectivePermissionsList' => $allEffectivePermissions, 
         ]);
     }
+
     /**
-     * Update user roles
+     * ✅ FIXED: Update user roles - returns Inertia response
      */
     public function updateRoles(Request $request, User $user)
     {
-        // dd($request->all());
         $validated = $request->validate([
             'roles' => 'sometimes|array',
             'roles.*' => 'string|exists:roles,name',
         ]);
 
         try {
-            // This syncRoles method handles both assigning (new roles) and removing (missing roles)
             $user->syncRoles($validated['roles'] ?? []); 
-
-            // Re-fetch the user to return updated status to the front-end (for index.vue reload)
             $user->load('roles.permissions', 'permissions'); 
-            $allEffectivePermissions = $user->getAllPermissions()->pluck('name')->toArray();
             
-            // return response()->json([
-            //     'message' => 'Roles updated successfully',
-            //     'user' => array_merge((new UserResource($user))->toArray(request()), [
-            //         'all_permissions' => $allEffectivePermissions,
-            //     ])
-            // ]);
-            return $this->index($request);
-
+            // ✅ Return Inertia response instead of JSON
+            return redirect()->back()->with('success', 'Roles updated successfully.');
+            
         } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to update roles: ' . $e->getMessage()
-            ], 500);
+            return redirect()->back()->with('error', 'Failed to update roles: ' . $e->getMessage());
         }
     }
 
     /**
-     * Update user permissions
+     * ✅ FIXED: Update user permissions - returns Inertia response
      */
     public function updatePermissions(Request $request, User $user)
     {
@@ -242,23 +312,45 @@ class UsersController extends Controller
         ]);
 
         try {
-            // This syncPermissions method handles both assigning and removing
-            // $user->syncPermissions($request->permissions);
             $user->syncPermissions($validated['permissions'] ?? []);
-            
-            // Re-fetch the user to return updated status
             $user->load('roles.permissions', 'permissions');
-            $allEffectivePermissions = $user->getAllPermissions()->pluck('name')->toArray();
+
+            // ✅ Return Inertia response instead of JSON
+            return redirect()->back()->with('success', 'Permissions updated successfully.');
+            
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Failed to update permissions: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Update user's signatory status
+     */
+    public function updateSignatoryStatus(Request $request, User $user)
+    {
+        $validated = $request->validate([
+            'can_be_signatory' => 'required|boolean',
+        ]);
+
+        try {
+            $user->update([
+                'can_be_signatory' => $validated['can_be_signatory'],
+            ]);
 
             return response()->json([
-                'message' => 'Permissions updated successfully',
-                'user' => array_merge((new UserResource($user))->toArray(request()), [
-                    'all_permissions' => $allEffectivePermissions,
-                ])
+                'success' => true,
+                'message' => 'Signatory status updated successfully',
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'can_be_signatory' => $user->can_be_signatory,
+                ]
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Failed to update permissions: ' . $e->getMessage()
+                'success' => false,
+                'message' => 'Failed to update signatory status: ' . $e->getMessage(),
             ], 500);
         }
     }

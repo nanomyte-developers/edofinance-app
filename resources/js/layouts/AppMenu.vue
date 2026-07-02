@@ -149,15 +149,47 @@ onMounted(() => {
             icon: 'pi pi-fw pi-share-alt',
             items: [
                 {
-                    label: 'Pending Vouchers',
-                    icon: 'pi pi-fw pi-clone',
-                    to: '/expenditure-control',
+                    label: 'Vouchers',
+                    icon: 'pi pi-fw pi-ethereum',
+                    items: [
+                        {
+                            label: 'Pending Vouchers',
+                            icon: 'pi pi-fw pi-clone',
+                            to: '/expenditure-control',
+                        },
+                        {
+                            label: 'Assigned Vouchers',
+                            icon: 'pi pi-fw pi-check-square',
+                            to: '/expenditure-control/assigned',
+                        },
+                    ]
                 },
                 {
-                    label: 'Assigned Vouchers',
-                    icon: 'pi pi-fw pi-check-square',
-                    to: '/expenditure-control/assigned',
-                },
+                    label: 'Ledgers',
+                    icon: 'pi pi-fw pi-equals',
+                    items: [
+                        {
+                            label: 'Capital Expenditure Ledger',
+                            icon: 'pi pi-fw pi-check-square',
+                            to: '/expenditure-control/capital-ledger',
+                        },
+                        {
+                            label: 'Recurrent Expenditure Ledger',
+                            icon: 'pi pi-fw pi-check-square',
+                            to: '/expenditure-control/recurrent-ledger',
+                        },
+                        {
+                            label: 'Salary Ledger',
+                            icon: 'pi pi-fw pi-check-square',
+                            to: '/expenditure-control/salary-ledger',
+                        },
+                        {
+                            label: 'Pension Ledger',
+                            icon: 'pi pi-fw pi-check-square',
+                            to: '/expenditure-control/pension-ledger',
+                        },
+                    ]
+                }
             ],
         });
     }

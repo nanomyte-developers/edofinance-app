@@ -55,7 +55,9 @@ class TreasuryCashOfficeController extends Controller
                 $query->where('status', 'inspectorate_approved')->whereNull('tco_approved_at');
             } elseif ($tab === 'approved') {
                 // TCO approved today (paid)
-                $query->where('status', 'closed')->whereDate('tco_approved_at', today());
+                $query->where('status', 'closed')
+                      ->where('tco_approved_by', '>', 0)
+                      ->whereDate('tco_approved_at', today());
             } elseif ($tab === 'rejected') {
                 // TCO rejected
                 $query->where('status', 'tco_rejected');
@@ -120,6 +122,25 @@ class TreasuryCashOfficeController extends Controller
                     $paymentStatus = 'awaiting_tco';
                 }
 
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
+
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
@@ -163,6 +184,7 @@ class TreasuryCashOfficeController extends Controller
                             'programme_name' => $item->programme_name,
                         ];
                     }),
+                    'approvals' => $approvals,
                 ];
             });
 
@@ -177,6 +199,7 @@ class TreasuryCashOfficeController extends Controller
                     ->count(),
                 'approved_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
+                    ->where('tco_approved_by', '>', 0)
                     ->whereDate('tco_approved_at', today())
                     ->count(),
                 'rejected_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
@@ -192,6 +215,7 @@ class TreasuryCashOfficeController extends Controller
                     ->sum('total_amount'),
                 'total_amount_paid' => (float) Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
+                    ->where('tco_approved_by', '>', 0)
                     ->sum('total_amount'),
             ];
 
@@ -271,13 +295,16 @@ class TreasuryCashOfficeController extends Controller
                 ->whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                 ->orderBy('created_at', 'desc');
 
-            // Tab filtering
+            // Tab filtering - FIXED
             if ($tab === 'all') {
                 $query->where('status', 'inspectorate_approved');
             } elseif ($tab === 'pending') {
                 $query->where('status', 'inspectorate_approved')->whereNull('tco_approved_at');
             } elseif ($tab === 'approved') {
-                $query->where('status', 'closed')->whereDate('tco_approved_at', today());
+                // FIXED: Added tco_approved_by > 0 check
+                $query->where('status', 'closed')
+                    ->where('tco_approved_by', '>', 0)
+                    ->whereDate('tco_approved_at', today());
             } elseif ($tab === 'rejected') {
                 $query->where('status', 'tco_rejected');
             }
@@ -341,6 +368,25 @@ class TreasuryCashOfficeController extends Controller
                     $paymentStatus = 'awaiting_tco';
                 }
 
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
+
                 return [
                     'id' => $voucher->id,
                     'voucher_number' => $voucher->voucher_number,
@@ -380,6 +426,7 @@ class TreasuryCashOfficeController extends Controller
                             'sub_total' => (float) $item->sub_total,
                         ];
                     }),
+                    'approvals' => $approvals,
                 ];
             })->values()->toArray();
 
@@ -394,6 +441,7 @@ class TreasuryCashOfficeController extends Controller
                     ->count(),
                 'approved_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
+                    ->where('tco_approved_by', '>', 0)  // FIXED: Added this
                     ->whereDate('tco_approved_at', today())
                     ->count(),
                 'rejected_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
@@ -409,6 +457,7 @@ class TreasuryCashOfficeController extends Controller
                     ->sum('total_amount'),
                 'total_amount_paid' => (float) Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
+                    ->where('tco_approved_by', '>', 0)  // FIXED: Added this
                     ->sum('total_amount'),
             ];
 
@@ -783,7 +832,7 @@ class TreasuryCashOfficeController extends Controller
     }
 
     /**
-     * Reject voucher from TCO (send back to Inspectorate)
+     * Reject voucher from TCO (send back to EC)
      */
     public function reject(Voucher $voucher, Request $request)
     {
@@ -837,9 +886,9 @@ class TreasuryCashOfficeController extends Controller
                 'rejected_at' => now(),
             ]);
 
-            // Update voucher status
+            // Update voucher status - FIXED: Return to EC (not Inspectorate)
             $voucher->update([
-                'status' => 'tco_rejected',
+                'status' => 'ec_approved',  // Changed from 'tco_rejected' to 'ec_approved'
                 'rejection_reason' => $reason,
                 'rejected_by' => auth()->id(),
                 'rejected_at' => now(),
@@ -848,7 +897,7 @@ class TreasuryCashOfficeController extends Controller
             // Log activity
             if ($this->activityLogger) {
                 $this->activityLogger->log(
-                    "TCO rejected voucher {$voucher->voucher_number}",
+                    "TCO rejected voucher {$voucher->voucher_number} and returned to EC",
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
@@ -856,6 +905,7 @@ class TreasuryCashOfficeController extends Controller
                         'reason' => $reason,
                         'rejection_step' => $rejectionStep,
                         'rejected_by' => auth()->id(),
+                        'returned_to' => 'Expenditure Control (EC)',
                     ],
                     'voucher'
                 );
@@ -866,11 +916,12 @@ class TreasuryCashOfficeController extends Controller
             Log::info('TCO Rejection Successful:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
-                'reason' => $reason
+                'reason' => $reason,
+                'voucher_returned_to' => 'EC'
             ]);
 
             return redirect()->route('treasury-cash-office.index')
-                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Inspectorate.");
+                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Expenditure Control (EC).");
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -999,6 +1050,7 @@ class TreasuryCashOfficeController extends Controller
                     ->count(),
                 'approved_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
                     ->where('status', 'closed')
+                    ->where('tco_approved_by', '>', 0)
                     ->whereDate('tco_approved_at', today())
                     ->count(),
                 'rejected_today' => Voucher::whereIn('voucher_type', self::TCO_VOUCHER_TYPES)
@@ -1124,6 +1176,25 @@ class TreasuryCashOfficeController extends Controller
                 } elseif ($voucher->status === 'inspectorate_approved') {
                     $paymentStatus = 'awaiting_tco';
                 }
+
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
                 
                 return [
                     'id' => $voucher->id,
@@ -1161,6 +1232,7 @@ class TreasuryCashOfficeController extends Controller
                             'programme_name' => $item->programme_name,
                         ];
                     }),
+                    'approvals' => $approvals,
                 ];
             });
             
@@ -1314,6 +1386,25 @@ class TreasuryCashOfficeController extends Controller
                 } elseif ($voucher->status === 'inspectorate_approved') {
                     $paymentStatus = 'awaiting_tco';
                 }
+
+                // =============================================
+                // ADD APPROVALS TO THE TRANSFORMED DATA
+                // =============================================
+                $approvals = $voucher->approvals->map(function ($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'action' => $approval->action,
+                        'comment' => $approval->comment,
+                        'action_at' => $approval->action_at?->toDateTimeString(),
+                        'created_at' => $approval->created_at?->toDateTimeString(),
+                        'approval_role' => $approval->approval_role,
+                        'status' => $approval->status,
+                        'user' => $approval->user ? [
+                            'id' => $approval->user->id,
+                            'name' => $approval->user->name,
+                        ] : null,
+                    ];
+                });
                 
                 return [
                     'id' => $voucher->id,
@@ -1348,6 +1439,7 @@ class TreasuryCashOfficeController extends Controller
                             'sub_total' => (float) $item->sub_total,
                         ];
                     }),
+                    'approvals' => $approvals,
                 ];
             })->values()->toArray();
             
@@ -1513,7 +1605,7 @@ class TreasuryCashOfficeController extends Controller
     }
 
     /**
-     * Reject assigned voucher from TCO (send back to Inspectorate)
+     * Reject assigned voucher from TCO (send back to EC)
      */
     public function rejectAssigned(Voucher $voucher, Request $request)
     {
@@ -1567,9 +1659,9 @@ class TreasuryCashOfficeController extends Controller
                 'rejected_at' => now(),
             ]);
 
-            // Update voucher status
+            // Update voucher status - FIXED: Return to EC (not Inspectorate)
             $voucher->update([
-                'status' => 'tco_rejected',
+                'status' => 'ec_approved',  // Changed from 'tco_rejected' to 'ec_approved'
                 'rejection_reason' => $reason,
                 'rejected_by' => auth()->id(),
                 'rejected_at' => now(),
@@ -1578,7 +1670,7 @@ class TreasuryCashOfficeController extends Controller
             // Log activity
             if ($this->activityLogger) {
                 $this->activityLogger->log(
-                    "TCO rejected assigned voucher {$voucher->voucher_number}",
+                    "TCO rejected assigned voucher {$voucher->voucher_number} and returned to EC",
                     [
                         'voucher_id' => $voucher->id,
                         'voucher_number' => $voucher->voucher_number,
@@ -1586,6 +1678,7 @@ class TreasuryCashOfficeController extends Controller
                         'reason' => $reason,
                         'rejection_step' => $rejectionStep,
                         'rejected_by' => auth()->id(),
+                        'returned_to' => 'Expenditure Control (EC)',
                     ],
                     'voucher'
                 );
@@ -1596,11 +1689,12 @@ class TreasuryCashOfficeController extends Controller
             Log::info('TCO Reject Assigned Successful:', [
                 'voucher_id' => $voucher->id,
                 'voucher_number' => $voucher->voucher_number,
-                'reason' => $reason
+                'reason' => $reason,
+                'voucher_returned_to' => 'EC'
             ]);
 
             return redirect()->route('treasury-cash-office.assigned')
-                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Inspectorate.");
+                ->with('success', "Voucher {$voucher->voucher_number} has been rejected and returned to Expenditure Control (EC).");
 
         } catch (\Exception $e) {
             DB::rollBack();
